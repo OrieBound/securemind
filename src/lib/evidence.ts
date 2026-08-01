@@ -9,6 +9,7 @@
 
 import type { SemanticHit } from "@/lib/memory";
 import { EVIDENCE_PROMPT_LIMIT } from "@/lib/memory";
+import { isCiteableFragment } from "@/lib/provenance";
 import { fenceRetrievedChunk, untrustedEvidenceRules } from "@/lib/prompt-guard";
 import { decideTurn } from "@/lib/turn-policy/decide-turn";
 
@@ -35,14 +36,13 @@ function previewOf(content: string): string {
 
 function sourceLabel(hit: SemanticHit): string {
   if (hit.documentName) return `document: ${hit.documentName}`;
-  if (hit.category === "document") return "document chunk";
-  if (hit.category === "semantic") return "workspace memory";
-  return "prior exchange";
+  return "document chunk";
 }
 
 /**
  * Select prompt evidence from retrieval candidates: threshold already applied
  * by retrieveSemanticMemory; prefer diverse documents and cap count.
+ * Non-document fragments (episodic assistant text, semantic guesses) are dropped.
  */
 export function selectEvidenceForPrompt(
   hits: SemanticHit[],
@@ -53,6 +53,7 @@ export function selectEvidenceForPrompt(
 
   for (const hit of hits) {
     if (selected.length >= limit) break;
+    if (!isCiteableFragment(hit.category, hit.documentId)) continue;
     if (hit.documentId) {
       const n = docCounts.get(hit.documentId) ?? 0;
       if (n >= 2) continue;
@@ -71,11 +72,12 @@ export function packageEvidence(hits: SemanticHit[]): {
   citations: Citation[];
   promptBlock: string;
 } {
-  if (hits.length === 0) {
+  const eligible = hits.filter(h => isCiteableFragment(h.category, h.documentId));
+  if (eligible.length === 0) {
     return { citations: [], promptBlock: "" };
   }
 
-  const citations: Citation[] = hits.map((hit, i) => ({
+  const citations: Citation[] = eligible.map((hit, i) => ({
     index: i + 1,
     fragmentId: hit.id,
     category: hit.category,
@@ -85,7 +87,7 @@ export function packageEvidence(hits: SemanticHit[]): {
     similarity: Number(hit.similarity),
   }));
 
-  const lines = hits.map((hit, i) =>
+  const lines = eligible.map((hit, i) =>
     fenceRetrievedChunk(i + 1, sourceLabel(hit), hit.content),
   );
 

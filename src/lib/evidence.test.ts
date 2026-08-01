@@ -11,7 +11,7 @@ describe("packageEvidence", () => {
     expect(packageEvidence([])).toEqual({ citations: [], promptBlock: "" });
   });
 
-  it("numbers hits and includes citation rules in the prompt block", () => {
+  it("numbers document hits and excludes episodic prior-exchange fragments", () => {
     const hits: SemanticHit[] = [
       {
         id: "f1",
@@ -33,15 +33,14 @@ describe("packageEvidence", () => {
 
     const { citations, promptBlock } = packageEvidence(hits);
 
-    expect(citations).toHaveLength(2);
+    expect(citations).toHaveLength(1);
     expect(citations[0]).toMatchObject({
       index: 1,
       fragmentId: "f1",
       documentName: "iam-runbook.md",
     });
-    expect(citations[1].index).toBe(2);
     expect(promptBlock).toContain('BEGIN_RETRIEVED_EVIDENCE source="document: iam-runbook.md"');
-    expect(promptBlock).toContain('BEGIN_RETRIEVED_EVIDENCE source="prior exchange"');
+    expect(promptBlock).not.toContain("prior exchange");
     expect(promptBlock).toContain("cite as [n]");
     expect(promptBlock).toMatch(/untrusted data/i);
   });
@@ -57,10 +56,15 @@ describe("messageNeedsEvidence", () => {
     expect(messageNeedsEvidence("Hello there sir!")).toBe(false);
   });
 
-  it("flags ops questions", () => {
+  it("flags workspace-scoped ops questions", () => {
     expect(
-      messageNeedsEvidence("What is the session timeout for production Cognito?"),
+      messageNeedsEvidence("What does our Cognito runbook say about session timeout?"),
     ).toBe(true);
+  });
+
+  it("skips general knowledge questions", () => {
+    expect(messageNeedsEvidence("Tell me about lava.")).toBe(false);
+    expect(messageNeedsEvidence("What is a black hole?")).toBe(false);
   });
 });
 

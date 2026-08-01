@@ -43,34 +43,24 @@ function serializeFactValue(value: unknown): string {
   return String(value);
 }
 
-const SYSTEM_PROMPT = `You are a memory compression engine for a personal AI assistant.
-Your job: extract and preserve two categories of information from a conversation.
+const SYSTEM_PROMPT = `You are a memory compression engine for SecureMind.
+Extract only durable USER-authored information. Provenance must stay honest.
 
 Given a conversation excerpt (and optionally an existing summary + facts), produce:
-1. A concise updated summary (3–5 sentences max) of what was discussed.
-2. A facts object combining TWO types of facts:
+1. A concise updated summary (3–5 sentences max) of what the USER discussed that is worth remembering.
+2. A facts object of USER identity / preference facts only when clearly stated by the user.
 
-   IDENTITY FACTS — who the user is:
-   Keys: name, age, occupation, location, projects, goals, interests, skills
-
-   BEHAVIORAL FACTS — how the user communicates and what they prefer:
-   Keys: response_length (short/medium/detailed), technical_level (beginner/intermediate/expert),
-         communication_style (direct/conversational/formal), preferred_topics (comma-separated),
-         tone_preference (casual/professional/warm), feedback_style (blunt/gentle/structured)
-
-   PERSONALITY FACTS — temperament and social style (infer from how they write and what they discuss):
-   Keys: sociability (low/moderate/high), talkativeness (low/moderate/high),
-         patience (low/moderate/high), calmness (low/moderate/high),
-         sensitivity (low/moderate/high), politeness (low/moderate/high),
-         preferred_problem_types (comma-separated, e.g. "engineering, personal reflection, planning"),
-         emotional_tone (comma-separated tags, e.g. "curious, focused, casual")
+   Allowed keys: name, occupation, location, projects, goals, preferred_response_length
+   (short/medium/detailed), technical_level (beginner/intermediate/expert)
 
 Rules:
-- Only include facts explicitly stated or clearly implied — never invent.
-- Behavioral facts should be inferred from HOW the user writes, not just what they say.
-  e.g. short clipped messages → response_length: short, technical jargon → technical_level: expert
-- If a fact conflicts with existing facts, use the newer value.
-- Write the summary in third-person ("The user mentioned…").
+- ONLY extract facts from User: lines. Never store Assistant: content as a user fact.
+- Never store general world knowledge the assistant explained (e.g. what lava is).
+- Never store guesses, inferences, retrieved document content, or unconfirmed summaries.
+- Never invent personality, friendship, emotional, or companion-profiling facts.
+- If the user corrects a prior misunderstanding, drop the incorrect fact; do not keep it.
+- If nothing durable was stated by the user, return {"summary":"…","facts":{}} with facts empty or unchanged.
+- Write the summary in third-person about the user ("The user mentioned…").
 - Return ONLY valid JSON — no markdown, no explanation.
 
 Format:

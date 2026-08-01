@@ -11,12 +11,7 @@
 import { NextRequest } from "next/server";
 import { db } from "@/lib/db";
 import { getIdentity } from "@/lib/identity";
-import { storeMemoryFragment } from "@/lib/memory";
-
 export const runtime = "nodejs";
-
-// Minimum content length to bother embedding (very short messages aren't useful as memories)
-const MIN_EMBED_CHARS = 60;
 
 type MessageRequest = {
   sessionId: string;
@@ -62,18 +57,9 @@ export async function POST(req: NextRequest) {
     data:  { updatedAt: new Date() },
   });
 
-  // Embed assistant messages as episodic memory fragments (fire-and-forget).
-  // Only assistant messages are embedded — they contain the richest context
-  // and are what we want to surface when semantically searching past exchanges.
-  if (role === "assistant" && trimmed.length >= MIN_EMBED_CHARS && session?.workspaceId) {
-    storeMemoryFragment({
-      content:     trimmed,
-      workspaceId: session.workspaceId,
-      sessionId,
-      userId:      session.userId,
-      category:    "episodic",
-    }).catch(err => console.warn("[messages] embed failed (non-critical):", String(err)));
-  }
+  // Do NOT embed assistant replies into MemoryFragment. They stay in Message
+  // history for continuity only — never as citeable Knowledge/evidence.
+  // User-authored facts are extracted via /api/summarize with provenance rules.
 
   return Response.json({ id: message.id });
 }

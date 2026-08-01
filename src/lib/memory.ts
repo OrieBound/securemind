@@ -108,16 +108,17 @@ export async function retrieveSemanticMemory(
 
     const vectorStr = `[${vectorResult.join(",")}]`;
 
-    // All fragment types (episodic, semantic, document) are scoped to the workspace.
-    // LEFT JOIN Document so citation UI can show the source filename.
+    // Citeable Knowledge only: approved document chunks. Episodic/assistant
+    // fragments must never surface as Sources or prompt evidence.
     const hits = await db.$queryRawUnsafe<SemanticHit[]>(
       `SELECT mf.id, mf.content, mf.category, mf."documentId",
               d.name AS "documentName",
               1 - (mf.embedding <=> $1::vector) AS similarity
        FROM   "MemoryFragment" mf
-       LEFT JOIN "Document" d ON d.id = mf."documentId"
+       INNER JOIN "Document" d ON d.id = mf."documentId"
        WHERE  mf."userId"      = $2
          AND  mf."workspaceId" = $3
+         AND  mf.category      = 'document'
          AND  mf.embedding     IS NOT NULL
        ORDER BY mf.embedding <=> $1::vector
        LIMIT  $4`,
