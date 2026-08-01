@@ -109,6 +109,15 @@ type CitationRef = {
   similarity: number;
 };
 
+type CitationAuditRef = {
+  status: "n/a" | "declined" | "grounded" | "partial" | "uncited" | "invalid";
+  citedIndices: number[];
+  invalidIndices: number[];
+  unusedIndices: number[];
+  claimCount: number;
+  citedClaimCount: number;
+};
+
 type ChatMessage = {
   id: string;
   role: "user" | "assistant";
@@ -124,6 +133,8 @@ type ChatMessage = {
   citations?: CitationRef[];
   /** Set when the server found no usable evidence for an evidence-seeking question. */
   evidenceStatus?: "insufficient";
+  /** Post-stream citation coverage check. */
+  citationAudit?: CitationAuditRef;
 };
 
 type BookmarkEntry = {
@@ -1148,12 +1159,43 @@ const MessageBubble = memo(function MessageBubble({
             )}
           </div>
         )}
-        {(message.citations?.length || message.evidenceStatus === "insufficient") && !message.error && (
+        {(message.citations?.length || message.evidenceStatus === "insufficient" || message.citationAudit) && !message.error && (
           <div className="mt-2.5 space-y-1.5">
             {message.evidenceStatus === "insufficient" && !message.citations?.length && (
               <p className="flex items-center gap-1.5 text-[0.65rem] text-amber-200/50">
                 <ShieldAlert className="size-3 shrink-0" aria-hidden />
                 No retrieved evidence for this turn
+              </p>
+            )}
+            {message.citationAudit && message.citationAudit.status !== "n/a" && (
+              <p
+                className={cn(
+                  "flex items-center gap-1.5 text-[0.65rem]",
+                  message.citationAudit.status === "grounded" || message.citationAudit.status === "declined"
+                    ? "text-emerald-300/55"
+                    : message.citationAudit.status === "partial"
+                      ? "text-amber-200/55"
+                      : "text-red-300/60",
+                )}
+              >
+                {message.citationAudit.status === "grounded" && (
+                  <><ShieldCheck className="size-3 shrink-0" aria-hidden /> Claims cited against retrieved evidence</>
+                )}
+                {message.citationAudit.status === "declined" && (
+                  <><ShieldCheck className="size-3 shrink-0" aria-hidden /> Answer declined — evidence gap acknowledged</>
+                )}
+                {message.citationAudit.status === "partial" && (
+                  <><ShieldAlert className="size-3 shrink-0" aria-hidden />
+                    Partial citations — {message.citationAudit.citedClaimCount} of {message.citationAudit.claimCount} claims cited</>
+                )}
+                {message.citationAudit.status === "uncited" && (
+                  <><ShieldAlert className="size-3 shrink-0" aria-hidden /> Retrieved evidence was available but not cited</>
+                )}
+                {message.citationAudit.status === "invalid" && (
+                  <><ShieldAlert className="size-3 shrink-0" aria-hidden />
+                    Invalid citation{message.citationAudit.invalidIndices.length === 1 ? "" : "s"}{" "}
+                    {message.citationAudit.invalidIndices.map(n => `[${n}]`).join(", ")} — not in retrieved set</>
+                )}
               </p>
             )}
             {message.citations && message.citations.length > 0 && (
@@ -1162,17 +1204,33 @@ const MessageBubble = memo(function MessageBubble({
                   Sources
                 </p>
                 <ul className="space-y-1">
-                  {message.citations.map(c => (
-                    <li key={c.fragmentId} className="flex items-start gap-2 text-[0.68rem] text-white/45">
-                      <span className="shrink-0 font-mono text-indigo-300/70">[{c.index}]</span>
-                      <span className="min-w-0">
-                        <span className="text-white/55 font-medium">
-                          {c.documentName ?? (c.category === "document" ? "Document" : "Memory")}
+                  {message.citations.map(c => {
+                    const used = message.citationAudit?.citedIndices.includes(c.index);
+                    return (
+                      <li key={c.fragmentId} className="flex items-start gap-2 text-[0.68rem] text-white/45">
+                        <span className={cn(
+                          "shrink-0 font-mono",
+                          used ? "text-indigo-300/80" : "text-white/25",
+                        )}>
+                          [{c.index}]
                         </span>
-                        <span className="text-white/30"> — {c.preview}</span>
-                      </span>
-                    </li>
-                  ))}
+                        <span className="min-w-0">
+                          <span className="text-white/55 font-medium">
+                            {c.documentName ?? (c.category === "document" ? "Document" : "Memory")}
+                          </span>
+                          {message.citationAudit && (
+                            <span className={cn(
+                              "ml-1.5 text-[0.58rem] uppercase tracking-wide",
+                              used ? "text-emerald-300/45" : "text-white/20",
+                            )}>
+                              {used ? "cited" : "unused"}
+                            </span>
+                          )}
+                          <span className="text-white/30"> — {c.preview}</span>
+                        </span>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}
@@ -2629,12 +2687,18 @@ export function AppShell() {
               error?: string;
               route?: RouteInfo;
               citations?: CitationRef[];
+              citationAudit?: CitationAuditRef;
               evidence?: { status: "insufficient" };
               usage?: { promptTokens: number; completionTokens: number };
             };
             if (parsed.citations?.length) {
               setMessages(p => p.map(m =>
                 m.id === asstId ? { ...m, citations: parsed.citations } : m,
+              ));
+            }
+            if (parsed.citationAudit) {
+              setMessages(p => p.map(m =>
+                m.id === asstId ? { ...m, citationAudit: parsed.citationAudit } : m,
               ));
             }
             if (parsed.evidence?.status === "insufficient") {

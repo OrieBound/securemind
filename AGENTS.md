@@ -84,6 +84,7 @@ src/
     pii.ts                    ← detection, sensitivity tiers, safe terms, secrets
     pii.test.ts               ← detection + no-leak test suite
     evidence.ts               ← citation packaging + insufficient-evidence prompts
+    citation-audit.ts         ← post-answer [n] coverage / invalid-index checks
     memory.ts                 ← fragment storage + semantic retrieval
     documents.ts              ← extraction, server-side scrub, chunking
     tokens.ts                 ← token estimation + working memory selection
@@ -124,5 +125,5 @@ docs/adr/                     ← architecture decision records
 - Never reintroduce companion personalities, trait sliders, or a restore path for redacted values.
 
 ## Current status
-- **Working**: chat with streaming, complexity-tier routing, client-side redaction with pre-send review, sensitivity tiers, safe terms, hard-blocked secret detection, layered memory (working + summary + facts + pgvector), document ingest with server-side scrubbing, numbered citations from retrieved evidence, insufficient-evidence prompting when retrieval is empty, multi-workspace UI, markdown rendering, server-derived identity with tenant-scoped queries.
-- **Not implemented**: authentication, prompt-injection defenses for retrieved documents, claim-level citation enforcement (model is instructed to cite; output is not verified), any AWS service.
+- **Working**: chat with streaming, complexity-tier routing, client-side redaction with pre-send review, sensitivity tiers, safe terms, hard-blocked secret detection, layered memory (working + summary + facts + pgvector), document ingest with server-side scrubbing, numbered citations from retrieved evidence, post-answer citation audit (grounded / partial / uncited / invalid), insufficient-evidence prompting when retrieval is empty, multi-workspace UI, markdown rendering, server-derived identity with tenant-scoped queries.
+- **Not implemented**: authentication, prompt-injection defenses for retrieved documents, LLM-as-judge claim verification, any AWS service.

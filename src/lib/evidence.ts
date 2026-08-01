@@ -68,9 +68,11 @@ export function packageEvidence(hits: SemanticHit[]): {
     `\n\nRetrieved evidence (cite as [n] when you use a source):\n` +
     lines.join("\n") +
     `\n\nCitation rules:\n` +
-    `- When a claim rests on a retrieved source, append the matching [n] after it.\n` +
+    `- When a claim rests on a retrieved source, append the matching [n] after that claim.\n` +
     `- Do not invent source numbers. Only cite indices listed above.\n` +
-    `- If the evidence only partially covers the question, say what is missing.`;
+    `- Prefer one citation per factual sentence that draws on the evidence.\n` +
+    `- If the evidence only partially covers the question, say what is missing.\n` +
+    `- Your answer will be checked for missing or invented citations.`;
 
   return { citations, promptBlock };
 }

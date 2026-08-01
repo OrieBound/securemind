@@ -25,6 +25,7 @@ import {
   messageNeedsEvidence,
   packageEvidence,
 } from "@/lib/evidence";
+import { auditCitations } from "@/lib/citation-audit";
 import { db } from "@/lib/db";
 import { getIdentity } from "@/lib/identity";
 import type { ChatMessage } from "@/lib/models/types";
@@ -221,8 +222,11 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        const emit = (delta: string) =>
+        let fullAnswer = "";
+        const emit = (delta: string) => {
+          fullAnswer += delta;
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta })}\n\n`));
+        };
 
         let usageData: { promptTokens: number; completionTokens: number } | null = null;
 
@@ -247,6 +251,17 @@ export async function POST(req: NextRequest) {
           for await (const delta of streamOllamaChat(messages, model)) {
             emit(delta);
           }
+        }
+
+        // Deterministic citation coverage check against the evidence package.
+        if (citations.length > 0 && fullAnswer.trim()) {
+          const citationAudit = auditCitations(
+            fullAnswer,
+            citations.map(c => c.index),
+          );
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ citationAudit })}\n\n`),
+          );
         }
 
         // Emit exact token usage before DONE so the client can compute real costs
