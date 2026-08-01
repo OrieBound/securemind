@@ -94,7 +94,7 @@ export async function POST(req: NextRequest) {
   let content: string;
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
-    content = await extractText(buffer, mimeType);
+    content = await extractText(buffer, mimeType, file.name);
   } catch (err) {
     return NextResponse.json(
       { error: `Text extraction failed: ${String(err)}` },

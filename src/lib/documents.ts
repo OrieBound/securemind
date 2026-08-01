@@ -2,7 +2,7 @@
  * SecureMind document processing pipeline (Phase B).
  *
  * Workflow after a file is uploaded:
- *   1. Extract plain text from the file buffer (PDF → pdf-parse, text → UTF-8 decode)
+ *   1. Extract plain text (PDF → pdf-parse, images → Groq vision / stub, else UTF-8)
  *   2. Scrub PII (same patterns as chat) — only sanitized text is persisted
  *   3. Split the text into overlapping 1500-char chunks
  *   4. Embed each chunk via nomic-embed-text (Ollama, zero cost, 768 dims)
@@ -17,6 +17,7 @@ import { db } from "@/lib/db";
 import { embedText } from "@/lib/models/ollama";
 import { DEFAULT_SAFE_TERMS, scrubPII, type ScrubEvent } from "@/lib/pii";
 import { sanitizeRetrievedText } from "@/lib/prompt-guard";
+import { extractTextFromImage } from "@/lib/image-extract";
 
 export { MAX_FILE_BYTES } from "@/lib/documents/constants";
 
@@ -32,6 +33,10 @@ export const ACCEPTED_MIME_TYPES = [
   "text/x-typescript",
   "application/json",
   "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
 ];
 
 // Extension → MIME fallback (browsers sometimes send "application/octet-stream")
@@ -97,18 +102,18 @@ export function scrubDocumentText(raw: string): {
 
 /**
  * Extracts plain text from a file buffer.
+ * Images use Groq vision when available (then scrubbed at ingest).
  * PDFs use pdf-parse (dynamically imported to avoid Next.js bundling issues).
  * Everything else is decoded as UTF-8.
  */
-export async function extractText(buffer: Buffer, mimeType: string): Promise<string> {
+export async function extractText(
+  buffer: Buffer,
+  mimeType: string,
+  filename = "upload",
+): Promise<string> {
   let raw: string;
   if (mimeType.startsWith("image/")) {
-    // Images have no reliable text layer here — store a searchable stub so the
-    // file still appears in Knowledge. Vision chat uses the live attachment.
-    return (
-      `Image attachment (${mimeType}, ${buffer.length} bytes).\n` +
-      `No OCR text was extracted. The file is registered in this workspace's Knowledge library.`
-    );
+    return extractTextFromImage(buffer, mimeType, filename);
   }
   if (mimeType === "application/pdf") {
     // pdf-parse v1.x exports a single function directly — listed in serverExternalPackages

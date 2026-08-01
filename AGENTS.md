@@ -3,9 +3,9 @@
 > Read this fully before writing any code. These rules are non-negotiable.
 
 ## What this project is
-SecureMind is a privacy-first AI workspace with persistent memory and client-side sensitive-data redaction. The core value is the **redaction + memory + routing layer**, not the chat UI.
+SecureMind is a security-focused ops knowledge assistant: client-side sensitive-data redaction, workspace memory, Knowledge retrieval with citations, and complexity-tier model routing. The core value is the **redaction + memory + evidence layer**, not a companion chatbot UI.
 
-It is currently a **single-user personal project**. Authentication is not implemented. Do not describe it as production-ready, multi-tenant, or compliant.
+It is a **single-user personal project**. Default auth is `AUTH_MODE=local`. Optional Floci Cognito is for local experiments only. Do not describe it as production-ready, multi-tenant, or compliant.
 
 ## Tech stack (exact versions matter)
 - **Frontend**: Next.js 16 (App Router, Turbopack), TypeScript, Tailwind CSS v4, shadcn/ui
@@ -37,7 +37,7 @@ It is currently a **single-user personal project**. Authentication is not implem
 ### Sensitive data
 - Chat messages: detection runs **client-side** in `src/lib/pii.ts` before any message leaves the browser.
 - When anything is detected, the user sees a **pre-send review dialog**. There is no code path that transmits the unredacted text.
-- Document uploads: the same patterns run **server-side at ingest** via `scrubDocumentText()` in `src/lib/documents.ts` — after text extraction, before DB persist or embedding.
+- Document uploads: the same patterns run **server-side at ingest** via `scrubDocumentText()` in `src/lib/documents.ts` — after text extraction, before DB persist or embedding. Images go through `src/lib/image-extract.ts` (Groq vision when available, filename stub otherwise); extracted text is scrubbed the same way.
 - **There is no restore path, and none may be added.** Raw detected values are never written to the DB, `localStorage`, React state that outlives composition, logs, or model calls. A redaction record carries a category and sanitized context only.
 - False positives are handled *before* detection, never after:
   - **Sensitivity tiers** (`low` / `balanced` / `high` / `extreme`) select which pattern families run.
@@ -88,8 +88,8 @@ src/
     prompt-guard.ts           ← injection neutralization + evidence fencing
     memory.ts                 ← fragment storage + semantic retrieval
     documents.ts              ← extraction, server-side scrub, chunking
+    image-extract.ts          ← Groq vision → searchable text for image Knowledge
     tokens.ts                 ← token estimation + working memory selection
-    identity.ts               ← getIdentity — local / jwt-hs256 / Cognito JWKS
     models/
       types.ts                ← shared types (ChatMessage, ModelConfig, etc.)
       router.ts               ← complexity-tier model routing
@@ -123,10 +123,10 @@ docs/adr/                     ← architecture decision records
 - Never use `export const runtime = "edge"` on any API route.
 - Never commit `.env.local`, `.env`, or any file containing API keys.
 - Never use `datasourceUrl` in the `PrismaClient` constructor — use the PrismaPg adapter instead.
-- Never claim Cognito login UI, KMS, or Macie integration exists. Auth verification scaffolding and optional Bedrock streaming exist; full AWS productization does not.
+- Never claim KMS, Macie, or hosted production Cognito as product features. Floci Cognito login UI and optional Bedrock streaming exist for local/lab use only.
 - Never describe conversation "modes" as driving model choice — complexity tiers do.
 - Never reintroduce companion personalities, trait sliders, or a restore path for redacted values.
 
 ## Current status
-- **Working**: chat with streaming, complexity-tier routing, client-side redaction with pre-send review, sensitivity tiers, safe terms, hard-blocked secret detection, prompt-injection fencing/neutralization for retrieved evidence, layered memory (working + summary + facts + pgvector), document ingest with server-side scrubbing, numbered citations + post-answer citation audit, insufficient-evidence prompting, multi-workspace UI, optional Bedrock adapter, Floci Cognito login UI (cookie session; `npm run floci:cognito`), Docker Compose (Postgres+pgvector + Floci), GitHub Actions CI.
-- **Not implemented**: LLM-as-judge claim verification, KMS/Macie, production Cognito user pool provisioning (real AWS). Default without Cognito env remains `AUTH_MODE=local`.
+- **Working**: Investigate chat with streaming, complexity-tier routing, client-side redaction with pre-send review, sensitivity tiers, safe terms, hard-blocked secret detection, prompt-injection fencing for retrieved evidence, layered memory, Knowledge ingest (text/PDF/code + image vision extract when Groq is set), chat attachments into Knowledge, citations + citation audit, insufficient-evidence prompting, multi-workspace UI, optional Bedrock adapter, Floci Cognito login (cookie session), Docker Compose (optional Postgres + Floci), GitHub Actions CI.
+- **Not implemented / not claimed**: LLM-as-judge claim verification, KMS/Macie, real AWS Cognito as a hosted product path, production multi-tenant auth. Default without Cognito env remains `AUTH_MODE=local`.

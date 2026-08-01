@@ -1,12 +1,14 @@
 # SecureMind — product thesis & project criteria
 
+> **Note (historical):** Early framing for the project. The shipped product is an ops/security knowledge assistant (redaction, workspaces, Knowledge + citations). Prefer [`README.md`](../README.md) and [`AGENTS.md`](../AGENTS.md) for what exists today. Personality / companion language below is outdated.
+
 ## Thesis
 
-SecureMind is a **cloud-native adaptive intelligence workspace**. Its primary value is **transparent, governed memory and AI orchestration**, not outperforming frontier models on general knowledge.
+SecureMind’s primary value is **transparent, governed memory and AI orchestration**, not outperforming frontier models on general knowledge.
 
 **Elevator pitch (external):**
 
-> SecureMind is a security-first adaptive personal intelligence system with **persistent contextual memory**, **behavioral personalization**, **AI orchestration**, and **inspectable cognition** — not another generic chat wrapper.
+> SecureMind is a security-first ops knowledge assistant with **persistent contextual memory**, **client-side redaction**, **evidence-grounded answers**, and **inspectable retrieval** — not another generic chat wrapper.
 
 **One-line gate for scope:** Every feature should strengthen transparent memory, governed retrieval, security posture, or adaptive context. If it only adds raw chat novelty, defer it.
 
