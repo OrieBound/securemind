@@ -1,4 +1,8 @@
-export { decideTurn, modePromptInstructions } from "./decide-turn";
+export {
+  decideTurn,
+  modePromptInstructions,
+  needsOperationalPrompt,
+} from "./decide-turn";
 export { stripConversationalPrefixes, normalizeMessage } from "./normalize";
 export type {
   DecideTurnInput,

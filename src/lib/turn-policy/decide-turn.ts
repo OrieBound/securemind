@@ -9,8 +9,20 @@ import type { DecideTurnInput, TurnDecision, TurnMode } from "./types";
 const SOCIAL_ONLY_RE =
   /^(?:thanks(?:\s+that\s+helps)?|thank\s+you|thx|ok(?:ay)?|sounds?\s+good|got\s+it|cool|nice|sure|yep|yes|no|lol|haha|bye|nm|np|that\s+helps|that\s+makes\s+sense|let'?s\s+continue|how\s+are\s+you(?:\s+doing)?)\s*[!?.]*$/i;
 
+const CASUAL_TALK_RE =
+  /\b(?:just\s+want\s+to\s+talk|want\s+to\s+(?:chat|talk)(?:\s+to\s+you)?|be\s+my\s+friend|let'?s\s+(?:just\s+)?(?:chat|talk)|what\s+(?:are\s+you\s+thinking|do\s+you\s+feel)|i\s+had\s+a\s+long\s+day|tell\s+me\s+something\s+interesting)\b/i;
+
+const CORRECTION_RE =
+  /\b(?:you\s+said\s+that|not\s+me|i\s+didn'?t\s+say|that\s+was\s+(?:you|your)|shouldn'?t\s+have\s+(?:stored|cited|treated)|wrong(?:\s+memory)?)\b/i;
+
+const PROVENANCE_ASK_RE =
+  /\b(?:where\s+did\s+you\s+(?:learn|get)|where\s+did\s+that\s+come\s+from|how\s+do\s+you\s+know(?:\s+that)?|what'?s\s+your\s+source|where\s+did\s+you\s+hear)\b/i;
+
+const TOPIC_PERMISSION_RE =
+  /\b(?:not\s+relevant\s+to\s+(?:our|the)\s+conversation|just\s+want\s+to\s+talk\s+(?:to\s+you\s+)?about|without\s+connecting|don'?t\s+(?:need|want)\s+(?:cloud|ops|workspace))\b/i;
+
 const APP_HELP_RE =
-  /\b(?:how\s+do\s+i|where\s+(?:can|do)\s+i|what\s+does|explain)\b.{0,40}\b(?:upload|knowledge|safe\s*terms?|sensitivity|analytics|security\s+view|usage\s+view|cost\s+view|redact|citation|grounding|partial\s+grounding|investigate|workspace)\b/i;
+  /\b(?:how\s+do\s+i|where\s+(?:can|do)\s+i|what\s+does|explain)\b.{0,40}\b(?:upload|knowledge|safe\s*terms?|sensitivity|analytics|security\s+view|usage\s+view|cost\s+view|redact|citation|grounding|partial\s+grounding|investigate|workspace|security\s+dashboard)\b/i;
 
 const WORKSPACE_DEIXIS_RE =
   /\b(?:our|my|this\s+workspace|the\s+workspace|uploaded|runbook|postmortem|post-mortem|knowledge|document(?:s|ed)?|procedure|playbook|sop|incident\s+report)\b/i;
@@ -19,7 +31,7 @@ const INVESTIGATION_RE =
   /\b(?:what\s+(?:caused|probably\s+caused)|why\s+did|root\s+cause|investigate|compare|what\s+should\s+we|which\s+(?:control|controls)|outage|failed|failure|authentication\s+fail|timeout|rollback|blast\s+radius)\b/i;
 
 const GENERAL_KNOWLEDGE_RE =
-  /^(?:what\s+is|what'?s|explain|define|how\s+does|difference\s+between|compare)\b/i;
+  /^(?:what\s+is|what'?s|explain|define|how\s+does|how\s+do(?:es)?|difference\s+between|compare|tell\s+me\s+about|tell\s+me\s+something(?:\s+about)?)\b/i;
 
 const FOLLOW_UP_RE =
   /^(?:which\s+source|what\s+about|why\s+(?:does|is|did)|can\s+you\s+expand|expand\s+on|does\s+it\s+mention|and\s+the|the\s+second|more\s+detail|tell\s+me\s+more)\b/i;
@@ -28,6 +40,10 @@ const AMBIGUOUS_SHORT_RE =
   /^(?:what\s+about\s+security|is\s+this\s+correct|can\s+you\s+check(?:\s+that)?|what\s+happened|this\??|that\??)\s*[?!.]*$/i;
 
 const JOKE_RE = /\b(?:tell\s+me\s+a\s+joke|make\s+me\s+laugh)\b/i;
+
+/** Ops/security tokens that justify retrieval when the default path would otherwise stay general. */
+const OPS_TOPIC_RE =
+  /\b(?:iam|kms|vpc|cognito|s3|ec2|lambda|cloudwatch|guardduty|waf|tls|certificate|rotation|runbook|outage|deploy(?:ment)?|incident|firewall|security\s+group|\barn\b|aws|azure|gcp|oidc|oauth|mfa|encryption\s+at\s+rest)\b/i;
 
 function base(
   mode: TurnMode,
@@ -121,6 +137,34 @@ export function decideTurn(input: DecideTurnInput): TurnDecision {
     });
   }
 
+  if (CASUAL_TALK_RE.test(raw) || CASUAL_TALK_RE.test(body)) {
+    return base("social", "casual-talk", {
+      responseStyle: "social",
+      preferMicroTier: true,
+    });
+  }
+
+  if (CORRECTION_RE.test(raw) || CORRECTION_RE.test(body)) {
+    return base("social", "user-correction", {
+      responseStyle: "social",
+      preferMicroTier: true,
+    });
+  }
+
+  if (TOPIC_PERMISSION_RE.test(raw) || TOPIC_PERMISSION_RE.test(body)) {
+    return base("social", "topic-permission", {
+      responseStyle: "social",
+      preferMicroTier: true,
+    });
+  }
+
+  if (PROVENANCE_ASK_RE.test(raw) || PROVENANCE_ASK_RE.test(body)) {
+    return base("general", "provenance-ask", {
+      responseStyle: "concise_fact",
+      preferMicroTier: true,
+    });
+  }
+
   // ── App help ───────────────────────────────────────────────────────────────
   if (APP_HELP_RE.test(raw) || APP_HELP_RE.test(body)) {
     return base("app_help", "app-help", {
@@ -192,22 +236,12 @@ export function decideTurn(input: DecideTurnInput): TurnDecision {
   }
 
   // Short operational fragments ("KMS error?") — retrieve, do not suppress
-  if (body.length <= 64 && /[a-z0-9]/i.test(body) && /[?]/.test(body)) {
+  if (
+    body.length <= 64 &&
+    /[?]\s*$/.test(body) &&
+    OPS_TOPIC_RE.test(body)
+  ) {
     return base("investigation", "short-ops-query", {
-      shouldRetrieve: true,
-      retrievalQuery: body,
-      sourceScope: "workspace",
-      requiresCitations: true,
-      requiresWorkspaceEvidence: false, // may answer generally if no hits
-      showSourcesUi: true,
-      showGroundingBadge: true,
-      responseStyle: "investigation",
-    });
-  }
-
-  // Default: treat as potential workspace-relevant ops question
-  if (body.length >= 20) {
-    return base("investigation", "default-ops", {
       shouldRetrieve: true,
       retrievalQuery: body,
       sourceScope: "workspace",
@@ -215,6 +249,25 @@ export function decideTurn(input: DecideTurnInput): TurnDecision {
       requiresWorkspaceEvidence: false,
       showSourcesUi: true,
       showGroundingBadge: true,
+      responseStyle: "investigation",
+    });
+  }
+
+  // Default: follow the user's topic. Retrieve only when the message looks ops-scoped.
+  if (body.length >= 20) {
+    if (OPS_TOPIC_RE.test(body) || OPS_TOPIC_RE.test(raw)) {
+      return base("investigation", "default-ops-topic", {
+        shouldRetrieve: true,
+        retrievalQuery: body,
+        sourceScope: "workspace",
+        requiresCitations: true,
+        requiresWorkspaceEvidence: false,
+        showSourcesUi: true,
+        showGroundingBadge: true,
+        responseStyle: "concise_fact",
+      });
+    }
+    return base("general", "default-general", {
       responseStyle: "concise_fact",
     });
   }
@@ -225,25 +278,66 @@ export function decideTurn(input: DecideTurnInput): TurnDecision {
   });
 }
 
+/** True when operational workspace framing should be added to the system prompt. */
+export function needsOperationalPrompt(decision: TurnDecision): boolean {
+  return (
+    decision.shouldRetrieve ||
+    decision.mode === "investigation" ||
+    decision.mode === "workspace_grounded" ||
+    decision.mode === "grounded_follow_up" ||
+    (decision.mode === "attachment" && decision.sourceScope === "workspace")
+  );
+}
+
 /** Mode-specific instructions appended to the system prompt (never includes reasonCode). */
 export function modePromptInstructions(decision: TurnDecision): string {
+  if (decision.reasonCode === "user-correction") {
+    return (
+      `\n\nResponse mode — correction acknowledgement:\n` +
+      `- Acknowledge the correction in one or two short sentences.\n` +
+      `- State the corrected understanding clearly.\n` +
+      `- Do not defend the previous answer or append unsolicited extra facts.\n` +
+      `- Do not treat your earlier reply as something the user said or as a source.\n` +
+      `- Good: "You're right—I said it, not you. I shouldn't have treated my earlier answer as one of your memories."`
+    );
+  }
+
+  if (decision.reasonCode === "provenance-ask") {
+    return (
+      `\n\nResponse mode — provenance honesty:\n` +
+      `- If the prior answer used general knowledge, say so plainly.\n` +
+      `- Do not invent a document, Memory, or "prior exchange" citation.\n` +
+      `- Do not claim the user taught you the fact unless they actually stated it.\n` +
+      `- Good: "That came from general model knowledge, not from your uploaded Knowledge or something you told me earlier."`
+    );
+  }
+
+  if (decision.reasonCode === "topic-permission" || decision.reasonCode === "casual-talk") {
+    return (
+      `\n\nResponse mode — casual conversation:\n` +
+      `- Follow the user's topic; do not redirect to cloud operations or the workspace.\n` +
+      `- One or two natural sentences. No headings, Sources, or product pitch.\n` +
+      `- If they want friendship/chat: warm and approachable without claiming to be a human friend or exclusive companion.\n` +
+      `- Good: "Of course. What's on your mind?" / "That's completely fine—we can talk about that without connecting it to the workspace." / "I'm happy to chat with you in a relaxed way. What do you feel like talking about?"`
+    );
+  }
+
   switch (decision.responseStyle) {
     case "social":
       return (
         `\n\nResponse mode — conversational greeting or acknowledgement:\n` +
         `- Reply like a calm colleague: one short, natural sentence (two max).\n` +
-        `- Do NOT narrate or diagnose the user's message ` +
-        `(avoid "It seems like you're just saying hello", "I see this is a greeting", etc.).\n` +
-        `- Do NOT mention documents, Knowledge, sources, cloud operations framing, or security topics unless they asked.\n` +
-        `- No headings, lists, citations, or investigation template.\n` +
-        `- Good: "Hey — what would you like to dig into?" / "You're welcome." / "Sounds good."\n` +
-        `- Bad: explaining that they greeted you, or pitching SecureMind features unprompted.`
+        `- Do NOT narrate or diagnose the user's message.\n` +
+        `- Do NOT mention documents, Knowledge, sources, cloud operations, or security topics unless they asked.\n` +
+        `- Do not end with a forced "How can I help?" or workspace pitch.\n` +
+        `- No headings, lists, or citations.\n` +
+        `- Good: "Hey." / "You're welcome." / "Sounds good." / "Of course. What's on your mind?"`
       );
     case "clarify":
       return (
         `\n\nResponse mode — clarification:\n` +
         `- Ask one focused clarifying question.\n` +
-        `- Do not speculate at length or retrieve-style narrate.`
+        `- Do not speculate at length.`
       );
     case "investigation":
       return (
@@ -258,9 +352,11 @@ export function modePromptInstructions(decision: TurnDecision): string {
       if (decision.mode === "general") {
         return (
           `\n\nResponse mode — general knowledge:\n` +
-          `- Answer from general cloud/security knowledge; do not imply the answer came from workspace documents.\n` +
-          `- No workspace citations.\n` +
-          `- You may briefly offer to compare the explanation with this workspace's Knowledge if relevant.`
+          `- Answer the user's question directly from general model knowledge.\n` +
+          `- Do not mention the workspace, cloud operations mission, or Knowledge unless asked.\n` +
+          `- Do not imply the answer came from uploaded documents or user memory.\n` +
+          `- Keep it to one to three short paragraphs unless they ask for more.\n` +
+          `- Sometimes answer and stop — do not force a follow-up question.`
         );
       }
       if (decision.mode === "app_help") {
@@ -273,7 +369,8 @@ export function modePromptInstructions(decision: TurnDecision): string {
       return (
         `\n\nResponse mode — concise factual:\n` +
         `- Lead with the answer; explain only as needed.\n` +
-        `- Cite workspace evidence only when you use it.`
+        `- Cite workspace evidence only when you use it.\n` +
+        `- Match response length to the request; do not over-answer after a simple correction.`
       );
   }
 }

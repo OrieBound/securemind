@@ -33,6 +33,7 @@ describe("decideTurn matrix", () => {
       "Good morning, team.",
       "Thanks, that helps.",
       "Tell me a joke.",
+      "I just want to talk to you.",
     ]) {
       expectNoRetrieval(m);
       expect(decideTurn({ message: m }).mode).toMatch(/social/);
@@ -63,6 +64,12 @@ describe("decideTurn matrix", () => {
     expect(d.shouldRetrieve).toBe(false);
     expect(d.mode).toBe("general");
     expect(d.showSourcesUi).toBe(false);
+  });
+
+  it("tell me about X skips workspace retrieval", () => {
+    const d = decideTurn({ message: "Tell me about lava." });
+    expect(d.shouldRetrieve).toBe(false);
+    expect(d.mode).toBe("general");
   });
 
   it("workspace KMS runbook retrieves", () => {

@@ -32,7 +32,11 @@ import { getIdentity, IdentityError } from "@/lib/identity";
 import { recordInferenceEvent } from "@/lib/analytics/write";
 import type { GroundingStatus } from "@/lib/analytics/types";
 import type { ChatMessage } from "@/lib/models/types";
-import { decideTurn, modePromptInstructions } from "@/lib/turn-policy/decide-turn";
+import {
+  decideTurn,
+  modePromptInstructions,
+  needsOperationalPrompt,
+} from "@/lib/turn-policy/decide-turn";
 
 // Must be nodejs — edge runtime cannot reach localhost (Ollama)
 export const runtime = "nodejs";
@@ -184,18 +188,22 @@ export async function POST(req: NextRequest) {
   const candidateCount = candidateHits.length;
   const evidenceCount = evidenceHits.length;
 
-  // Social turns get a light prompt — full ops grounding rules make Micro models
-  // sound like they're diagnosing the greeting.
+  // Base conversational prompt always; operational workspace framing only when needed.
+  const operational = needsOperationalPrompt(turn);
   let systemPrompt =
-    turn.mode === "social"
-      ? `You are SecureMind, a helpful workspace assistant.` + modePromptInstructions(turn)
-      : buildSystemPrompt({ workspaceName, workspaceContext }) + modePromptInstructions(turn);
+    buildSystemPrompt({
+      workspaceName,
+      workspaceContext,
+      includeOperational: operational,
+    }) + modePromptInstructions(turn);
 
   const knownFacts = Object.entries(facts).filter(([, v]) => v);
-  if (knownFacts.length > 0 && turn.mode !== "social") {
+  // Skip injecting remembered facts on social/general turns — prevents treating
+  // assistant explanations or casual topics as durable user context.
+  if (knownFacts.length > 0 && operational) {
     const lines = knownFacts.map(([k, v]) => `- ${k}: ${v}`).join("\n");
-    systemPrompt += `\n\nEstablished details for this workspace, from earlier conversation. ` +
-      `Treat these as reported by the user rather than verified:\n${lines}`;
+    systemPrompt += `\n\nEstablished details reported by the user earlier. ` +
+      `Treat these as user-stated, not verified, and never as external sources:\n${lines}`;
   }
   if (sessionSummary.trim() && turn.mode !== "social") {
     systemPrompt += `\n\nConversation so far:\n${sessionSummary}`;
@@ -264,7 +272,9 @@ export async function POST(req: NextRequest) {
         // Do not preview unused candidate sources. Citations are emitted after
         // the answer is audited (used-only), except insufficient-evidence notice.
         if (turn.shouldRetrieve && citations.length === 0) {
-          groundingStatus = turn.requiresWorkspaceEvidence ? "declined" : "n/a";
+          groundingStatus = turn.requiresWorkspaceEvidence
+            ? "insufficient_evidence"
+            : "not_applicable";
           insufficientEvidence = turn.requiresWorkspaceEvidence;
           if (turn.requiresWorkspaceEvidence) {
             controller.enqueue(
@@ -277,7 +287,7 @@ export async function POST(req: NextRequest) {
             );
           }
         } else if (!turn.shouldRetrieve) {
-          groundingStatus = "n/a";
+          groundingStatus = "not_applicable";
         }
 
         let fullAnswer = "";
@@ -337,7 +347,7 @@ export async function POST(req: NextRequest) {
             );
           }
         } else if (!groundingStatus) {
-          groundingStatus = "n/a";
+          groundingStatus = "not_applicable";
         }
 
         // Emit exact token usage before DONE so the client can compute real costs
