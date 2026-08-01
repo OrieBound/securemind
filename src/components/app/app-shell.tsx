@@ -142,12 +142,14 @@ type ChatMessage = {
   error?: string;
   images?: string[];   // base64 data URLs for inline image display
   routeInfo?: RouteInfo;
-  /** Retrieved sources for this turn — from the chat SSE `citations` event. */
+  /** Retrieved sources for this turn — used citations only. */
   citations?: CitationRef[];
   /** Set when the server found no usable evidence for an evidence-seeking question. */
   evidenceStatus?: "insufficient";
   /** Post-stream citation coverage check. */
   citationAudit?: CitationAuditRef;
+  /** When false, hide grounding badge (social / general turns). */
+  showGroundingBadge?: boolean;
 };
 
 type BookmarkEntry = {
@@ -1172,15 +1174,15 @@ const MessageBubble = memo(function MessageBubble({
             )}
           </div>
         )}
-        {(message.citations?.length || message.evidenceStatus === "insufficient" || message.citationAudit) && !message.error && (
+        {(message.citations?.length || message.evidenceStatus === "insufficient" || (message.showGroundingBadge !== false && message.citationAudit)) && !message.error && (
           <div className="mt-2.5 space-y-1.5">
             {message.evidenceStatus === "insufficient" && !message.citations?.length && (
               <p className="flex items-center gap-1.5 text-[0.65rem] text-amber-200/50">
                 <ShieldAlert className="size-3 shrink-0" aria-hidden />
-                No retrieved evidence for this turn
+                No relevant workspace Knowledge for this question
               </p>
             )}
-            {message.citationAudit && message.citationAudit.status !== "n/a" && (
+            {message.showGroundingBadge !== false && message.citationAudit && message.citationAudit.status !== "n/a" && (
               <p
                 className={cn(
                   "flex items-center gap-1.5 text-[0.65rem]",
@@ -1217,33 +1219,19 @@ const MessageBubble = memo(function MessageBubble({
                   Sources
                 </p>
                 <ul className="space-y-1">
-                  {message.citations.map(c => {
-                    const used = message.citationAudit?.citedIndices.includes(c.index);
-                    return (
+                  {message.citations.map(c => (
                       <li key={c.fragmentId} className="flex items-start gap-2 text-[0.68rem] text-white/45">
-                        <span className={cn(
-                          "shrink-0 font-mono",
-                          used ? "text-indigo-300/80" : "text-white/25",
-                        )}>
+                        <span className="shrink-0 font-mono text-indigo-300/80">
                           [{c.index}]
                         </span>
                         <span className="min-w-0">
                           <span className="text-white/55 font-medium">
                             {c.documentName ?? (c.category === "document" ? "Document" : "Memory")}
                           </span>
-                          {message.citationAudit && (
-                            <span className={cn(
-                              "ml-1.5 text-[0.58rem] uppercase tracking-wide",
-                              used ? "text-emerald-300/45" : "text-white/20",
-                            )}>
-                              {used ? "cited" : "unused"}
-                            </span>
-                          )}
                           <span className="text-white/30"> — {c.preview}</span>
                         </span>
                       </li>
-                    );
-                  })}
+                  ))}
                 </ul>
               </div>
             )}
@@ -2712,6 +2700,16 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
             .slice(summarizedCountRef.current)
             .map(m => ({ role: m.role, content: m.content })),
           lastTier: lastRouteInfo?.mode ?? null,
+          priorTurnHadCitations: Boolean(
+            [...messages].reverse().find(m => m.role === "assistant")?.citations?.length,
+          ),
+          priorTurnWasGrounded: (() => {
+            const last = [...messages].reverse().find(m => m.role === "assistant");
+            return Boolean(
+              last?.citations?.length ||
+              (last?.citationAudit && last.citationAudit.status !== "n/a"),
+            );
+          })(),
         }),
         signal: ctrl.signal,
       });
@@ -2746,6 +2744,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
               citations?: CitationRef[];
               citationAudit?: CitationAuditRef;
               evidence?: { status: "insufficient" };
+              showGroundingBadge?: boolean;
               usage?: { promptTokens: number; completionTokens: number };
             };
             if (parsed.citations?.length) {
@@ -2755,12 +2754,24 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
             }
             if (parsed.citationAudit) {
               setMessages(p => p.map(m =>
-                m.id === asstId ? { ...m, citationAudit: parsed.citationAudit } : m,
+                m.id === asstId
+                  ? {
+                    ...m,
+                    citationAudit: parsed.showGroundingBadge === false ? undefined : parsed.citationAudit,
+                    showGroundingBadge: parsed.showGroundingBadge !== false,
+                  }
+                  : m,
               ));
             }
             if (parsed.evidence?.status === "insufficient") {
               setMessages(p => p.map(m =>
-                m.id === asstId ? { ...m, evidenceStatus: "insufficient" } : m,
+                m.id === asstId
+                  ? {
+                    ...m,
+                    evidenceStatus: "insufficient",
+                    showGroundingBadge: parsed.showGroundingBadge !== false,
+                  }
+                  : m,
               ));
             }
             if (parsed.route) {

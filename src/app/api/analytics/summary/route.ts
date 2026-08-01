@@ -30,10 +30,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
   }
 
-  const summary = await getEvidenceRailSummaries({
-    userId,
-    range,
-    workspaceId: scope.workspaceId,
-  });
-  return NextResponse.json(summary);
+  try {
+    const summary = await getEvidenceRailSummaries({
+      userId,
+      range,
+      workspaceId: scope.workspaceId,
+    });
+    return NextResponse.json(summary);
+  } catch (err) {
+    console.error("[analytics/summary] GET failed:", err);
+    return NextResponse.json(
+      { error: "Failed to load analytics summary. Restart the dev server after schema changes." },
+      { status: 500 },
+    );
+  }
 }

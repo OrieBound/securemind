@@ -58,7 +58,11 @@ export function isTrivialMessage(message: string, hasImages = false): boolean {
   if (/^(thanks|thank you|thx|ok|okay|k|got it|cool|yes|no|sure|lol|haha|yep|nice|bye|nm|np)(\s+(thanks|ok|okay|cool|nice|sure))*\b[!?.]*$/i.test(m)) {
     return true;
   }
-  if (/^(hey|hi|hello)\b[!?.]*$/i.test(m) && m.length <= 20) {
+  // Greetings with optional short filler ("hello there", "hi sir", "hey team!")
+  if (
+    m.length <= 48 &&
+    /^(hey|hi|hello|howdy|good\s+(morning|afternoon|evening))\b([\s,]+\w+){0,4}\s*[!?.]*$/i.test(m)
+  ) {
     return true;
   }
   return false;

@@ -24,8 +24,19 @@ export type SemanticHit = {
   documentName?: string | null;
 };
 
-// Minimum similarity threshold — hits below this are too noisy to be useful
-const MIN_SIMILARITY = 0.35;
+/**
+ * Minimum cosine similarity for a chunk to enter the model prompt as evidence.
+ * Candidates may be fetched with a slightly lower floor for diagnostics later;
+ * prompt inclusion uses this calibrated threshold.
+ */
+export const EVIDENCE_MIN_SIMILARITY = 0.5;
+/** @deprecated use EVIDENCE_MIN_SIMILARITY */
+const MIN_SIMILARITY = EVIDENCE_MIN_SIMILARITY;
+
+/** Max fragments fetched from pgvector before evidence selection. */
+export const RETRIEVAL_CANDIDATE_LIMIT = 10;
+/** Max fragments passed into the final prompt after threshold + dedup. */
+export const EVIDENCE_PROMPT_LIMIT = 4;
 
 /**
  * Embeds `content` and stores it as a MemoryFragment scoped to a workspace.
@@ -81,7 +92,7 @@ export async function retrieveSemanticMemory(
   query:       string,
   workspaceId: string,
   userId = "local",
-  limit  = 6,
+  limit  = RETRIEVAL_CANDIDATE_LIMIT,
 ): Promise<SemanticHit[]> {
   try {
     // Race against a timeout so a slow Ollama embed never delays the chat response

@@ -8,7 +8,9 @@
  */
 
 import type { SemanticHit } from "@/lib/memory";
+import { EVIDENCE_PROMPT_LIMIT } from "@/lib/memory";
 import { fenceRetrievedChunk, untrustedEvidenceRules } from "@/lib/prompt-guard";
+import { decideTurn } from "@/lib/turn-policy/decide-turn";
 
 export type Citation = {
   /** 1-based index matching [n] markers in the prompt / answer. */
@@ -36,6 +38,29 @@ function sourceLabel(hit: SemanticHit): string {
   if (hit.category === "document") return "document chunk";
   if (hit.category === "semantic") return "workspace memory";
   return "prior exchange";
+}
+
+/**
+ * Select prompt evidence from retrieval candidates: threshold already applied
+ * by retrieveSemanticMemory; prefer diverse documents and cap count.
+ */
+export function selectEvidenceForPrompt(
+  hits: SemanticHit[],
+  limit = EVIDENCE_PROMPT_LIMIT,
+): SemanticHit[] {
+  const selected: SemanticHit[] = [];
+  const docCounts = new Map<string, number>();
+
+  for (const hit of hits) {
+    if (selected.length >= limit) break;
+    if (hit.documentId) {
+      const n = docCounts.get(hit.documentId) ?? 0;
+      if (n >= 2) continue;
+      docCounts.set(hit.documentId, n + 1);
+    }
+    selected.push(hit);
+  }
+  return selected;
 }
 
 /**
@@ -74,42 +99,45 @@ export function packageEvidence(hits: SemanticHit[]): {
     `- Do not invent source numbers. Only cite indices listed above.\n` +
     `- Prefer one citation per factual sentence that draws on the evidence.\n` +
     `- If the evidence only partially covers the question, say what is missing.\n` +
-    `- Your answer will be checked for missing or invented citations.`;
+    `- Your answer will be checked for missing or invented citations.\n` +
+    `- Never narrate the retrieval process to the user.`;
 
   return { citations, promptBlock };
 }
 
 /**
- * Extra system-prompt instruction when this turn has no retrieved evidence.
- * Skipped for trivial messages so greetings stay natural.
+ * Extra system-prompt instruction when workspace evidence was sought but none
+ * was relevant. Skipped for social / general / app-help turns.
  */
-export function insufficientEvidenceBlock(needsEvidence: boolean): string {
-  if (!needsEvidence) return "";
+export function insufficientEvidenceBlock(opts: {
+  soughtEvidence: boolean;
+  requiresWorkspaceEvidence: boolean;
+}): string {
+  if (!opts.soughtEvidence) return "";
+  if (opts.requiresWorkspaceEvidence) {
+    return (
+      `\n\nNo sufficiently relevant workspace Knowledge was found for this turn.\n` +
+      `Say that the available workspace Knowledge does not support a confident answer, ` +
+      `name what would help (document, log, or detail), and do not invent a cause.\n` +
+      `You may offer clearly labeled general guidance separately from workspace facts.\n` +
+      `Do not cite unrelated material.`
+    );
+  }
   return (
-    `\n\nNo retrieved evidence was found for this turn ` +
-    `(no sufficiently similar document chunks or memory fragments).\n` +
-    `If the question depends on workspace documents, runbooks, or prior ` +
-    `investigations, say you lack sufficient evidence and name what would help ` +
-    `(for example: which document to upload, or which system/env details). ` +
-    `Do not invent specifics to fill the gap.`
+    `\n\nNo sufficiently relevant workspace Knowledge was retrieved for this turn.\n` +
+    `You may answer with general guidance when appropriate, but do not imply it ` +
+    `came from this workspace's documents. Do not invent workspace-specific facts.`
   );
 }
 
 /**
- * Heuristic: does this user message look like it needs grounded evidence?
- * Trivial / micro turns (greetings, acks) should not force the insufficient-
- * evidence speech.
+ * @deprecated Prefer decideTurn(). Delegates to turn policy for compatibility.
  */
 export function messageNeedsEvidence(
   message: string,
   opts?: { isTrivial?: boolean },
 ): boolean {
   if (opts?.isTrivial) return false;
-  const t = message.trim();
-  if (t.length < 12) return false;
-  // Short chitchat
-  if (/^(hi|hello|hey|thanks|thank you|ok|okay|yes|no|yep|nope)\b/i.test(t) && t.length < 40) {
-    return false;
-  }
-  return true;
+  const d = decideTurn({ message });
+  return d.shouldRetrieve || d.requiresWorkspaceEvidence;
 }

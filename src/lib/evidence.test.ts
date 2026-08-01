@@ -54,6 +54,7 @@ describe("messageNeedsEvidence", () => {
 
   it("skips short greetings", () => {
     expect(messageNeedsEvidence("thanks")).toBe(false);
+    expect(messageNeedsEvidence("Hello there sir!")).toBe(false);
   });
 
   it("flags ops questions", () => {
@@ -64,13 +65,21 @@ describe("messageNeedsEvidence", () => {
 });
 
 describe("insufficientEvidenceBlock", () => {
-  it("is empty when evidence is not required", () => {
-    expect(insufficientEvidenceBlock(false)).toBe("");
+  it("is empty when evidence was not sought", () => {
+    expect(
+      insufficientEvidenceBlock({
+        soughtEvidence: false,
+        requiresWorkspaceEvidence: false,
+      }),
+    ).toBe("");
   });
 
-  it("instructs the model not to invent when evidence is required", () => {
-    const block = insufficientEvidenceBlock(true);
-    expect(block).toMatch(/lack sufficient evidence/i);
+  it("instructs the model not to invent when workspace evidence is required", () => {
+    const block = insufficientEvidenceBlock({
+      soughtEvidence: true,
+      requiresWorkspaceEvidence: true,
+    });
+    expect(block).toMatch(/does not support a confident answer/i);
     expect(block).toMatch(/Do not invent/i);
   });
 });

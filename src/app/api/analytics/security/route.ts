@@ -41,12 +41,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
   }
 
-  const summary = await getSecuritySummary({
-    userId,
-    range,
-    workspaceId: scope.workspaceId,
-  });
-  return NextResponse.json(summary);
+  try {
+    const summary = await getSecuritySummary({
+      userId,
+      range,
+      workspaceId: scope.workspaceId,
+    });
+    return NextResponse.json(summary);
+  } catch (err) {
+    console.error("[analytics/security] GET failed:", err);
+    return NextResponse.json(
+      { error: "Failed to load security analytics. Restart the dev server after schema changes." },
+      { status: 500 },
+    );
+  }
 }
 
 /**

@@ -213,6 +213,16 @@ model InferenceEvent {
   groundingStatus   String?  // grounded | partial | uncited | invalid | declined | n/a
   estimatedCostUsd  Float?
   pricingVersion    String?
+  // Turn-policy telemetry (sanitized metadata only — no prompts/chunks)
+  turnMode              String?
+  retrievalAttempted    Boolean  @default(false)
+  retrievalReasonCode   String?
+  candidateCount        Int      @default(0)
+  evidenceCount         Int      @default(0)
+  sourcesCited          Int      @default(0)
+  retrievalMs           Int?
+  insufficientEvidence  Boolean  @default(false)
+  attachmentUsed        Boolean  @default(false)
 
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
 
@@ -220,4 +230,5 @@ model InferenceEvent {
   @@index([userId, workspaceId, at])
   @@index([userId, model])
   @@index([userId, groundingStatus])
+  @@index([userId, turnMode])
 }

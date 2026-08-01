@@ -26,10 +26,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
   }
 
-  const summary = await getUsageSummary({
-    userId,
-    range,
-    workspaceId: scope.workspaceId,
-  });
-  return NextResponse.json(summary);
+  try {
+    const summary = await getUsageSummary({
+      userId,
+      range,
+      workspaceId: scope.workspaceId,
+    });
+    return NextResponse.json(summary);
+  } catch (err) {
+    console.error("[analytics/usage] GET failed:", err);
+    return NextResponse.json(
+      { error: "Failed to load usage analytics. Restart the dev server after schema changes." },
+      { status: 500 },
+    );
+  }
 }

@@ -64,6 +64,15 @@ export type InferenceEventInput = {
   retrievalHitCount?: number;
   citationCount?: number;
   groundingStatus?: GroundingStatus | null;
+  turnMode?: string | null;
+  retrievalAttempted?: boolean;
+  retrievalReasonCode?: string | null;
+  candidateCount?: number;
+  evidenceCount?: number;
+  sourcesCited?: number;
+  retrievalMs?: number | null;
+  insufficientEvidence?: boolean;
+  attachmentUsed?: boolean;
 };
 
 export async function recordInferenceEvent(input: InferenceEventInput): Promise<void> {
@@ -94,6 +103,15 @@ export async function recordInferenceEvent(input: InferenceEventInput): Promise<
       groundingStatus: input.groundingStatus ?? null,
       estimatedCostUsd,
       pricingVersion,
+      turnMode: input.turnMode ?? null,
+      retrievalAttempted: input.retrievalAttempted ?? false,
+      retrievalReasonCode: input.retrievalReasonCode ?? null,
+      candidateCount: input.candidateCount ?? 0,
+      evidenceCount: input.evidenceCount ?? 0,
+      sourcesCited: input.sourcesCited ?? 0,
+      retrievalMs: input.retrievalMs ?? null,
+      insufficientEvidence: input.insufficientEvidence ?? false,
+      attachmentUsed: input.attachmentUsed ?? false,
     },
   });
 }

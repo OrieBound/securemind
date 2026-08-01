@@ -20,11 +20,11 @@ import { routeModel, buildSystemPrompt, getCostTier, DEFAULT_TIER } from "@/lib/
 import { streamChat } from "@/lib/models/provider";
 import { routeMessage } from "@/lib/models/route-message";
 import { selectWorkingMemory } from "@/lib/tokens";
-import { retrieveSemanticMemory } from "@/lib/memory";
+import { RETRIEVAL_CANDIDATE_LIMIT, retrieveSemanticMemory } from "@/lib/memory";
 import {
   insufficientEvidenceBlock,
-  messageNeedsEvidence,
   packageEvidence,
+  selectEvidenceForPrompt,
 } from "@/lib/evidence";
 import { auditCitations } from "@/lib/citation-audit";
 import { db } from "@/lib/db";
@@ -32,6 +32,7 @@ import { getIdentity, IdentityError } from "@/lib/identity";
 import { recordInferenceEvent } from "@/lib/analytics/write";
 import type { GroundingStatus } from "@/lib/analytics/types";
 import type { ChatMessage } from "@/lib/models/types";
+import { decideTurn, modePromptInstructions } from "@/lib/turn-policy/decide-turn";
 
 // Must be nodejs — edge runtime cannot reach localhost (Ollama)
 export const runtime = "nodejs";
@@ -50,6 +51,9 @@ type ChatRequest = {
   modelOverrides?: Record<string, string>; // per-tier model overrides set by the user in the UI
   /** Previous turn's complexity tier — enables thread stickiness */
   lastTier?: string | null;
+  /** Prior assistant turn exposed citations (for grounded follow-ups). */
+  priorTurnHadCitations?: boolean;
+  priorTurnWasGrounded?: boolean;
 };
 
 export async function POST(req: NextRequest) {
@@ -80,6 +84,8 @@ export async function POST(req: NextRequest) {
     facts = {},
     modelOverrides = {},
     lastTier = null,
+    priorTurnHadCitations = false,
+    priorTurnWasGrounded = false,
   } = body;
 
   // Use vision-capable model when images are present
@@ -89,6 +95,14 @@ export async function POST(req: NextRequest) {
   if (!message?.trim()) {
     return Response.json({ error: "message is required" }, { status: 422 });
   }
+
+  const turn = decideTurn({
+    message,
+    hasImages,
+    hasAttachments: hasImages,
+    priorTurnHadCitations: Boolean(priorTurnHadCitations),
+    priorTurnWasGrounded: Boolean(priorTurnWasGrounded),
+  });
 
   // The workspace record feeds the system prompt and scopes retrieval, so it
   // must be resolved through the caller's own rows — an id alone is not
@@ -115,9 +129,8 @@ export async function POST(req: NextRequest) {
     fallback: mode,
     hasImages,
   });
-  let activeMode = routeDecision.tier;
-  const wasAutoRouted = routeDecision.wasAuto;
-  const isTrivial = routeDecision.isTrivial;
+  let activeMode = turn.preferMicroTier ? "Micro" : routeDecision.tier;
+  const wasAutoRouted = routeDecision.wasAuto || turn.preferMicroTier;
 
   const { model: routedModel, provider: routedProvider } = routeModel("chat", activeMode);
   // Vision requests always go to Groq's multimodal model regardless of classified mode
@@ -155,36 +168,47 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // L3: Semantic memory retrieval — find past exchanges and document chunks
-  // relevant to this message. Runs concurrently with token budget selection;
-  // silently skips if Ollama is down.
-  const [recentHistory, semanticHits] = await Promise.all([
+  // L3: Semantic retrieval — only when turn policy says so. Silent on failure.
+  const retrievalQuery = turn.retrievalQuery?.trim() || message;
+  const retrievalStarted = Date.now();
+  const [recentHistory, candidateHits] = await Promise.all([
     Promise.resolve(selectWorkingMemory(history, 2500) as ChatMessage[]),
-    workspaceId
-      ? retrieveSemanticMemory(message, workspaceId, userId, 5)
+    workspaceId && turn.shouldRetrieve
+      ? retrieveSemanticMemory(retrievalQuery, workspaceId, userId, RETRIEVAL_CANDIDATE_LIMIT)
       : Promise.resolve([]),
   ]);
+  const retrievalMs = turn.shouldRetrieve ? Date.now() - retrievalStarted : null;
+  const evidenceHits = turn.shouldRetrieve
+    ? selectEvidenceForPrompt(candidateHits)
+    : [];
+  const candidateCount = candidateHits.length;
+  const evidenceCount = evidenceHits.length;
 
   let systemPrompt = buildSystemPrompt({ workspaceName, workspaceContext });
+  systemPrompt += modePromptInstructions(turn);
 
   const knownFacts = Object.entries(facts).filter(([, v]) => v);
-  if (knownFacts.length > 0) {
+  if (knownFacts.length > 0 && turn.mode !== "social") {
     const lines = knownFacts.map(([k, v]) => `- ${k}: ${v}`).join("\n");
     systemPrompt += `\n\nEstablished details for this workspace, from earlier conversation. ` +
       `Treat these as reported by the user rather than verified:\n${lines}`;
   }
-  if (sessionSummary.trim()) {
+  if (sessionSummary.trim() && turn.mode !== "social") {
     systemPrompt += `\n\nConversation so far:\n${sessionSummary}`;
   }
-  // Numbered evidence for citations; when empty, push insufficient-evidence
-  // language so fabrication is the expensive path for ops questions.
-  const { citations, promptBlock } = packageEvidence(semanticHits);
+
+  const { citations: promptCitations, promptBlock } = turn.shouldRetrieve
+    ? packageEvidence(evidenceHits)
+    : { citations: [] as ReturnType<typeof packageEvidence>["citations"], promptBlock: "" };
+  // Citations sent to the UI start as the prompt set; after audit we may filter to used-only.
+  let citations = promptCitations;
   if (promptBlock) {
     systemPrompt += promptBlock;
-  } else {
-    systemPrompt += insufficientEvidenceBlock(
-      messageNeedsEvidence(message, { isTrivial }),
-    );
+  } else if (turn.shouldRetrieve) {
+    systemPrompt += insufficientEvidenceBlock({
+      soughtEvidence: true,
+      requiresWorkspaceEvidence: turn.requiresWorkspaceEvidence,
+    });
   }
 
   // Vision array format when images are attached.
@@ -213,6 +237,8 @@ export async function POST(req: NextRequest) {
       };
       let groundingStatus: GroundingStatus | null = null;
       let status: "ok" | "error" | "aborted" = "ok";
+      let sourcesCited = 0;
+      let insufficientEvidence = false;
 
       try {
         // Emit routing metadata first so the client knows provider + model
@@ -225,21 +251,28 @@ export async function POST(req: NextRequest) {
             isVision: hasImages,
             wasAutoRouted,
             costTier: getCostTier(actualProvider, model),
+            turnMode: turn.mode,
           },
         };
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(routeMeta)}\n\n`));
 
-        if (citations.length > 0) {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ citations })}\n\n`),
-          );
-        } else if (messageNeedsEvidence(message, { isTrivial })) {
-          groundingStatus = "declined";
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ evidence: { status: "insufficient" as const } })}\n\n`,
-            ),
-          );
+        // Do not preview unused candidate sources. Citations are emitted after
+        // the answer is audited (used-only), except insufficient-evidence notice.
+        if (turn.shouldRetrieve && citations.length === 0) {
+          groundingStatus = turn.requiresWorkspaceEvidence ? "declined" : "n/a";
+          insufficientEvidence = turn.requiresWorkspaceEvidence;
+          if (turn.requiresWorkspaceEvidence) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  evidence: { status: "insufficient" as const },
+                  showGroundingBadge: turn.showGroundingBadge,
+                })}\n\n`,
+              ),
+            );
+          }
+        } else if (!turn.shouldRetrieve) {
+          groundingStatus = "n/a";
         }
 
         let fullAnswer = "";
@@ -270,11 +303,36 @@ export async function POST(req: NextRequest) {
             citations.map(c => c.index),
           );
           groundingStatus = citationAudit.status as GroundingStatus;
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ citationAudit })}\n\n`),
-          );
+          sourcesCited = citationAudit.citedIndices.length;
+
+          // UI: only sources that were actually cited (or all if audit declined/gap)
+          const usedSet = new Set(citationAudit.citedIndices);
+          const uiCitations =
+            usedSet.size > 0
+              ? citations.filter(c => usedSet.has(c.index))
+              : [];
+
+          if (turn.showSourcesUi && uiCitations.length > 0) {
+            citations = uiCitations;
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ citations: uiCitations })}\n\n`),
+            );
+          } else {
+            citations = [];
+          }
+
+          if (turn.showGroundingBadge) {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify({
+                  citationAudit,
+                  showGroundingBadge: true,
+                })}\n\n`,
+              ),
+            );
+          }
         } else if (!groundingStatus) {
-          groundingStatus = citations.length > 0 ? "uncited" : "n/a";
+          groundingStatus = "n/a";
         }
 
         // Emit exact token usage before DONE so the client can compute real costs
@@ -304,9 +362,18 @@ export async function POST(req: NextRequest) {
           completionTokens: usageHold.current?.completionTokens ?? null,
           latencyMs: Date.now() - startedAt,
           status,
-          retrievalHitCount: citations.length,
-          citationCount: citations.length,
+          retrievalHitCount: evidenceCount,
+          citationCount: sourcesCited,
           groundingStatus,
+          turnMode: turn.mode,
+          retrievalAttempted: turn.shouldRetrieve,
+          retrievalReasonCode: turn.reasonCode,
+          candidateCount,
+          evidenceCount,
+          sourcesCited,
+          retrievalMs,
+          insufficientEvidence,
+          attachmentUsed: hasImages,
         }).catch(err =>
           console.warn("[chat] inference telemetry failed (non-critical):", String(err)),
         );

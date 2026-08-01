@@ -17,6 +17,12 @@ It is a **single-user personal project**. Default auth is `AUTH_MODE=local`. Opt
 
 ## Architecture rules
 
+### Turn policy (Investigate)
+- Retrieval, citation UI, and response style are decided by `src/lib/turn-policy/decide-turn.ts` — not by scattered greeting regexes in the chat route.
+- Social / general / app-help turns must not retrieve workspace Knowledge or show Sources.
+- Workspace-grounded and investigation turns retrieve, apply `EVIDENCE_MIN_SIMILARITY` (0.5), and show only sources actually cited.
+- `reasonCode` is telemetry only — never put it in assistant-visible text.
+
 ### Model routing
 - All model routing lives in `src/lib/models/router.ts`. Never hardcode model names anywhere else.
 - Routing is by **complexity tier**, not by conversation topic. The seven tiers are:
