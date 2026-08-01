@@ -59,7 +59,22 @@ Then start it:
 npm run dev
 ```
 
-Open http://localhost:3000. A default assistant is created on first load.
+Open http://localhost:3000. A default workspace is created on first load.
+
+### Local Docker (Postgres + Floci)
+
+```bash
+docker compose up -d
+```
+
+Then point `.env.local` at Compose Postgres:
+
+```bash
+DATABASE_URL="postgresql://securemind:securemind@localhost:5432/securemind"
+DIRECT_URL="postgresql://securemind:securemind@localhost:5432/securemind"
+```
+
+Floci (local AWS emulator) listens on `http://localhost:4566`. See `.env.example` for optional `AWS_*` and Cognito variables. Bedrock Runtime on Floci is stubbed — use real AWS credentials if you set `MODEL_PROVIDER=bedrock`.
 
 ### Without Ollama
 
@@ -101,14 +116,17 @@ Key modules:
 
 | Path | Responsibility |
 |---|---|
-| `src/lib/pii.ts` | Detection, sensitivity tiers, safe-term matching |
+| `src/lib/pii.ts` | Detection, sensitivity tiers, safe-term matching, secrets |
+| `src/lib/prompt-guard.ts` | Injection neutralization + evidence fencing |
+| `src/lib/evidence.ts` / `citation-audit.ts` | Citation packaging and post-answer audit |
 | `src/lib/identity.ts` | Server-derived request identity — the only source of `userId` |
 | `src/lib/db.ts` | Prisma singleton using the `PrismaPg` adapter |
 | `src/lib/models/router.ts` | Complexity tiers and provider selection |
-| `src/lib/models/route-message.ts` | Deterministic complexity scoring |
+| `src/lib/models/provider.ts` | Unified stream entry (Groq / Ollama / Bedrock) |
 | `src/lib/memory.ts` | Fragment storage and semantic retrieval |
 | `src/lib/documents.ts` | Extraction, server-side scrubbing, chunking |
 | `src/components/app/app-shell.tsx` | The main application UI |
+| `docker-compose.yml` | Local Postgres+pgvector and Floci AWS emulator |
 
 ## Security model
 
@@ -126,12 +144,11 @@ Redaction is layered, and each layer assumes the one before it can be bypassed.
 
 Being explicit, because a security-oriented project should not overstate itself.
 
-- **No authentication.** `getIdentity()` returns a fixed `"local"` user. Tenant scoping is implemented and tested, but there is only one tenant. Do not expose this to a network you do not control.
-- **Regex detection.** Pattern matching catches well-formed values. It will not catch a name, an unusual identifier format, or a secret with no recognizable shape. It is a strong first layer, not a guarantee.
-- **No secret detection yet.** API keys, private keys, and access tokens are not yet detected as a distinct hard-blocked category.
-- **Uploaded documents are trusted.** Prompt-injection defenses for retrieved document content are not implemented.
-- **Citations.** Semantic hits are injected into the prompt but are not yet surfaced as citations in the answer.
-- **Amazon Bedrock is not wired up.** Groq and Ollama are the only working providers.
+- **Auth is optional scaffolding.** Default `AUTH_MODE=local` still uses a fixed `"local"` user. Cognito / HS256 JWT verification exists in `getIdentity()`, but there is no login UI yet. Do not expose this to a network you do not control.
+- **Regex detection.** Pattern matching catches well-formed values (including hard-blocked secrets). It will not catch a name or an unusual identifier format. It is a strong first layer, not a guarantee.
+- **Prompt-injection defenses are heuristic.** Retrieved evidence is fenced and instruction-shaped phrases are neutralized; a determined adversary can still try to manipulate the model.
+- **Citation audit is deterministic, not an LLM judge.** Invented indices and uncited claims are flagged; subtle unsupported assertions may slip through.
+- **Bedrock is optional.** Groq remains primary. Bedrock activates when `MODEL_PROVIDER=bedrock` and AWS credentials are set; Floci’s Bedrock Runtime is stubbed.
 - **Local storage.** Safe terms, sensitivity, and the detection log live in `localStorage`, not the database.
 
 ## Documentation

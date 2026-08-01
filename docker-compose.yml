@@ -1,0 +1,44 @@
+# Local development stack for SecureMind.
+#
+#   docker compose up -d
+#
+# Services:
+#   db     — Postgres 16 + pgvector (app DATABASE_URL)
+#   floci  — local AWS emulator on :4566 (S3, Cognito, KMS, …)
+#
+# The Next.js app still runs on the host via `npm run dev`. Point .env.local
+# at the URLs below when you want local infra instead of Neon / real AWS.
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: securemind
+      POSTGRES_PASSWORD: securemind
+      POSTGRES_DB: securemind
+    volumes:
+      - securemind-pgdata:/var/lib/postgresql/data
+      - ./scripts/docker-init-pgvector.sql:/docker-entrypoint-initdb.d/10-pgvector.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U securemind -d securemind"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  floci:
+    image: floci/floci:latest
+    ports:
+      - "4566:4566"
+    environment:
+      FLOCI_HOSTNAME: localhost
+      FLOCI_DEFAULT_REGION: us-east-1
+      FLOCI_STORAGE_MODE: persistent
+      FLOCI_STORAGE_PERSISTENT_PATH: /app/data
+    volumes:
+      - securemind-floci:/app/data
+
+volumes:
+  securemind-pgdata:
+  securemind-floci:

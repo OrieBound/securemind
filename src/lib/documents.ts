@@ -16,7 +16,7 @@
 import { db } from "@/lib/db";
 import { embedText } from "@/lib/models/ollama";
 import { DEFAULT_SAFE_TERMS, scrubPII, type ScrubEvent } from "@/lib/pii";
-import { MAX_FILE_BYTES } from "@/lib/documents/constants";
+import { sanitizeRetrievedText } from "@/lib/prompt-guard";
 
 export { MAX_FILE_BYTES } from "@/lib/documents/constants";
 
@@ -76,9 +76,12 @@ export function scrubDocumentText(raw: string): {
   hadRedactions: boolean;
 } {
   const result = scrubPII(raw.trim(), { safeTerms: DEFAULT_SAFE_TERMS });
+  // Neutralize instruction-shaped content before persist/embed so poisoned
+  // documents cannot sit in the vector store waiting to be retrieved.
+  const guarded = sanitizeRetrievedText(result.sanitized.trim());
   const redactionCount = result.scrubEvents.reduce((sum, e) => sum + e.count, 0);
   return {
-    content:        result.sanitized.trim(),
+    content:        guarded.text,
     redactionCount,
     scrubEvents:    result.scrubEvents,
     hadRedactions:  result.hadRedactions,

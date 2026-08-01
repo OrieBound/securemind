@@ -40,9 +40,10 @@ describe("packageEvidence", () => {
       documentName: "iam-runbook.md",
     });
     expect(citations[1].index).toBe(2);
-    expect(promptBlock).toContain("[1] (document: iam-runbook.md)");
-    expect(promptBlock).toContain("[2] (prior exchange)");
+    expect(promptBlock).toContain('BEGIN_RETRIEVED_EVIDENCE source="document: iam-runbook.md"');
+    expect(promptBlock).toContain('BEGIN_RETRIEVED_EVIDENCE source="prior exchange"');
     expect(promptBlock).toContain("cite as [n]");
+    expect(promptBlock).toMatch(/untrusted data/i);
   });
 });
 

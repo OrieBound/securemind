@@ -12,7 +12,7 @@ It is currently a **single-user personal project**. Authentication is not implem
 - **Backend**: Next.js API routes (runtime: nodejs — never edge)
 - **ORM**: Prisma 7 — uses `@prisma/adapter-pg` + `pg` Pool. No `datasourceUrl` in constructor.
 - **Database**: Neon (serverless Postgres, pgvector). See `docs/adr/0002-storage-choice.md` — there is no planned migration to Aurora.
-- **AI inference**: Groq (primary, cloud), Ollama (local fallback). Bedrock is **not implemented** — do not describe it as available.
+- **AI inference**: Groq (primary, cloud), Ollama (local fallback), optional Bedrock via `MODEL_PROVIDER=bedrock` + `src/lib/models/bedrock.ts`. Do not claim Bedrock is the default or production path unless credentials and a real model id are configured.
 - **Testing**: Vitest. `npm test` must pass before any commit.
 
 ## Architecture rules
@@ -85,15 +85,19 @@ src/
     pii.test.ts               ← detection + no-leak test suite
     evidence.ts               ← citation packaging + insufficient-evidence prompts
     citation-audit.ts         ← post-answer [n] coverage / invalid-index checks
+    prompt-guard.ts           ← injection neutralization + evidence fencing
     memory.ts                 ← fragment storage + semantic retrieval
     documents.ts              ← extraction, server-side scrub, chunking
     tokens.ts                 ← token estimation + working memory selection
+    identity.ts               ← getIdentity — local / jwt-hs256 / Cognito JWKS
     models/
       types.ts                ← shared types (ChatMessage, ModelConfig, etc.)
       router.ts               ← complexity-tier model routing
       route-message.ts        ← deterministic complexity scoring
+      provider.ts             ← unified streamChat (Groq / Ollama / Bedrock)
       ollama.ts               ← Ollama streaming provider
       groq.ts                 ← Groq streaming provider + tier classifier
+      bedrock.ts              ← optional Bedrock ConverseStream adapter
   components/
     app/
       app-shell.tsx           ← main UI: sidebar, chat, intel panel, composer
@@ -117,13 +121,12 @@ docs/adr/                     ← architecture decision records
 - Never accept a client-supplied safe-terms or allowlist payload server-side.
 - Never run `prisma migrate reset` without explicit user confirmation.
 - Never use `export const runtime = "edge"` on any API route.
-- Never install AWS SDK packages until an AWS phase is explicitly started.
 - Never commit `.env.local`, `.env`, or any file containing API keys.
 - Never use `datasourceUrl` in the `PrismaClient` constructor — use the PrismaPg adapter instead.
-- Never claim Bedrock, Cognito, KMS, or Macie integration exists. None of it is implemented.
+- Never claim Cognito login UI, KMS, or Macie integration exists. Auth verification scaffolding and optional Bedrock streaming exist; full AWS productization does not.
 - Never describe conversation "modes" as driving model choice — complexity tiers do.
 - Never reintroduce companion personalities, trait sliders, or a restore path for redacted values.
 
 ## Current status
-- **Working**: chat with streaming, complexity-tier routing, client-side redaction with pre-send review, sensitivity tiers, safe terms, hard-blocked secret detection, layered memory (working + summary + facts + pgvector), document ingest with server-side scrubbing, numbered citations from retrieved evidence, post-answer citation audit (grounded / partial / uncited / invalid), insufficient-evidence prompting when retrieval is empty, multi-workspace UI, markdown rendering, server-derived identity with tenant-scoped queries.
-- **Not implemented**: authentication, prompt-injection defenses for retrieved documents, LLM-as-judge claim verification, any AWS service.
+- **Working**: chat with streaming, complexity-tier routing, client-side redaction with pre-send review, sensitivity tiers, safe terms, hard-blocked secret detection, prompt-injection fencing/neutralization for retrieved evidence, layered memory (working + summary + facts + pgvector), document ingest with server-side scrubbing, numbered citations + post-answer citation audit, insufficient-evidence prompting, multi-workspace UI, optional Bedrock adapter, Cognito/JWT identity scaffolding (default still local), Docker Compose (Postgres+pgvector + Floci), GitHub Actions CI.
+- **Not implemented**: login UI / session cookies, LLM-as-judge claim verification, KMS/Macie, production Cognito user pool provisioning.

@@ -9,9 +9,13 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "route-eval": "npx tsx scripts/route-eval.ts"
+    "typecheck": "tsc --noEmit",
+    "route-eval": "npx tsx scripts/route-eval.ts",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.1101.0",
     "@base-ui/react": "^1.4.1",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
@@ -20,6 +24,7 @@
     "clsx": "^2.1.1",
     "emoji-picker-react": "^4.19.1",
     "groq-sdk": "^1.2.0",
+    "jose": "^6.2.7",
     "lightningcss-win32-x64-msvc": "^1.32.0",
     "lucide-react": "^1.14.0",
     "next": "16.2.6",

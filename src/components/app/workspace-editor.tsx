@@ -47,15 +47,7 @@ export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
   const pickerRef = useRef<HTMLDivElement>(null);
   const moreBtnRef = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
-    setName(workspace.name);
-    setEmoji(workspace.emoji || "🗂️");
-    setColor(workspace.color);
-    setDescription(workspace.description ?? "");
-    setContext(workspace.context ?? "");
-    setError(null);
-    setPickerOpen(false);
-  }, [workspace.id, workspace.name, workspace.emoji, workspace.color, workspace.description, workspace.context]);
+  // Parent remounts this editor with key={workspace.id} when switching workspaces.
 
   useEffect(() => {
     if (!pickerOpen) return;

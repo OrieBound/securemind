@@ -14,9 +14,10 @@
  */
 
 import { NextRequest } from "next/server";
-import { streamOllamaChat, checkOllamaModel } from "@/lib/models/ollama";
-import { streamGroqChat, isGroqAvailable } from "@/lib/models/groq";
-import { routeModel, buildSystemPrompt, ollamaFallbackForMode, getCostTier, DEFAULT_TIER } from "@/lib/models/router";
+import { checkOllamaModel } from "@/lib/models/ollama";
+import { isGroqAvailable } from "@/lib/models/groq";
+import { routeModel, buildSystemPrompt, getCostTier, DEFAULT_TIER } from "@/lib/models/router";
+import { streamChat } from "@/lib/models/provider";
 import { routeMessage } from "@/lib/models/route-message";
 import { selectWorkingMemory } from "@/lib/tokens";
 import { retrieveSemanticMemory } from "@/lib/memory";
@@ -27,7 +28,7 @@ import {
 } from "@/lib/evidence";
 import { auditCitations } from "@/lib/citation-audit";
 import { db } from "@/lib/db";
-import { getIdentity } from "@/lib/identity";
+import { getIdentity, IdentityError } from "@/lib/identity";
 import type { ChatMessage } from "@/lib/models/types";
 
 // Must be nodejs — edge runtime cannot reach localhost (Ollama)
@@ -50,7 +51,15 @@ type ChatRequest = {
 };
 
 export async function POST(req: NextRequest) {
-  const { userId } = await getIdentity(req);
+  let userId: string;
+  try {
+    ({ userId } = await getIdentity(req));
+  } catch (err) {
+    if (err instanceof IdentityError) {
+      return Response.json({ error: err.message }, { status: err.status });
+    }
+    throw err;
+  }
 
   let body: ChatRequest;
   try {
@@ -111,8 +120,9 @@ export async function POST(req: NextRequest) {
   const { model: routedModel, provider: routedProvider } = routeModel("chat", activeMode);
   // Vision requests always go to Groq's multimodal model regardless of classified mode
   let model    = hasImages && isGroqAvailable() ? VISION_MODEL : routedModel;
-  let provider = hasImages ? "groq" : routedProvider;
+  let provider = hasImages ? "groq" as const : routedProvider;
   let useGroq  = (provider === "groq" || hasImages) && isGroqAvailable();
+  const useBedrock = provider === "bedrock";
 
   // Apply session-level model override set by the user in the Intel panel
   const userModelOverride = modelOverrides[activeMode];
@@ -128,7 +138,7 @@ export async function POST(req: NextRequest) {
   // For Ollama modes, verify the model is reachable.
   // If auto-routed to a local model that isn't available, gracefully fall back to Groq
   // rather than returning a 503 — the user didn't explicitly choose that mode.
-  if (!useGroq) {
+  if (!useGroq && !useBedrock) {
     const modelError = await checkOllamaModel(model);
     if (modelError) {
       if (wasAutoRouted && isGroqAvailable()) {
@@ -136,7 +146,7 @@ export async function POST(req: NextRequest) {
         const { model: fbModel, provider: fbProvider } = routeModel("chat", activeMode);
         model    = fbModel;
         provider = fbProvider;
-        useGroq  = true;
+        useGroq  = provider === "groq";
       } else {
         return Response.json({ error: modelError, setupRequired: true }, { status: 503 });
       }
@@ -197,7 +207,7 @@ export async function POST(req: NextRequest) {
       try {
         // Emit routing metadata first so the client knows provider + model
         // before the first token arrives.
-        const actualProvider = useGroq ? "groq" : "ollama";
+        const actualProvider = useBedrock ? "bedrock" : useGroq ? "groq" : "ollama";
         const routeMeta = {
           route: {
             provider: actualProvider,
@@ -230,27 +240,19 @@ export async function POST(req: NextRequest) {
 
         let usageData: { promptTokens: number; completionTokens: number } | null = null;
 
-        if (useGroq) {
-          try {
-            for await (const delta of streamGroqChat(messages, model, (u) => { usageData = u; })) {
-              emit(delta);
-            }
-          } catch (groqErr) {
-            const msg = groqErr instanceof Error ? groqErr.message : String(groqErr);
-            console.warn(`[chat] Groq failed (${msg.slice(0, 80)}). Falling back to Ollama.`);
-            const fallbackModel = ollamaFallbackForMode(activeMode);
-            const fallbackCheck = await checkOllamaModel(fallbackModel);
-            if (fallbackCheck) {
-              throw new Error("Groq is unavailable and Ollama isn't running. Start Ollama or check your GROQ_API_KEY.");
-            }
-            for await (const delta of streamOllamaChat(messages, fallbackModel)) {
-              emit(delta);
-            }
-          }
-        } else {
-          for await (const delta of streamOllamaChat(messages, model)) {
-            emit(delta);
-          }
+        const streamProvider = useBedrock
+          ? "bedrock" as const
+          : useGroq
+            ? "groq" as const
+            : "ollama" as const;
+        for await (const delta of streamChat({
+          messages,
+          model,
+          provider: streamProvider,
+          tier: activeMode,
+          onUsage: (u) => { usageData = u; },
+        })) {
+          emit(delta);
         }
 
         // Deterministic citation coverage check against the evidence package.
