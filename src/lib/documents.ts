@@ -52,6 +52,11 @@ export const EXT_TO_MIME: Record<string, string> = {
   sh:   "text/plain",
   go:   "text/plain",
   rs:   "text/plain",
+  png:  "image/png",
+  jpg:  "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  gif:  "image/gif",
 };
 
 // Chunking settings — optimised for nomic-embed-text (768-dim, max ~512 tokens)
@@ -97,6 +102,14 @@ export function scrubDocumentText(raw: string): {
  */
 export async function extractText(buffer: Buffer, mimeType: string): Promise<string> {
   let raw: string;
+  if (mimeType.startsWith("image/")) {
+    // Images have no reliable text layer here — store a searchable stub so the
+    // file still appears in Knowledge. Vision chat uses the live attachment.
+    return (
+      `Image attachment (${mimeType}, ${buffer.length} bytes).\n` +
+      `No OCR text was extracted. The file is registered in this workspace's Knowledge library.`
+    );
+  }
   if (mimeType === "application/pdf") {
     // pdf-parse v1.x exports a single function directly — listed in serverExternalPackages
     // so Next.js does not try to webpack-bundle it (avoids fs.readdirSync failures).

@@ -79,6 +79,7 @@ import {
   type ScrubEvent,
 } from "@/lib/pii";
 import {
+  COMPOSER_ACCEPT_ATTR,
   DOC_ACCEPT_ATTR,
   MAX_FILE_BYTES,
   MAX_FILE_MB,
@@ -2028,6 +2029,11 @@ export function AppShell() {
   const emojiBtnRef    = useRef<HTMLButtonElement>(null);
   const [showEmoji, setShowEmoji] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
+  const [composerDragOver, setComposerDragOver] = useState(false);
+  const composerDragCounterRef = useRef(0);
+  const [knowledgeIngestNote, setKnowledgeIngestNote] = useState<string | null>(null);
+  /** Avoid TDZ: handleSend is declared above the Knowledge upload helpers. */
+  const ingestChatAttachmentsRef = useRef<(files: File[]) => Promise<void>>(async () => {});
   const threadRef    = useRef<HTMLDivElement>(null);
   const [floatingDate, setFloatingDate] = useState<string | null>(null);
   const abortRef     = useRef<AbortController | null>(null);
@@ -2829,7 +2835,15 @@ export function AppShell() {
     setSessionSaveError(null);
     if (voiceState !== "idle") cancelVoice();
 
-    const imageFiles = attachments.filter(f => f.type.startsWith("image/"));
+    const pendingAttachments = [...attachments];
+
+    // Every chat attachment is registered in Knowledge (same pipeline as the
+    // Knowledge tab). Images also stay available for vision on this turn.
+    if (pendingAttachments.length > 0) {
+      void ingestChatAttachmentsRef.current(pendingAttachments);
+    }
+
+    const imageFiles = pendingAttachments.filter(f => f.type.startsWith("image/"));
     const imageDataUrls: string[] = await Promise.all(
       imageFiles.map(f => new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -3082,24 +3096,34 @@ export function AppShell() {
     return timer;
   }, []);
 
-  const handleDocumentUpload = useCallback(async (file: File) => {
+  const handleDocumentUpload = useCallback(async (
+    file: File,
+    opts?: { workspaceId?: string | null; quiet?: boolean },
+  ): Promise<DocRecord | null> => {
     if (file.size > MAX_FILE_BYTES) {
-      setDocError(
-        `"${file.name}" is ${fmtBytes(file.size)} — the limit is ${MAX_FILE_MB} MB per file. Try a smaller export or split the document.`,
-      );
-      return;
+      const msg =
+        `"${file.name}" is ${fmtBytes(file.size)} — the limit is ${MAX_FILE_MB} MB per file. Try a smaller export or split the document.`;
+      if (!opts?.quiet) setDocError(msg);
+      else setKnowledgeIngestNote(msg);
+      return null;
     }
 
-    setDocUploading(true);
-    setDocError(null);
+    const workspaceId = opts?.workspaceId ?? viewWorkspaceIdRef.current;
+    if (!opts?.quiet) {
+      setDocUploading(true);
+      setDocError(null);
+    }
     const fd = new FormData();
     fd.append("file", file);
-    if (viewWorkspaceIdRef.current) fd.append("workspaceId", viewWorkspaceIdRef.current);
+    if (workspaceId) fd.append("workspaceId", workspaceId);
     try {
       const res = await fetch("/api/documents", { method: "POST", body: fd });
       if (res.ok) {
         const doc = await res.json() as DocRecord;
-        setDocuments(prev => [doc, ...prev]);
+        // Keep Knowledge list in sync when the upload belongs to the viewed workspace.
+        if (!workspaceId || workspaceId === viewWorkspaceIdRef.current) {
+          setDocuments(prev => [doc, ...prev.filter(d => d.id !== doc.id)]);
+        }
         pollDocument(doc.id);
 
         if (doc.hadRedactions && doc.scrubEvents?.length) {
@@ -3123,15 +3147,22 @@ export function AppShell() {
             return next;
           });
         }
+        return doc;
       } else {
         const body = await res.json().catch(() => null) as { error?: string } | null;
-        setDocError(body?.error ?? `Upload failed (HTTP ${res.status})`);
+        const msg = body?.error ?? `Upload failed (HTTP ${res.status})`;
+        if (!opts?.quiet) setDocError(msg);
+        else setKnowledgeIngestNote(msg);
+        return null;
       }
     } catch (err) {
-      setDocError(`Network error: ${String(err)}`);
+      const msg = `Network error: ${String(err)}`;
+      if (!opts?.quiet) setDocError(msg);
+      else setKnowledgeIngestNote(msg);
       console.error("[docs] upload error:", err);
+      return null;
     } finally {
-      setDocUploading(false);
+      if (!opts?.quiet) setDocUploading(false);
       if (docFileRef.current) docFileRef.current.value = "";
     }
   }, [pollDocument]);
@@ -3143,6 +3174,61 @@ export function AppShell() {
       await handleDocumentUpload(file);
     }
   }, [handleDocumentUpload]);
+
+  /** Investigate attachments → same Knowledge library as the Knowledge tab. */
+  const ingestChatAttachmentsToKnowledge = useCallback(async (files: File[]) => {
+    if (!files.length || !activeWorkspaceId) return;
+    let ok = 0;
+    for (const file of files) {
+      const doc = await handleDocumentUpload(file, {
+        workspaceId: activeWorkspaceId,
+        quiet: true,
+      });
+      if (doc) ok++;
+    }
+    if (ok > 0) {
+      setKnowledgeIngestNote(
+        ok === 1
+          ? "Added to Knowledge for this workspace."
+          : `Added ${ok} files to Knowledge for this workspace.`,
+      );
+      window.setTimeout(() => setKnowledgeIngestNote(null), 4000);
+    }
+  }, [activeWorkspaceId, handleDocumentUpload]);
+
+  ingestChatAttachmentsRef.current = ingestChatAttachmentsToKnowledge;
+
+  const handleComposerDragEnter = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    composerDragCounterRef.current += 1;
+    if (e.dataTransfer.types.includes("Files")) setComposerDragOver(true);
+  }, []);
+
+  const handleComposerDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    composerDragCounterRef.current -= 1;
+    if (composerDragCounterRef.current <= 0) {
+      composerDragCounterRef.current = 0;
+      setComposerDragOver(false);
+    }
+  }, []);
+
+  const handleComposerDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.types.includes("Files")) e.dataTransfer.dropEffect = "copy";
+  }, []);
+
+  const handleComposerDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    composerDragCounterRef.current = 0;
+    setComposerDragOver(false);
+    const files = Array.from(e.dataTransfer.files ?? []);
+    if (files.length) setAttachments(prev => [...prev, ...files]);
+  }, []);
 
   const browseDocuments = useCallback(() => {
     docFileRef.current?.click();
@@ -5200,10 +5286,16 @@ export function AppShell() {
             </div>
 
             {/* Composer — sticky at bottom, centered */}
-            <div className="shrink-0 px-5 pt-3 pb-9 border-t border-white/5">
+            <div
+              className="shrink-0 px-5 pt-3 pb-9 border-t border-white/5"
+              onDragEnter={handleComposerDragEnter}
+              onDragLeave={handleComposerDragLeave}
+              onDragOver={handleComposerDragOver}
+              onDrop={handleComposerDrop}
+            >
               <form
                 onSubmit={e => { e.preventDefault(); handleSend(); setAttachments([]); }}
-                className="max-w-4xl mx-auto"
+                className="max-w-4xl mx-auto relative"
               >
                 {sessionSaveError && (
                   <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200/90">
@@ -5219,12 +5311,29 @@ export function AppShell() {
                   </div>
                 )}
 
+                {knowledgeIngestNote && (
+                  <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200/85">
+                    <span>{knowledgeIngestNote}</span>
+                    <button
+                      type="button"
+                      onClick={() => setKnowledgeIngestNote(null)}
+                      className="shrink-0 text-emerald-200/50 hover:text-emerald-200"
+                      aria-label="Dismiss"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
+
                 {/* Attachment preview strip */}
                 {attachments.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-2 px-1">
                     {attachments.map(f => (
-                      <div key={f.name} className="flex items-center gap-1.5 rounded-lg bg-white/6 border border-white/8 px-2.5 py-1 text-xs text-white/60">
-                        <span className="truncate max-w-[120px]">{f.name}</span>
+                      <div key={f.name + f.size} className="flex items-center gap-1.5 rounded-lg bg-white/6 border border-white/8 px-2.5 py-1 text-xs text-white/60">
+                        <span className="truncate max-w-[140px]">{f.name}</span>
+                        <span className="text-white/25 text-[0.6rem]">
+                          {f.type.startsWith("image/") ? "vision + knowledge" : "→ knowledge"}
+                        </span>
                         <button type="button" onClick={() => removeAttachment(f.name)} className="text-white/30 hover:text-white/60">✕</button>
                       </div>
                     ))}
@@ -5246,11 +5355,20 @@ export function AppShell() {
                 )}
 
                 <div className={cn(
-                  "rounded-2xl border transition-all shadow-xl shadow-black/20 overflow-hidden",
-                  listening
-                    ? "bg-white/[0.06] border-indigo-400/25"
-                    : "bg-white/[0.08] border-white/[0.11] focus-within:border-white/20 focus-within:bg-white/[0.10]",
+                  "rounded-2xl border transition-all shadow-xl shadow-black/20 overflow-hidden relative",
+                  composerDragOver
+                    ? "bg-indigo-500/[0.08] border-indigo-400/45 ring-2 ring-indigo-400/20"
+                    : listening
+                      ? "bg-white/[0.06] border-indigo-400/25"
+                      : "bg-white/[0.08] border-white/[0.11] focus-within:border-white/20 focus-within:bg-white/[0.10]",
                 )}>
+                  {composerDragOver && (
+                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 bg-[#0d0d12]/90 pointer-events-none">
+                      <Upload className="size-6 text-indigo-300/80" aria-hidden />
+                      <p className="text-sm font-medium text-indigo-100">Drop to attach</p>
+                      <p className="text-[0.65rem] text-white/40">Saved to Knowledge when you send</p>
+                    </div>
+                  )}
                   {/* Text input row — or voice bar when recording */}
                   {listening ? (
                     <VoiceBar
@@ -5307,7 +5425,7 @@ export function AppShell() {
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept="image/*,.pdf,.txt,.md,.csv,.json,.docx"
+                      accept={COMPOSER_ACCEPT_ATTR}
                       multiple
                       className="hidden"
                       onChange={onFileChange}
@@ -5316,7 +5434,7 @@ export function AppShell() {
                     {/* Image only shortcut */}
                     <button
                       type="button"
-                      onClick={() => { if (fileInputRef.current) { fileInputRef.current.accept = "image/*"; fileInputRef.current.click(); fileInputRef.current.accept = "image/*,.pdf,.txt,.md,.csv,.json,.docx"; } }}
+                      onClick={() => { if (fileInputRef.current) { fileInputRef.current.accept = "image/*"; fileInputRef.current.click(); fileInputRef.current.accept = COMPOSER_ACCEPT_ATTR; } }}
                       title="Attach image"
                       className="flex items-center justify-center size-7 rounded-lg text-white/30 hover:text-white/70 hover:bg-white/6 transition-colors"
                     >
@@ -5330,7 +5448,7 @@ export function AppShell() {
                 </div>
 
                 <p className="mt-2.5 text-center text-[0.65rem] leading-relaxed text-white/20 select-none px-2">
-                  PII is scrubbed before any message reaches storage or the model.
+                  Drop files here or use the paperclip — attachments go to Knowledge. PII is scrubbed before storage or the model.
                 </p>
 
               </form>
