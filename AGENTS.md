@@ -19,16 +19,29 @@ It is a **single-user personal project**. Default auth is `AUTH_MODE=local`. Opt
 
 ### Turn policy (Investigate)
 - Retrieval, citation UI, and response style are decided by `src/lib/turn-policy/decide-turn.ts` — not by scattered greeting regexes in the chat route.
-- Social / general / app-help turns must not retrieve workspace Knowledge or show Sources.
+- Follow the user's topic. The workspace scopes Knowledge access; it is not a conversational boundary.
+- Social / general / app-help / provenance / correction turns must not retrieve workspace Knowledge or show Sources. Grounding is `not_applicable`.
 - Workspace-grounded and investigation turns retrieve, apply `EVIDENCE_MIN_SIMILARITY` (0.5), and show only sources actually cited.
+- Assistant speaker label in the UI is **SecureMind** (or unlabeled). Workspace names (e.g. Cloud Operations) are page context only — never the message speaker.
 - `reasonCode` is telemetry only — never put it in assistant-visible text.
+
+### Prompt layers
+- `buildConversationalBase()` applies every turn (natural, concise, no forced ops pitch).
+- Operational grounding + workspace context apply only when `needsOperationalPrompt(turn)` is true.
+- Do not inject workspace name/mission into social or general turns.
+
+### Memory provenance
+- Long-term user facts come only from user-authored statements (`/api/summarize`), never from assistant replies.
+- Do not embed assistant messages as `MemoryFragment`. Semantic retrieval for citations is **document** category only.
+- Conversation history is continuity, not a Sources entry. Never cite "prior exchange" or general model knowledge as documentary evidence.
+- Provenance tags live in `src/lib/provenance.ts`.
 
 ### Model routing
 - All model routing lives in `src/lib/models/router.ts`. Never hardcode model names anywhere else.
 - Routing is by **complexity tier**, not by conversation topic. The seven tiers are:
   **Max, High, Plus, Standard, Light, Fast, Micro** (most → least capable). `DEFAULT_TIER` is `Standard`.
 - Tier selection is deterministic first (`src/lib/models/route-message.ts` scores the message), with an LLM tiebreak in `classifyMode()` in `groq.ts`. The tier list in that function's `VALID` array must stay in sync with `COMPLEXITY_TIERS` in `router.ts`.
-- Tier controls **which model** handles a request. Workspace context (`Workspace.context`) shapes the system prompt. These are independent — do not conflate them.
+- Tier controls **which model** handles a request. Workspace context shapes operational prompts only when the turn needs them — independent of tier.
 - Vision requests auto-route to `meta-llama/llama-4-scout-17b-16e-instruct` via Groq.
 - Groq is primary for all tiers. Ollama is fallback only, used when Groq is unavailable or no key is set.
 - Background tasks (summarize, extract) always use the cheapest model (`llama-3.1-8b-instant`). Embeddings use `nomic-embed-text` via Ollama.

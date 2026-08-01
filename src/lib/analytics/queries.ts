@@ -190,7 +190,10 @@ export async function getUsageSummary(filter: AnalyticsFilter) {
       : null;
   const grounded = events.filter(e => e.groundingStatus === "grounded").length;
   const withGrounding = events.filter(
-    e => e.groundingStatus && e.groundingStatus !== "n/a",
+    e =>
+      e.groundingStatus &&
+      e.groundingStatus !== "n/a" &&
+      e.groundingStatus !== "not_applicable",
   ).length;
   const retrievalHits = events.filter(e => e.retrievalHitCount > 0).length;
   const withCitations = events.filter(e => e.citationCount > 0).length;
@@ -207,7 +210,7 @@ export async function getUsageSummary(filter: AnalyticsFilter) {
   for (const e of events) {
     byModel.set(e.model, (byModel.get(e.model) ?? 0) + 1);
     byTier.set(e.tier, (byTier.get(e.tier) ?? 0) + 1);
-    const g = e.groundingStatus ?? "n/a";
+    const g = e.groundingStatus ?? "not_applicable";
     byGrounding.set(g, (byGrounding.get(g) ?? 0) + 1);
     const day = e.at.toISOString().slice(0, 10);
     const dayRow = byDay.get(day) ?? { requests: 0, prompt: 0, completion: 0 };

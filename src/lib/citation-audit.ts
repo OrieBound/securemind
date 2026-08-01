@@ -13,12 +13,13 @@
  */
 
 export type CitationAuditStatus =
-  | "n/a"        // no evidence was available this turn
-  | "declined"   // answer correctly admits the evidence does not cover the question
-  | "grounded"   // claim-like sentences are cited with valid indices
-  | "partial"    // some claims cited, some not
-  | "uncited"    // evidence available but no valid citations on claims
-  | "invalid";   // answer cites indices that were not provided
+  | "not_applicable" // retrieval/grounding not required for this turn
+  | "declined"       // answer correctly admits the evidence does not cover the question
+  | "grounded"       // claim-like sentences are cited with valid indices
+  | "partial"        // some claims cited, some not
+  | "uncited"        // evidence intentionally supplied but not cited on claims
+  | "invalid"        // answer cites indices that were not provided
+  | "insufficient_evidence"; // sought workspace evidence; none usable
 
 export type CitationAudit = {
   status: CitationAuditStatus;
@@ -123,7 +124,7 @@ export function auditCitations(
 
   if (available.length === 0) {
     return {
-      status: "n/a",
+      status: "not_applicable",
       citedIndices: [],
       invalidIndices: [],
       unusedIndices: [],

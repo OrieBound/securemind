@@ -210,7 +210,7 @@ model InferenceEvent {
   status            String   // ok | error | aborted
   retrievalHitCount Int      @default(0)
   citationCount     Int      @default(0)
-  groundingStatus   String?  // grounded | partial | uncited | invalid | declined | n/a
+  groundingStatus   String?  // not_applicable | grounded | partial | uncited | invalid | declined | insufficient_evidence | n/a
   estimatedCostUsd  Float?
   pricingVersion    String?
   // Turn-policy telemetry (sanitized metadata only — no prompts/chunks)

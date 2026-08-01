@@ -9,11 +9,14 @@ export type RiskLevel = "low" | "medium" | "high" | "critical";
 
 export type InferenceStatus = "ok" | "error" | "aborted";
 export type GroundingStatus =
+  | "not_applicable"
   | "grounded"
   | "partial"
   | "uncited"
   | "invalid"
   | "declined"
+  | "insufficient_evidence"
+  /** @deprecated Prefer not_applicable — kept for older InferenceEvent rows. */
   | "n/a";
 
 export type AnalyticsRange = "today" | "7d" | "30d" | "all";
