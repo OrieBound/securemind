@@ -13,6 +13,15 @@ import { isCiteableFragment } from "@/lib/provenance";
 import { fenceRetrievedChunk, untrustedEvidenceRules } from "@/lib/prompt-guard";
 import { decideTurn } from "@/lib/turn-policy/decide-turn";
 
+/** Cap per-attachment text injected into the chat prompt / history. */
+export const MAX_ATTACHMENT_PROMPT_CHARS = 24_000;
+
+export type CurrentAttachmentDoc = {
+  id: string;
+  name: string;
+  content: string;
+};
+
 export type Citation = {
   /** 1-based index matching [n] markers in the prompt / answer. */
   index: number;
@@ -105,6 +114,50 @@ export function packageEvidence(hits: SemanticHit[]): {
     `- Never narrate the retrieval process to the user.`;
 
   return { citations, promptBlock };
+}
+
+/**
+ * Inject scrubbed text from files attached on this chat turn.
+ * Content is already sanitized at ingest — still fenced as untrusted data.
+ */
+export function packageCurrentAttachments(docs: CurrentAttachmentDoc[]): string {
+  if (docs.length === 0) return "";
+
+  const blocks = docs.map((doc, i) => {
+    const raw = doc.content.replace(/\s+/g, " ").trim();
+    const body =
+      raw.length > MAX_ATTACHMENT_PROMPT_CHARS
+        ? `${raw.slice(0, MAX_ATTACHMENT_PROMPT_CHARS)}\n…[truncated]`
+        : raw;
+    const label = `current attachment: ${doc.name || doc.id}`;
+    return fenceRetrievedChunk(i + 1, label, body || "(no extractable text)");
+  });
+
+  return (
+    `\n\nCurrent chat attachments (primary source for this turn — cite as [n] when you use them):` +
+    untrustedEvidenceRules() +
+    `\n\n` +
+    blocks.join("\n\n") +
+    `\n\nAttachment rules:\n` +
+    `- These blocks are the files the user just attached. Answer from them when the question is about the attachment.\n` +
+    `- Do not claim you received a file unless these blocks are present.\n` +
+    `- If a block is empty or unreadable, say so and ask for a re-upload or paste.`
+  );
+}
+
+/** Compact block for conversation history so follow-up turns still see the file. */
+export function formatAttachmentsForHistory(docs: CurrentAttachmentDoc[]): string {
+  if (docs.length === 0) return "";
+  return docs
+    .map(doc => {
+      const raw = doc.content.trim();
+      const body =
+        raw.length > MAX_ATTACHMENT_PROMPT_CHARS
+          ? `${raw.slice(0, MAX_ATTACHMENT_PROMPT_CHARS)}\n…[truncated]`
+          : raw;
+      return `[Attached document: ${doc.name}]\n${body || "(no extractable text)"}`;
+    })
+    .join("\n\n");
 }
 
 /**

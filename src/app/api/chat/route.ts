@@ -23,6 +23,7 @@ import { selectWorkingMemory } from "@/lib/tokens";
 import { RETRIEVAL_CANDIDATE_LIMIT, retrieveSemanticMemory } from "@/lib/memory";
 import {
   insufficientEvidenceBlock,
+  packageCurrentAttachments,
   packageEvidence,
   selectEvidenceForPrompt,
 } from "@/lib/evidence";
@@ -48,6 +49,8 @@ type ChatRequest = {
   mode?: string;
   workspaceId?: string;        // scopes prompt context and semantic retrieval
   images?: string[];           // base64 data URLs for vision
+  /** Document IDs just uploaded for this turn — loaded server-side by userId. */
+  attachmentDocumentIds?: string[];
   sessionId?: string;
   history?: HistoryMessage[];
   sessionSummary?: string;
@@ -79,10 +82,11 @@ export async function POST(req: NextRequest) {
   }
 
   const {
-    message,
+    message: rawMessage,
     mode = DEFAULT_TIER,
     workspaceId,
     images = [],
+    attachmentDocumentIds = [],
     history = [],
     sessionSummary = "",
     facts = {},
@@ -96,14 +100,36 @@ export async function POST(req: NextRequest) {
   const hasImages = images.length > 0;
   const VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
 
-  if (!message?.trim()) {
+  const requestedAttachmentIds = [...new Set(
+    (Array.isArray(attachmentDocumentIds) ? attachmentDocumentIds : [])
+      .filter((id): id is string => typeof id === "string" && id.length > 0),
+  )].slice(0, 8);
+
+  // Load attachment text from DB only — never trust client-supplied body text.
+  const attachmentDocs = requestedAttachmentIds.length > 0
+    ? await db.document.findMany({
+        where: { userId, id: { in: requestedAttachmentIds } },
+        select: { id: true, name: true, content: true },
+      })
+    : [];
+  // Preserve request order
+  const attachmentById = new Map(attachmentDocs.map(d => [d.id, d]));
+  const orderedAttachments = requestedAttachmentIds
+    .map(id => attachmentById.get(id))
+    .filter((d): d is { id: string; name: string; content: string } => Boolean(d));
+
+  const hasFileAttachments = orderedAttachments.length > 0;
+  const message = (rawMessage ?? "").trim()
+    || (hasImages || hasFileAttachments ? "Please review the attached file(s)." : "");
+
+  if (!message) {
     return Response.json({ error: "message is required" }, { status: 422 });
   }
 
   const turn = decideTurn({
     message,
     hasImages,
-    hasAttachments: hasImages,
+    hasAttachments: hasImages || hasFileAttachments,
     priorTurnHadCitations: Boolean(priorTurnHadCitations),
     priorTurnWasGrounded: Boolean(priorTurnWasGrounded),
   });
@@ -209,10 +235,17 @@ export async function POST(req: NextRequest) {
     systemPrompt += `\n\nConversation so far:\n${sessionSummary}`;
   }
 
+  const attachmentPrompt = packageCurrentAttachments(orderedAttachments);
+  if (attachmentPrompt) {
+    systemPrompt += attachmentPrompt;
+  }
+
   const { citations: promptCitations, promptBlock } = turn.shouldRetrieve
     ? packageEvidence(evidenceHits)
     : { citations: [] as ReturnType<typeof packageEvidence>["citations"], promptBlock: "" };
   // Citations sent to the UI start as the prompt set; after audit we may filter to used-only.
+  // When only current-attachment blocks are present (no workspace retrieval), skip
+  // citation-audit "uncited" noise — attachments use [n] optionally.
   let citations = promptCitations;
   if (promptBlock) {
     systemPrompt += promptBlock;

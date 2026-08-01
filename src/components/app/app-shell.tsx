@@ -105,6 +105,7 @@ import {
   MAX_FILE_MB,
   SUPPORTED_DOC_FORMATS_SHORT,
 } from "@/lib/documents/constants";
+import { formatAttachmentsForHistory } from "@/lib/evidence";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -206,6 +207,8 @@ type DocRecord = {
   status:         "processing" | "ready" | "failed";
   chunkCount:     number;
   contentPreview: string;
+  /** Scrubbed body — present on fresh upload responses for same-turn chat use. */
+  content?:       string;
   createdAt:      string;
   redactionCount?: number;
   scrubEvents?:   ScrubEvent[];
@@ -257,6 +260,8 @@ type PendingSend = {
   scrubEvents:   ScrubEvent[];
   safeTermMatches: SafeTermMatch[];
   imageDataUrls: string[];
+  attachmentDocumentIds: string[];
+  attachmentHistoryBlock: string;
 };
 
 type DeliverPayload = {
@@ -267,6 +272,8 @@ type DeliverPayload = {
   safeTermMatches: SafeTermMatch[];
   imageDataUrls: string[];
   hadRedactions: boolean;
+  attachmentDocumentIds?: string[];
+  attachmentHistoryBlock?: string;
 };
 
 type Workspace = {
@@ -1006,6 +1013,14 @@ function WorkspaceAvatar({
   );
 }
 
+/** Hide history-only attachment payloads from the visible user bubble. */
+function stripAttachedDocumentBlock(content: string): string {
+  const idx = content.search(/\n\n\[Attached document:/);
+  if (idx === -1) return content;
+  const visible = content.slice(0, idx).trim();
+  return visible || "Attached file for review.";
+}
+
 // ─── MessageBubble ────────────────────────────────────────────────────────────
 
 const MessageBubble = memo(function MessageBubble({
@@ -1028,6 +1043,7 @@ const MessageBubble = memo(function MessageBubble({
 }) {
   const [hovered, setHovered] = useState(false);
   const isUser = message.role === "user";
+  const displayContent = isUser ? stripAttachedDocumentBlock(message.content) : message.content;
 
   const body = isUser && message.segments ? (
     <p className="whitespace-pre-wrap break-words leading-relaxed">
@@ -1050,7 +1066,7 @@ const MessageBubble = memo(function MessageBubble({
             }</span>
           </span>
         )
-        : message.content
+        : displayContent
           ? (
             <div className="chat-prose">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -2099,7 +2115,9 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
   const composerDragCounterRef = useRef(0);
   const [knowledgeIngestNote, setKnowledgeIngestNote] = useState<string | null>(null);
   /** Avoid TDZ: handleSend is declared above the Knowledge upload helpers. */
-  const ingestChatAttachmentsRef = useRef<(files: File[]) => Promise<void>>(async () => {});
+  const ingestChatAttachmentsRef = useRef<
+    (files: File[]) => Promise<{ id: string; name: string; content: string }[]>
+  >(async () => []);
   const threadRef    = useRef<HTMLDivElement>(null);
   const [floatingDate, setFloatingDate] = useState<string | null>(null);
   const abortRef     = useRef<AbortController | null>(null);
@@ -2640,6 +2658,8 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
     safeTermMatches,
     hadRedactions,
     imageDataUrls,
+    attachmentDocumentIds = [],
+    attachmentHistoryBlock = "",
   }: DeliverPayload) => {
     const turn = turnCount + 1;
     setTurnCount(turn);
@@ -2681,9 +2701,15 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
     }
 
     const clarifications = pendingClarifications.current.splice(0);
-    const messageToSend = clarifications.length > 0
+    const baseText = clarifications.length > 0
       ? `[Context update from user: ${clarifications.join("; ")}]\n\n${sanitized}`
       : sanitized;
+    // History must retain attachment text so follow-ups ("what is it about?") still work.
+    const messageToSend = attachmentHistoryBlock
+      ? `${baseText || "Please review the attached file(s)."}\n\n${attachmentHistoryBlock}`
+      : (baseText || (imageDataUrls.length > 0 || attachmentDocumentIds.length > 0
+        ? "Please review the attached file(s)."
+        : ""));
 
     const userId = crypto.randomUUID();
     const asstId = crypto.randomUUID();
@@ -2692,7 +2718,9 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
     setMessages(p => [
       ...p,
       {
-        id: userId, role: "user", content: sanitized,
+        // Keep attachment text in message content so follow-up turns still see it
+        // in working memory (UI strips the [Attached document…] block when rendering).
+        id: userId, role: "user", content: messageToSend,
         createdAt: now,
         segments, scrubEvents: hadRedactions ? scrubEvents : undefined,
         images: imageDataUrls.length > 0 ? imageDataUrls : undefined,
@@ -2702,7 +2730,8 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
     setIsStreaming(true);
 
     try {
-      await persistMessage(sessionIdRef.current!, "user", sanitized);
+      // Persist the history-enriched text so reloads and later turns retain the file.
+      await persistMessage(sessionIdRef.current!, "user", messageToSend);
     } catch (err) {
       console.error("[messages] user save failed:", err);
       setSessionSaveError("Message could not be saved. Check your connection and try again.");
@@ -2723,10 +2752,12 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          message:           messageToSend,
+          // Plain user ask for this turn; attachment bodies load via IDs server-side.
+          message:           baseText || "Please review the attached file(s).",
           mode,
           workspaceId:       activeWorkspaceId ?? "",
           images:            imageDataUrls,
+          attachmentDocumentIds,
           sessionId:         sessionIdRef.current ?? "local",
           sessionSummary:    sessionSummaryRef.current,
           facts:             extractedFactsRef.current,
@@ -2937,11 +2968,14 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
 
     const pendingAttachments = [...attachments];
 
-    // Every chat attachment is registered in Knowledge (same pipeline as the
-    // Knowledge tab). Images also stay available for vision on this turn.
+    // Await Knowledge ingest so scrubbed text is available for this chat turn.
+    // Images also stay available for vision.
+    let uploadedDocs: { id: string; name: string; content: string }[] = [];
     if (pendingAttachments.length > 0) {
-      void ingestChatAttachmentsRef.current(pendingAttachments);
+      uploadedDocs = await ingestChatAttachmentsRef.current(pendingAttachments);
     }
+    const attachmentDocumentIds = uploadedDocs.map(d => d.id);
+    const attachmentHistoryBlock = formatAttachmentsForHistory(uploadedDocs);
 
     const imageFiles = pendingAttachments.filter(f => f.type.startsWith("image/"));
     const imageDataUrls: string[] = await Promise.all(
@@ -2965,6 +2999,8 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
         scrubEvents:     scrub.scrubEvents,
         safeTermMatches: scrub.safeTermMatches,
         imageDataUrls,
+        attachmentDocumentIds,
+        attachmentHistoryBlock,
       });
       return;
     }
@@ -2979,6 +3015,8 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
       safeTermMatches: scrub.safeTermMatches,
       imageDataUrls,
       hadRedactions: scrub.hadRedactions,
+      attachmentDocumentIds,
+      attachmentHistoryBlock,
     });
   }, [
     attachments, isStreaming, sessionLoading, voiceState, cancelVoice,
@@ -3348,25 +3386,31 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
     }
   }, [handleDocumentUpload]);
 
-  /** Chat attachments → same Knowledge library as the Knowledge tab. */
+  /** Chat attachments → Knowledge + return scrubbed content for this turn. */
   const ingestChatAttachmentsToKnowledge = useCallback(async (files: File[]) => {
-    if (!files.length || !activeWorkspaceId) return;
-    let ok = 0;
+    if (!files.length || !activeWorkspaceId) return [];
+    const uploaded: { id: string; name: string; content: string }[] = [];
     for (const file of files) {
       const doc = await handleDocumentUpload(file, {
         workspaceId: activeWorkspaceId,
         quiet: true,
       });
-      if (doc) ok++;
+      if (doc?.content?.trim()) {
+        uploaded.push({ id: doc.id, name: doc.name, content: doc.content });
+      } else if (doc) {
+        // Upload succeeded but content omitted — still pass the id; chat loads from DB.
+        uploaded.push({ id: doc.id, name: doc.name, content: doc.contentPreview ?? "" });
+      }
     }
-    if (ok > 0) {
+    if (uploaded.length > 0) {
       setKnowledgeIngestNote(
-        ok === 1
-          ? "Added to Knowledge for this workspace."
-          : `Added ${ok} files to Knowledge for this workspace.`,
+        uploaded.length === 1
+          ? "Added to Knowledge — reviewing in this chat."
+          : `Added ${uploaded.length} files to Knowledge — reviewing in this chat.`,
       );
       window.setTimeout(() => setKnowledgeIngestNote(null), 4000);
     }
+    return uploaded;
   }, [activeWorkspaceId, handleDocumentUpload]);
 
   ingestChatAttachmentsRef.current = ingestChatAttachmentsToKnowledge;

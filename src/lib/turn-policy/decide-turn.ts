@@ -24,8 +24,10 @@ const TOPIC_PERMISSION_RE =
 const APP_HELP_RE =
   /\b(?:how\s+do\s+i|where\s+(?:can|do)\s+i|what\s+does|explain)\b.{0,40}\b(?:upload|knowledge|safe\s*terms?|sensitivity|analytics|security\s+view|usage\s+view|cost\s+view|redact|citation|grounding|partial\s+grounding|investigate|workspace|security\s+dashboard)\b/i;
 
+// Avoid bare "document" — that matches "review this document" attachment asks
+// and incorrectly forces Knowledge retrieval when no workspace deixis was meant.
 const WORKSPACE_DEIXIS_RE =
-  /\b(?:our|my|this\s+workspace|the\s+workspace|uploaded|runbook|postmortem|post-mortem|knowledge|document(?:s|ed)?|procedure|playbook|sop|incident\s+report)\b/i;
+  /\b(?:our|my|this\s+workspace|the\s+workspace|uploaded(?:\s+knowledge)?|runbook|postmortem|post-mortem|(?:our|the|uploaded)\s+knowledge|our\s+documents?|uploaded\s+documents?|procedure|playbook|sop|incident\s+report)\b/i;
 
 const INVESTIGATION_RE =
   /\b(?:what\s+(?:caused|probably\s+caused)|why\s+did|root\s+cause|investigate|compare|what\s+should\s+we|which\s+(?:control|controls)|outage|failed|failure|authentication\s+fail|timeout|rollback|blast\s+radius)\b/i;
@@ -285,7 +287,7 @@ export function needsOperationalPrompt(decision: TurnDecision): boolean {
     decision.mode === "investigation" ||
     decision.mode === "workspace_grounded" ||
     decision.mode === "grounded_follow_up" ||
-    (decision.mode === "attachment" && decision.sourceScope === "workspace")
+    decision.mode === "attachment"
   );
 }
 
@@ -334,6 +336,14 @@ export function modePromptInstructions(decision: TurnDecision): string {
         `- Good: "Hey." / "You're welcome." / "Sounds good." / "Of course. What's on your mind?"`
       );
     case "clarify":
+      if (decision.mode === "attachment") {
+        return (
+          `\n\nResponse mode — attachment needs direction:\n` +
+          `- If current-attachment text is present in the prompt, acknowledge the file by name and ask what kind of review they want — one short question.\n` +
+          `- If no attachment text is present, say you cannot see a file yet and ask them to re-attach or paste content.\n` +
+          `- Do not invent file contents.`
+        );
+      }
       return (
         `\n\nResponse mode — clarification:\n` +
         `- Ask one focused clarifying question.\n` +
@@ -364,6 +374,16 @@ export function modePromptInstructions(decision: TurnDecision): string {
           `\n\nResponse mode — product help:\n` +
           `- Explain SecureMind product behavior concisely and accurately.\n` +
           `- Do not search or cite operational workspace Knowledge unless the user asks about their content.`
+        );
+      }
+      if (decision.mode === "attachment") {
+        return (
+          `\n\nResponse mode — review current attachment:\n` +
+          `- Use the Current chat attachments blocks as the primary source.\n` +
+          `- Answer the user's question about the attached file directly.\n` +
+          `- Cite attachment indices [n] when making claims from the file.\n` +
+          `- Do not claim you received a file if no attachment blocks are present.\n` +
+          `- Do not invent contents. If the extract is empty, say so.`
         );
       }
       return (

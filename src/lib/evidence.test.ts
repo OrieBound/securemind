@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatAttachmentsForHistory,
   insufficientEvidenceBlock,
   messageNeedsEvidence,
+  packageCurrentAttachments,
   packageEvidence,
 } from "./evidence";
 import type { SemanticHit } from "./memory";
@@ -43,6 +45,25 @@ describe("packageEvidence", () => {
     expect(promptBlock).not.toContain("prior exchange");
     expect(promptBlock).toContain("cite as [n]");
     expect(promptBlock).toMatch(/untrusted data/i);
+  });
+});
+
+describe("packageCurrentAttachments", () => {
+  it("fences attached document text for the prompt", () => {
+    const block = packageCurrentAttachments([
+      { id: "d1", name: "nda.txt", content: "This Agreement is between Acme and Beta." },
+    ]);
+    expect(block).toContain('source="current attachment: nda.txt"');
+    expect(block).toContain("This Agreement is between Acme and Beta.");
+    expect(block).toMatch(/Do not claim you received a file/i);
+  });
+
+  it("formats history blocks for follow-up turns", () => {
+    const hist = formatAttachmentsForHistory([
+      { id: "d1", name: "nda.txt", content: "Confidential terms." },
+    ]);
+    expect(hist).toContain("[Attached document: nda.txt]");
+    expect(hist).toContain("Confidential terms.");
   });
 });
 

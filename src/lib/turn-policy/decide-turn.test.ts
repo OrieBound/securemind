@@ -72,6 +72,23 @@ describe("decideTurn matrix", () => {
     expect(d.mode).toBe("general");
   });
 
+  it("bare 'document' without workspace deixis does not force retrieval", () => {
+    const d = decideTurn({
+      message: "I have this document I would like you to review.",
+    });
+    expect(d.shouldRetrieve).toBe(false);
+  });
+
+  it("attached document review uses attachment mode", () => {
+    const d = decideTurn({
+      message: "I have this document I would like you to review.",
+      hasAttachments: true,
+    });
+    expect(d.mode).toBe("attachment");
+    expect(d.shouldRetrieve).toBe(false);
+    expect(d.sourceScope).toBe("current_attachment");
+  });
+
   it("workspace KMS runbook retrieves", () => {
     expectRetrieve("What does our KMS runbook require?");
   });
