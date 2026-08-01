@@ -1,6 +1,6 @@
 /**
- * GET /api/memory?agentId=<id>
- * Returns AgentFacts, UserFacts, SessionSummaries, and memory layer stats.
+ * GET /api/memory?workspaceId=<id>
+ * Returns workspace facts, user facts, session summaries, and memory stats.
  */
 
 import { NextRequest } from "next/server";
@@ -11,27 +11,27 @@ export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const agentId = searchParams.get("agentId");
+  const workspaceId = searchParams.get("workspaceId");
   const { userId } = await getIdentity(req);
 
-  if (!agentId) {
-    return Response.json({ error: "agentId required" }, { status: 400 });
+  if (!workspaceId) {
+    return Response.json({ error: "workspaceId required" }, { status: 400 });
   }
 
-  // AgentFact has no userId column, so ownership has to be established through
-  // the agent before any fact is read.
-  const owned = await db.agent.findFirst({
-    where:  { id: agentId, userId },
+  // Ownership has to be established through the workspace before any fact is
+  // read, since facts are only reachable by workspaceId.
+  const owned = await db.workspace.findFirst({
+    where:  { id: workspaceId, userId },
     select: { id: true },
   });
   if (!owned) {
-    return Response.json({ error: "Agent not found" }, { status: 404 });
+    return Response.json({ error: "Workspace not found" }, { status: 404 });
   }
 
-  const [agentFacts, userFacts, sessionSummaries, semanticFragmentCount, documentFragmentCount] =
+  const [workspaceFacts, userFacts, sessionSummaries, semanticFragmentCount, documentFragmentCount] =
     await Promise.all([
-      db.agentFact.findMany({
-        where: { agentId },
+      db.workspaceFact.findMany({
+        where: { workspaceId },
         orderBy: { updatedAt: "desc" },
       }),
       db.userFact.findMany({
@@ -39,21 +39,21 @@ export async function GET(req: NextRequest) {
         orderBy: { updatedAt: "desc" },
       }),
       db.sessionSummary.findMany({
-        where: { session: { agentId } },
+        where: { session: { workspaceId } },
         orderBy: { updatedAt: "desc" },
         take: 50,
         include: { session: { select: { id: true, createdAt: true } } },
       }),
       db.memoryFragment.count({
-        where: { agentId, userId, category: { not: "document" } },
+        where: { workspaceId, userId, category: { not: "document" } },
       }),
       db.memoryFragment.count({
-        where: { agentId, userId, category: "document" },
+        where: { workspaceId, userId, category: "document" },
       }),
     ]);
 
   return Response.json({
-    agentFacts,
+    workspaceFacts,
     userFacts,
     sessionSummaries,
     stats: {

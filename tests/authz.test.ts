@@ -1,9 +1,9 @@
 /**
  * Authorization boundary tests.
  *
- * These assert the property that matters: a route's database query is always
- * scoped by the server-derived userId, and nothing a caller puts in the query
- * string or body can widen or change that scope.
+ * These assert that a route's database query is always scoped by the
+ * server-derived userId, and nothing a caller puts in the query string or body
+ * can widen or change that scope.
  *
  * The Prisma client is mocked, so these run without a database.
  */
@@ -11,7 +11,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const agent = {
+const workspace = {
   findFirst:  vi.fn(),
   findMany:   vi.fn(),
   findUnique: vi.fn(),
@@ -20,19 +20,18 @@ const agent = {
   delete:     vi.fn(),
   count:      vi.fn(),
 };
-const session   = { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn() };
-const message   = { findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn(), create: vi.fn() };
-const agentFact = { findMany: vi.fn() };
+const session       = { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn() };
+const message       = { findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn(), create: vi.fn() };
+const workspaceFact = { findMany: vi.fn() };
 
 vi.mock("@/lib/db", () => ({
-  db: { agent, session, message, agentFact },
+  db: { workspace, session, message, workspaceFact },
 }));
 vi.mock("@/lib/memory", () => ({
   storeMemoryFragment: vi.fn(),
   retrieveSemanticMemory: vi.fn(),
 }));
 
-/** The identity every route must use, regardless of what the caller sends. */
 const SERVER_USER = "local";
 const ATTACKER    = "victim-user-id";
 
@@ -44,59 +43,58 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
-describe("GET /api/agents/:id", () => {
+describe("GET /api/workspaces/:id", () => {
   it("scopes the lookup to the server-derived user", async () => {
-    const { GET } = await import("@/app/api/agents/[id]/route");
-    agent.findFirst.mockResolvedValue({ id: "a1", userId: SERVER_USER, facts: [] });
+    const { GET } = await import("@/app/api/workspaces/[id]/route");
+    workspace.findFirst.mockResolvedValue({ id: "w1", userId: SERVER_USER, facts: [] });
 
-    await GET(new NextRequest("http://localhost/api/agents/a1"), params("a1"));
+    await GET(new NextRequest("http://localhost/api/workspaces/w1"), params("w1"));
 
-    expect(agent.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "a1", userId: SERVER_USER } }),
+    expect(workspace.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "w1", userId: SERVER_USER } }),
     );
   });
 
   it("ignores a userId supplied in the query string", async () => {
-    const { GET } = await import("@/app/api/agents/[id]/route");
-    agent.findFirst.mockResolvedValue({ id: "a1", userId: SERVER_USER, facts: [] });
+    const { GET } = await import("@/app/api/workspaces/[id]/route");
+    workspace.findFirst.mockResolvedValue({ id: "w1", userId: SERVER_USER, facts: [] });
 
     await GET(
-      new NextRequest(`http://localhost/api/agents/a1?userId=${ATTACKER}`),
-      params("a1"),
+      new NextRequest(`http://localhost/api/workspaces/w1?userId=${ATTACKER}`),
+      params("w1"),
     );
 
-    const where = agent.findFirst.mock.calls[0][0].where;
+    const where = workspace.findFirst.mock.calls[0][0].where;
     expect(where.userId).toBe(SERVER_USER);
     expect(where.userId).not.toBe(ATTACKER);
   });
 
-  it("returns 404 for an agent owned by someone else", async () => {
-    const { GET } = await import("@/app/api/agents/[id]/route");
-    agent.findFirst.mockResolvedValue(null);
+  it("returns 404 for a workspace owned by someone else", async () => {
+    const { GET } = await import("@/app/api/workspaces/[id]/route");
+    workspace.findFirst.mockResolvedValue(null);
 
-    const res = await GET(new NextRequest("http://localhost/api/agents/other"), params("other"));
+    const res = await GET(new NextRequest("http://localhost/api/workspaces/other"), params("other"));
 
     expect(res.status).toBe(404);
-    // Must not distinguish "exists but not yours" from "does not exist".
-    await expect(res.json()).resolves.toEqual({ error: "Agent not found" });
+    await expect(res.json()).resolves.toEqual({ error: "Workspace not found" });
   });
 
   it("never falls back to findUnique on the bare id", async () => {
-    const { GET } = await import("@/app/api/agents/[id]/route");
-    agent.findFirst.mockResolvedValue(null);
+    const { GET } = await import("@/app/api/workspaces/[id]/route");
+    workspace.findFirst.mockResolvedValue(null);
 
-    await GET(new NextRequest("http://localhost/api/agents/a1"), params("a1"));
+    await GET(new NextRequest("http://localhost/api/workspaces/w1"), params("w1"));
 
-    expect(agent.findUnique).not.toHaveBeenCalled();
+    expect(workspace.findUnique).not.toHaveBeenCalled();
   });
 });
 
-describe("PATCH /api/agents/:id", () => {
-  it("refuses to update an agent the caller does not own", async () => {
-    const { PATCH } = await import("@/app/api/agents/[id]/route");
-    agent.findFirst.mockResolvedValue(null);
+describe("PATCH /api/workspaces/:id", () => {
+  it("refuses to update a workspace the caller does not own", async () => {
+    const { PATCH } = await import("@/app/api/workspaces/[id]/route");
+    workspace.findFirst.mockResolvedValue(null);
 
-    const req = new NextRequest("http://localhost/api/agents/other", {
+    const req = new NextRequest("http://localhost/api/workspaces/other", {
       method: "PATCH",
       body: JSON.stringify({ name: "hijacked", userId: ATTACKER }),
       headers: { "Content-Type": "application/json" },
@@ -104,111 +102,122 @@ describe("PATCH /api/agents/:id", () => {
     const res = await PATCH(req, params("other"));
 
     expect(res.status).toBe(404);
-    expect(agent.update).not.toHaveBeenCalled();
+    expect(workspace.update).not.toHaveBeenCalled();
   });
 
   it("scopes the ownership check to the server-derived user", async () => {
-    const { PATCH } = await import("@/app/api/agents/[id]/route");
-    agent.findFirst.mockResolvedValue({ id: "a1", userId: SERVER_USER, personality: "", name: "Sage" });
-    agent.update.mockResolvedValue({ id: "a1" });
+    const { PATCH } = await import("@/app/api/workspaces/[id]/route");
+    workspace.findFirst.mockResolvedValue({
+      id: "w1", userId: SERVER_USER, name: "General", context: null, description: null,
+    });
+    workspace.update.mockResolvedValue({ id: "w1" });
 
-    const req = new NextRequest("http://localhost/api/agents/a1", {
+    const req = new NextRequest("http://localhost/api/workspaces/w1", {
       method: "PATCH",
       body: JSON.stringify({ name: "Renamed" }),
       headers: { "Content-Type": "application/json" },
     });
-    await PATCH(req, params("a1"));
+    await PATCH(req, params("w1"));
 
-    expect(agent.findFirst).toHaveBeenCalledWith({ where: { id: "a1", userId: SERVER_USER } });
-    expect(agent.update).toHaveBeenCalled();
+    expect(workspace.findFirst).toHaveBeenCalledWith({
+      where: { id: "w1", userId: SERVER_USER },
+      select: { id: true },
+    });
+    expect(workspace.update).toHaveBeenCalled();
   });
 });
 
-describe("DELETE /api/agents/:id", () => {
-  it("refuses to delete an agent the caller does not own", async () => {
-    const { DELETE } = await import("@/app/api/agents/[id]/route");
-    agent.findFirst.mockResolvedValue(null);
+describe("DELETE /api/workspaces/:id", () => {
+  it("refuses to delete a workspace the caller does not own", async () => {
+    const { DELETE } = await import("@/app/api/workspaces/[id]/route");
+    workspace.findFirst.mockResolvedValue(null);
 
-    const res = await DELETE(new NextRequest("http://localhost/api/agents/other", { method: "DELETE" }), params("other"));
+    const res = await DELETE(
+      new NextRequest("http://localhost/api/workspaces/other", { method: "DELETE" }),
+      params("other"),
+    );
 
     expect(res.status).toBe(404);
-    expect(agent.delete).not.toHaveBeenCalled();
+    expect(workspace.delete).not.toHaveBeenCalled();
   });
 
-  it("counts remaining agents within the caller's own tenancy", async () => {
-    const { DELETE } = await import("@/app/api/agents/[id]/route");
-    agent.findFirst.mockResolvedValue({ id: "a1" });
-    agent.count.mockResolvedValue(3);
-    agent.delete.mockResolvedValue({ id: "a1" });
+  it("counts remaining workspaces within the caller's own tenancy", async () => {
+    const { DELETE } = await import("@/app/api/workspaces/[id]/route");
+    workspace.findFirst.mockResolvedValue({ id: "w1" });
+    workspace.count.mockResolvedValue(3);
+    workspace.delete.mockResolvedValue({ id: "w1" });
 
-    await DELETE(new NextRequest("http://localhost/api/agents/a1", { method: "DELETE" }), params("a1"));
+    await DELETE(
+      new NextRequest("http://localhost/api/workspaces/w1", { method: "DELETE" }),
+      params("w1"),
+    );
 
-    expect(agent.count).toHaveBeenCalledWith({ where: { userId: SERVER_USER } });
+    expect(workspace.count).toHaveBeenCalledWith({ where: { userId: SERVER_USER } });
   });
 });
 
-describe("GET /api/agents", () => {
+describe("GET /api/workspaces", () => {
   it("ignores a userId supplied in the query string", async () => {
-    const { GET } = await import("@/app/api/agents/route");
-    agent.findMany.mockResolvedValue([{ id: "a1" }]);
+    const { GET } = await import("@/app/api/workspaces/route");
+    workspace.findMany.mockResolvedValue([{ id: "w1" }]);
 
-    await GET(new NextRequest(`http://localhost/api/agents?userId=${ATTACKER}`));
+    await GET(new NextRequest(`http://localhost/api/workspaces?userId=${ATTACKER}`));
 
-    expect(agent.findMany).toHaveBeenCalledWith(
+    expect(workspace.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: { userId: SERVER_USER } }),
     );
   });
 });
 
-describe("POST /api/agents", () => {
+describe("POST /api/workspaces", () => {
   it("ignores a userId supplied in the body", async () => {
-    const { POST } = await import("@/app/api/agents/route");
-    agent.create.mockResolvedValue({ id: "a2" });
+    const { POST } = await import("@/app/api/workspaces/route");
+    workspace.create.mockResolvedValue({ id: "w2" });
 
-    const req = new NextRequest("http://localhost/api/agents", {
+    const req = new NextRequest("http://localhost/api/workspaces", {
       method: "POST",
       body: JSON.stringify({ name: "Mine", userId: ATTACKER }),
       headers: { "Content-Type": "application/json" },
     });
     await POST(req);
 
-    expect(agent.create.mock.calls[0][0].data.userId).toBe(SERVER_USER);
+    expect(workspace.create.mock.calls[0][0].data.userId).toBe(SERVER_USER);
   });
 });
 
 describe("GET /api/session", () => {
-  it("rejects an agentId the caller does not own before reading anything", async () => {
+  it("rejects a workspaceId the caller does not own before reading anything", async () => {
     const { GET } = await import("@/app/api/session/route");
-    agent.findFirst.mockResolvedValue(null);
+    workspace.findFirst.mockResolvedValue(null);
 
-    const res = await GET(new NextRequest("http://localhost/api/session?agentId=other"));
+    const res = await GET(new NextRequest("http://localhost/api/session?workspaceId=other"));
 
     expect(res.status).toBe(404);
     expect(message.findFirst).not.toHaveBeenCalled();
-    expect(agentFact.findMany).not.toHaveBeenCalled();
+    expect(workspaceFact.findMany).not.toHaveBeenCalled();
   });
 
   it("ignores a userId supplied in the query string", async () => {
     const { GET } = await import("@/app/api/session/route");
-    agent.findFirst.mockResolvedValue(null);
+    workspace.findFirst.mockResolvedValue(null);
 
-    await GET(new NextRequest(`http://localhost/api/session?agentId=a1&userId=${ATTACKER}`));
+    await GET(new NextRequest(`http://localhost/api/session?workspaceId=w1&userId=${ATTACKER}`));
 
-    expect(agent.findFirst).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: "a1", userId: SERVER_USER } }),
+    expect(workspace.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "w1", userId: SERVER_USER } }),
     );
   });
 });
 
 describe("GET /api/memory", () => {
-  it("rejects an agentId the caller does not own before reading facts", async () => {
+  it("rejects a workspaceId the caller does not own before reading facts", async () => {
     const { GET } = await import("@/app/api/memory/route");
-    agent.findFirst.mockResolvedValue(null);
+    workspace.findFirst.mockResolvedValue(null);
 
-    const res = await GET(new NextRequest("http://localhost/api/memory?agentId=other"));
+    const res = await GET(new NextRequest("http://localhost/api/memory?workspaceId=other"));
 
     expect(res.status).toBe(404);
-    expect(agentFact.findMany).not.toHaveBeenCalled();
+    expect(workspaceFact.findMany).not.toHaveBeenCalled();
   });
 });
 
@@ -230,7 +239,7 @@ describe("POST /api/messages", () => {
 
   it("scopes the session lookup to the server-derived user", async () => {
     const { POST } = await import("@/app/api/messages/route");
-    session.findFirst.mockResolvedValue({ agentId: "a1", userId: SERVER_USER });
+    session.findFirst.mockResolvedValue({ workspaceId: "w1", userId: SERVER_USER });
     message.create.mockResolvedValue({ id: "m1" });
     session.update.mockResolvedValue({});
 

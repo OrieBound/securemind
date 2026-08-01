@@ -1,6 +1,5 @@
 // SecureMind — Prisma schema
-// Local dev: Neon (free PostgreSQL)
-// Production: Aurora Serverless v2 (swap DATABASE_URL only)
+// Storage decision and alternatives considered: docs/adr/0002-storage-choice.md
 
 generator client {
   provider = "prisma-client-js"
@@ -10,27 +9,26 @@ datasource db {
   provider = "postgresql"
 }
 
-// ─── Agents ──────────────────────────────────────────────────────────────────
-// Each agent is a distinct AI companion with its own personality, history, and memory.
-// Users can create multiple agents and switch between them.
+// ─── Workspaces ──────────────────────────────────────────────────────────────
+// A workspace is a bounded operational context — "Production Payments",
+// "Customer Portal", "Internal AWS Platform". It owns its own documents,
+// conversation history, and extracted facts, and nothing crosses between them.
 
-model Agent {
+model Workspace {
   id            String    @id @default(cuid())
   userId        String    @default("local")
-  name          String    @default("Sage")
-  emoji         String    @default("🧠")        // avatar fallback
-  color         String    @default("#6366f1")    // indigo default
-  personality       String?                          // compiled snippet → system prompt
-  personalityConfig Json?                            // structured Customize source
-  tagline           String?                          // short UI subtitle
-  preferredMode     String    @default("Companion")
-  modelOverride String?                          // null = use mode routing
+  name          String    @default("General")
+  emoji         String    @default("🗂️")       // visual identification in the sidebar
+  color         String    @default("#6366f1")
+  context       String?                          // what this workspace covers → system prompt
+  description   String?                          // short UI subtitle
+  modelOverride String?                          // null = use complexity-tier routing
   isDefault     Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
   sessions      Session[]
-  facts         AgentFact[]
+  facts         WorkspaceFact[]
   fragments     MemoryFragment[]
   documents     Document[]
 
@@ -38,22 +36,21 @@ model Agent {
 }
 
 // ─── Sessions ────────────────────────────────────────────────────────────────
-// One session = one continuous conversation thread, tied to a specific agent.
+// One session = one continuous conversation thread within a workspace.
 
 model Session {
-  id        String   @id @default(cuid())
-  userId    String   @default("local")
-  agentId   String
-  title     String?
-  mode      String   @default("Companion")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(cuid())
+  userId      String   @default("local")
+  workspaceId String
+  title       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  agent     Agent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  messages  Message[]
-  summary   SessionSummary?
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  messages    Message[]
+  summary     SessionSummary?
 
-  @@index([userId, agentId, updatedAt])
+  @@index([userId, workspaceId, updatedAt])
 }
 
 // ─── Messages ────────────────────────────────────────────────────────────────
@@ -62,7 +59,7 @@ model Message {
   id        String   @id @default(cuid())
   sessionId String
   role      String   // "user" | "assistant"
-  content   String   // sanitized — no raw PII ever stored
+  content   String   // sanitized — no raw sensitive values ever stored
   createdAt DateTime @default(now())
 
   session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
@@ -82,28 +79,29 @@ model SessionSummary {
   session      Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
 
-// ─── Agent facts ─────────────────────────────────────────────────────────────
-// Per-agent extracted facts. Each agent builds its own understanding of the user.
+// ─── Workspace facts ─────────────────────────────────────────────────────────
+// Facts extracted from conversation within one workspace. Scoped so operational
+// detail about one system never leaks into answers about another.
 
-model AgentFact {
-  id         String   @id @default(cuid())
-  agentId    String
-  userId     String   @default("local")
-  key        String
-  value      String
-  confidence Float    @default(0.8)
-  source     String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+model WorkspaceFact {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String   @default("local")
+  key         String
+  value       String
+  confidence  Float    @default(0.8)
+  source      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  agent      Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
-  @@unique([agentId, key])
-  @@index([agentId])
+  @@unique([workspaceId, key])
+  @@index([workspaceId])
 }
 
 // ─── User facts ──────────────────────────────────────────────────────────────
-// Global user facts shared across all agents (name, age, etc.)
+// Facts that apply across every workspace.
 
 model UserFact {
   id         String   @id @default(cuid())
@@ -120,50 +118,50 @@ model UserFact {
 }
 
 // ─── Documents ───────────────────────────────────────────────────────────────
-// Uploaded files available for retrieval across all agents.
+// Uploaded operational knowledge — runbooks, postmortems, architecture notes.
 
 model Document {
-  id           String   @id @default(cuid())
-  userId       String   @default("local")
-  agentId      String?                          // which companion owns this document
-  name         String
-  mimeType     String
-  sizeBytes    Int
-  content      String   // sanitized extracted text — PII scrubbed at ingest; raw binary never stored
-  description  String?  // user-supplied annotation
-  status       String   @default("processing") // processing | ready | failed
-  chunkCount   Int      @default(0)             // number of embedded MemoryFragment chunks
-  redactionCount Int    @default(0)             // PII placeholders applied at ingest
-  scrubEvents    Json?                           // [{ category, count }] aggregate at ingest
-  createdAt    DateTime @default(now())
+  id             String   @id @default(cuid())
+  userId         String   @default("local")
+  workspaceId    String?                          // which workspace owns this document
+  name           String
+  mimeType       String
+  sizeBytes      Int
+  content        String   // sanitized extracted text — scrubbed at ingest; raw binary never stored
+  description    String?  // user-supplied annotation
+  status         String   @default("processing") // processing | ready | failed
+  chunkCount     Int      @default(0)             // number of embedded MemoryFragment chunks
+  redactionCount Int      @default(0)             // placeholders applied at ingest
+  scrubEvents    Json?                            // [{ category, count }] aggregate at ingest
+  createdAt      DateTime @default(now())
 
-  agent        Agent?         @relation(fields: [agentId], references: [id], onDelete: SetNull)
-  fragments    MemoryFragment[]
+  workspace      Workspace?     @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  fragments      MemoryFragment[]
 
   @@index([userId])
-  @@index([userId, agentId])
+  @@index([userId, workspaceId])
   @@index([userId, status])
 }
 
-// ─── Memory fragments (Phase B — vector embeddings) ──────────────────────────
+// ─── Memory fragments (vector embeddings) ────────────────────────────────────
 // Unified vector store for both conversation memory and document chunks.
-// Requires pgvector: run `CREATE EXTENSION IF NOT EXISTS vector;` in Neon SQL editor.
+// Requires pgvector: see scripts/add-vector-embedding.sql.
 // nomic-embed-text produces 768-dim vectors.
 
 model MemoryFragment {
-  id         String                     @id @default(cuid())
-  userId     String                     @default("local")
-  agentId    String?
-  documentId String?
-  sessionId  String?
-  content    String
-  category   String                     @default("episodic")  // "episodic" | "semantic" | "document"
-  embedding  Unsupported("vector(768)")?                       // nomic-embed-text 768-dim · set via raw SQL
-  createdAt  DateTime                   @default(now())
+  id          String                     @id @default(cuid())
+  userId      String                     @default("local")
+  workspaceId String?
+  documentId  String?
+  sessionId   String?
+  content     String
+  category    String                     @default("episodic")  // "episodic" | "semantic" | "document"
+  embedding   Unsupported("vector(768)")?                       // set via raw SQL
+  createdAt   DateTime                   @default(now())
 
-  agent      Agent?    @relation(fields: [agentId], references: [id], onDelete: SetNull)
-  document   Document? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  document    Document?  @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
-  @@index([userId, agentId])
+  @@index([userId, workspaceId])
   @@index([userId, category])
 }

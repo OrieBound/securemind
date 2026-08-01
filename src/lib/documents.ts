@@ -188,14 +188,14 @@ export async function processDocument(documentId: string): Promise<void> {
         const vector = await embedText(chunk);
 
         // Create the MemoryFragment record first (gets a Prisma-managed cuid).
-        // agentId scopes these chunks to the companion that owns the document.
+        // workspaceId scopes these chunks to the workspace that owns the document.
         const fragment = await db.memoryFragment.create({
           data: {
-            userId:     doc.userId,
-            agentId:    doc.agentId ?? undefined,
-            documentId: doc.id,
-            content:    chunk,
-            category:   "document",
+            userId:      doc.userId,
+            workspaceId: doc.workspaceId ?? undefined,
+            documentId:  doc.id,
+            content:     chunk,
+            category:    "document",
           },
           select: { id: true },
         });

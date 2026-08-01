@@ -1,5 +1,5 @@
 /**
- * Seed script — populates Neon with realistic sample data.
+ * Seed script — populates the database with sample operational workspaces.
  * Run with: npx tsx prisma/seed.ts
  */
 import { config } from "dotenv";
@@ -14,89 +14,111 @@ const adapter = new PrismaPg(pool);
 const db      = new PrismaClient({ adapter });
 
 async function main() {
-  console.log("🌱 Seeding SecureMind database...");
+  console.log("Seeding SecureMind database...");
 
-  await db.agentFact.deleteMany({ where: { userId: "local" } });
-  await db.userFact.deleteMany({  where: { userId: "local" } });
-  await db.agent.deleteMany({     where: { userId: "local" } });
+  await db.workspaceFact.deleteMany({ where: { userId: "local" } });
+  await db.userFact.deleteMany({ where: { userId: "local" } });
+  await db.workspace.deleteMany({ where: { userId: "local" } });
 
-  // ── Default agent: Sage ──────────────────────────────────────────────────────
-  const sage = await db.agent.create({
+  const payments = await db.workspace.create({
     data: {
-      userId:        "local",
-      name:          "Sage",
-      emoji:         "🧠",
-      color:         "#6366f1",
-      personality:   "A calm, sharp, direct companion. Speaks casually, has real opinions, pushes back when something's off. Never sycophantic.",
-      preferredMode: "Companion",
-      isDefault:     true,
+      userId:      "local",
+      name:        "Production Payments",
+      emoji:       "💳",
+      color:       "#6366f1",
+      description: "Stripe, PCI-scoped services, settlement",
+      context:
+        "Covers the production payment processing stack: Stripe integration, " +
+        "PCI-scoped infrastructure, settlement jobs, and related runbooks.",
+      isDefault: true,
     },
   });
 
-  // ── Session for Sage ─────────────────────────────────────────────────────────
   const session1 = await db.session.create({
     data: {
-      userId:  "local",
-      agentId: sage.id,
-      title:   "Setting up SecureMind + Ollama",
-      mode:    "Companion",
+      userId:      "local",
+      workspaceId: payments.id,
+      title:       "Auth failures after deploy",
     },
   });
 
   await db.message.createMany({
     data: [
-      { sessionId: session1.id, role: "assistant", content: "Hey — I'm Sage. What's on your mind?" },
-      { sessionId: session1.id, role: "user",      content: "I just set this system up. My name is Orie and I'm 22." },
-      { sessionId: session1.id, role: "assistant", content: "Nice. What are you building?" },
-      { sessionId: session1.id, role: "user",      content: "A secure AI platform called SecureMind. Cloud architecture focus." },
-      { sessionId: session1.id, role: "assistant", content: "That's a solid direction. Memory + security is actually underbuilt in the market." },
+      {
+        sessionId: session1.id,
+        role:      "user",
+        content:
+          "What could explain the authentication failures that began after the latest deployment?",
+      },
+      {
+        sessionId: session1.id,
+        role:      "assistant",
+        content:
+          "Likely causes: a misconfigured JWT audience after the config change, " +
+          "a secrets rotation that did not propagate to all pods, or a health-check " +
+          "path that now fails the readiness probe. Check the deploy diff for auth " +
+          "config and the last successful secret sync timestamp.",
+      },
     ],
   });
 
   await db.sessionSummary.create({
     data: {
       sessionId:    session1.id,
-      summary:      "User introduced themselves as Orie, age 22, building SecureMind — a secure adaptive AI platform with AWS architecture.",
-      turnsCovered: 4,
+      summary:
+        "Investigating authentication failures after a production payments deploy. " +
+        "Suspects include JWT audience mismatch, incomplete secret rotation, and readiness probe changes.",
+      turnsCovered: 2,
     },
   });
 
-  // ── Second agent ─────────────────────────────────────────────────────────────
-  const nova = await db.agent.create({
+  const portal = await db.workspace.create({
     data: {
-      userId:        "local",
-      name:          "Nova",
-      emoji:         "⚡",
-      color:         "#f59e0b",
-      personality:   "High-energy, fast, creative. Loves big ideas and unconventional thinking. Gets excited easily.",
-      preferredMode: "Creative",
-      isDefault:     false,
+      userId:      "local",
+      name:        "Customer Portal",
+      emoji:       "🌐",
+      color:       "#0ea5e9",
+      description: "Public portal, CDN, Cognito",
+      context:
+        "Customer-facing portal: CloudFront, Cognito user pools, API Gateway, " +
+        "and the operational standards for public endpoints.",
+      isDefault: false,
     },
   });
 
   await db.session.create({
     data: {
-      userId:  "local",
-      agentId: nova.id,
-      title:   "Brainstorming",
-      mode:    "Creative",
+      userId:      "local",
+      workspaceId: portal.id,
+      title:       "CDN cache invalidation",
     },
   });
 
-  // ── Agent facts for Sage ─────────────────────────────────────────────────────
-  await db.agentFact.createMany({
+  await db.workspaceFact.createMany({
     data: [
-      { agentId: sage.id, userId: "local", key: "name",       value: "Orie",              confidence: 1.0, source: session1.id },
-      { agentId: sage.id, userId: "local", key: "age",        value: "22",               confidence: 1.0, source: session1.id },
-      { agentId: sage.id, userId: "local", key: "occupation", value: "Cloud architect",   confidence: 0.9, source: session1.id },
-      { agentId: sage.id, userId: "local", key: "project",    value: "SecureMind",        confidence: 1.0, source: session1.id },
+      {
+        workspaceId: payments.id,
+        userId:      "local",
+        key:         "primary_processor",
+        value:       "Stripe",
+        confidence:  1.0,
+        source:      session1.id,
+      },
+      {
+        workspaceId: payments.id,
+        userId:      "local",
+        key:         "scope",
+        value:       "PCI",
+        confidence:  0.9,
+        source:      session1.id,
+      },
     ],
   });
 
-  console.log("✅ Seed complete!");
-  console.log(`   Agents:   2 (Sage, Nova)`);
-  console.log(`   Sessions: 2`);
-  console.log(`   Messages: 5`);
+  console.log("Seed complete!");
+  console.log(`   Workspaces: 2 (${payments.name}, ${portal.name})`);
+  console.log("   Sessions:   2");
+  console.log("   Messages:   2");
 }
 
 main()

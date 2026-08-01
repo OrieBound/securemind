@@ -5,7 +5,7 @@
  * Called as a fire-and-forget background task from the messages route
  * after each assistant turn, and from the backfill script for existing messages.
  *
- * Body: { content, agentId?, sessionId?, category? }
+ * Body: { content, workspaceId?, sessionId?, category? }
  */
 
 import { NextRequest } from "next/server";
@@ -15,10 +15,10 @@ import { getIdentity } from "@/lib/identity";
 export const runtime = "nodejs";
 
 type EmbedRequest = {
-  content:    string;
-  agentId?:   string;
-  sessionId?: string;
-  category?:  string;
+  content:      string;
+  workspaceId?: string;
+  sessionId?:   string;
+  category?:    string;
 };
 
 export async function POST(req: NextRequest) {
@@ -31,14 +31,14 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { content, agentId, sessionId, category = "episodic" } = body;
+  const { content, workspaceId, sessionId, category = "episodic" } = body;
 
   if (!content?.trim()) {
     return Response.json({ error: "content is required" }, { status: 422 });
   }
 
   try {
-    const id = await storeMemoryFragment({ content, agentId, sessionId, userId, category });
+    const id = await storeMemoryFragment({ content, workspaceId, sessionId, userId, category });
     return Response.json({ id });
   } catch (err) {
     console.error("[embed]", err);

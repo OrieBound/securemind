@@ -26,7 +26,7 @@ export type SemanticHit = {
 const MIN_SIMILARITY = 0.35;
 
 /**
- * Embeds `content` and stores it as a MemoryFragment scoped to the given agent.
+ * Embeds `content` and stores it as a MemoryFragment scoped to a workspace.
  * The record is created first (so Prisma generates the cuid), then the vector
  * is attached via a raw SQL UPDATE — the only way to write a pgvector column.
  *
@@ -34,17 +34,17 @@ const MIN_SIMILARITY = 0.35;
  * The caller should wrap this in a fire-and-forget pattern for non-critical paths.
  */
 export async function storeMemoryFragment(opts: {
-  content:     string;
-  agentId?:    string;
-  sessionId?:  string;
-  userId?:     string;
-  category?:   string;   // "episodic" | "semantic" | "document" — default "episodic"
+  content:      string;
+  workspaceId?: string;
+  sessionId?:   string;
+  userId?:      string;
+  category?:    string;   // "episodic" | "semantic" | "document" — default "episodic"
 }): Promise<string> {
-  const { content, agentId, sessionId, userId = "local", category = "episodic" } = opts;
+  const { content, workspaceId, sessionId, userId = "local", category = "episodic" } = opts;
 
   // Create the record — Prisma manages the cuid
   const fragment = await db.memoryFragment.create({
-    data: { userId, agentId, sessionId, content, category },
+    data: { userId, workspaceId, sessionId, content, category },
     select: { id: true },
   });
 
@@ -67,17 +67,17 @@ const RETRIEVAL_TIMEOUT_MS = 3000;
 /**
  * Finds the top-k MemoryFragments most semantically similar to `query`.
  *
- * Searches only the requesting agent's fragments (episodic, semantic, and
- * document chunks). Documents uploaded under a companion are stamped with
- * that companion's agentId when processed, so a single agentId filter covers
- * all memory types — full per-companion isolation.
+ * Searches only the requesting workspace's fragments (episodic, semantic, and
+ * document chunks). Documents uploaded into a workspace are stamped with that
+ * workspaceId when processed, so a single workspaceId filter covers all memory
+ * types — full per-workspace isolation.
  *
  * Returns an empty array on any error or timeout — semantic retrieval must
  * never block or break the main chat path.
  */
 export async function retrieveSemanticMemory(
-  query:   string,
-  agentId: string,
+  query:       string,
+  workspaceId: string,
   userId = "local",
   limit  = 6,
 ): Promise<SemanticHit[]> {
@@ -95,19 +95,19 @@ export async function retrieveSemanticMemory(
 
     const vectorStr = `[${vectorResult.join(",")}]`;
 
-    // All fragment types (episodic, semantic, document) are scoped to the agent
+    // All fragment types (episodic, semantic, document) are scoped to the workspace
     const hits = await db.$queryRawUnsafe<SemanticHit[]>(
       `SELECT id, content, category,
               1 - (embedding <=> $1::vector) AS similarity
        FROM   "MemoryFragment"
-       WHERE  "userId"   = $2
-         AND  "agentId"  = $3
-         AND  embedding  IS NOT NULL
+       WHERE  "userId"      = $2
+         AND  "workspaceId" = $3
+         AND  embedding     IS NOT NULL
        ORDER BY embedding <=> $1::vector
        LIMIT  $4`,
       vectorStr,
       userId,
-      agentId,
+      workspaceId,
       limit,
     );
 

@@ -10,9 +10,9 @@ SecureMind stores four kinds of data:
 
 | Kind | Model | Access pattern |
 |---|---|---|
-| Relational records | `Agent`, `Session`, `Message`, `Document` | Point lookups and small ordered scans, always scoped by `userId` |
-| Derived text | `SessionSummary`, `AgentFact`, `UserFact` | Read on session load, upserted by the background summarizer |
-| Vectors | `MemoryFragment.embedding` — `vector(768)` | Top-k cosine similarity, filtered by `agentId` and `userId` |
+| Relational records | `Workspace`, `Session`, `Message`, `Document` | Point lookups and small ordered scans, always scoped by `userId` |
+| Derived text | `SessionSummary`, `WorkspaceFact`, `UserFact` | Read on session load, upserted by the background summarizer |
+| Vectors | `MemoryFragment.embedding` — `vector(768)` | Top-k cosine similarity, filtered by `workspaceId` and `userId` |
 | Chunked documents | `MemoryFragment` with `category = "document"` | Same as above |
 
 Today all four live in one Neon Postgres database with the `pgvector` extension. Vector search runs through a raw SQL query in `src/lib/memory.ts`, because Prisma models the column as `Unsupported("vector(768)")`.

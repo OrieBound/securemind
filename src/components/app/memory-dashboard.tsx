@@ -3,7 +3,6 @@
 import {
   Brain,
   ChevronDown,
-  Heart,
   Layers,
   Loader2,
   MessageSquare,
@@ -12,9 +11,7 @@ import {
 import { useMemo, useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { formatFactValue, humanizeKey } from "@/lib/memory/format";
-import { buildPersonalityProfile } from "@/lib/memory/personality";
 import { buildFactAssociations, categoryLabel as factCategoryLabel, type FactAssociation } from "@/lib/memory/fact-graph";
-import { PersonalityRadar, TraitBar } from "@/components/workspace/personality-radar";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -81,11 +78,10 @@ const TEMPERAMENT_KEYS = new Set([
   "preferred_problem_types",
 ]);
 
-type MemoryTab = "overview" | "personality" | "facts" | "archive";
+type MemoryTab = "overview" | "facts" | "archive";
 
 const MEMORY_TABS: { id: MemoryTab; label: string; icon: typeof Brain }[] = [
   { id: "overview", label: "Overview", icon: Brain },
-  { id: "personality", label: "Personality", icon: Heart },
   { id: "facts", label: "Facts", icon: Layers },
   { id: "archive", label: "Archive", icon: MessageSquare },
 ];
@@ -133,13 +129,13 @@ function formatDayLabel(d: Date): string {
 }
 
 function mergeLiveFacts(
-  agentFacts: MemoryFactRecord[],
+  workspaceFacts: MemoryFactRecord[],
   userFacts: MemoryFactRecord[],
   liveFacts: Record<string, string>,
 ): MemoryFactRecord[] {
   const byKey = new Map<string, MemoryFactRecord>();
   for (const f of userFacts) byKey.set(f.key.toLowerCase(), { ...f, key: f.key });
-  for (const f of agentFacts) byKey.set(f.key.toLowerCase(), f);
+  for (const f of workspaceFacts) byKey.set(f.key.toLowerCase(), f);
   for (const [k, v] of Object.entries(liveFacts)) {
     byKey.set(k.toLowerCase(), {
       id: `live-${k}`,
@@ -460,27 +456,27 @@ function LayerCard({
 // ─── MemoryDashboard ──────────────────────────────────────────────────────────
 
 export function MemoryDashboard({
-  companionName,
-  agentFacts,
+  workspaceName,
+  workspaceFacts,
   userFacts,
   sessionSummaries,
   liveSessionSummary,
   liveFacts,
   memoryLoading,
   memoryStats,
-  isActiveCompanion,
+  isActiveWorkspace,
   messageCount,
   summarizedCount,
 }: {
-  companionName: string;
-  agentFacts: MemoryFactRecord[];
+  workspaceName: string;
+  workspaceFacts: MemoryFactRecord[];
   userFacts: MemoryFactRecord[];
   sessionSummaries: MemorySummaryRecord[];
   liveSessionSummary: string;
   liveFacts: Record<string, string>;
   memoryLoading: boolean;
   memoryStats: MemoryStats | null;
-  isActiveCompanion: boolean;
+  isActiveWorkspace: boolean;
   messageCount: number;
   summarizedCount: number;
 }) {
@@ -490,8 +486,8 @@ export function MemoryDashboard({
   const [selectedFactId, setSelectedFactId] = useState<string | null>(null);
 
   const allFacts = useMemo(
-    () => mergeLiveFacts(agentFacts, userFacts, isActiveCompanion ? liveFacts : {}),
-    [agentFacts, userFacts, liveFacts, isActiveCompanion],
+    () => mergeLiveFacts(workspaceFacts, userFacts, isActiveWorkspace ? liveFacts : {}),
+    [workspaceFacts, userFacts, liveFacts, isActiveWorkspace],
   );
 
   const identityFacts = useMemo(
@@ -506,7 +502,7 @@ export function MemoryDashboard({
 
   const allSummaries = useMemo(() => {
     const list = [...sessionSummaries];
-    if (isActiveCompanion && liveSessionSummary.trim()) {
+    if (isActiveWorkspace && liveSessionSummary.trim()) {
       const already = list.some(s => s.summary === liveSessionSummary);
       if (!already) {
         list.unshift({
@@ -519,17 +515,13 @@ export function MemoryDashboard({
       }
     }
     return list;
-  }, [sessionSummaries, isActiveCompanion, liveSessionSummary, summarizedCount]);
+  }, [sessionSummaries, isActiveWorkspace, liveSessionSummary, summarizedCount]);
 
   const groupedSummaries = useMemo(
     () => groupSummaries(allSummaries, summaryPeriod),
     [allSummaries, summaryPeriod],
   );
 
-  const personality = useMemo(
-    () => buildPersonalityProfile(allFacts, allSummaries),
-    [allFacts, allSummaries],
-  );
 
   const factAssociations = useMemo(
     () => buildFactAssociations(allFacts, allSummaries),
@@ -552,7 +544,7 @@ export function MemoryDashboard({
     }
   }, [memoryTab, selectedFactId, factAssociations]);
 
-  const rawTurns = isActiveCompanion
+  const rawTurns = isActiveWorkspace
     ? Math.max(0, messageCount - summarizedCount)
     : 0;
 
@@ -570,7 +562,7 @@ export function MemoryDashboard({
       <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3.5 space-y-2">
         <p className="text-sm text-white/50 leading-relaxed">
           A living profile of what{" "}
-          <span className="text-white/75 font-medium">{companionName}</span> has learned from your
+          <span className="text-white/75 font-medium">{workspaceName}</span> has learned from your
           conversations — facts, communication style, and rolling summaries. Everything here is
           inferred automatically; nothing is shared outside your workspace.
         </p>
@@ -593,8 +585,8 @@ export function MemoryDashboard({
         <StatCard label="Summaries" value={allSummaries.length} hint={`Grouped by ${summaryPeriod}`} accent="indigo" />
         <StatCard
           label="Working turns"
-          value={isActiveCompanion ? rawTurns : "—"}
-          hint={isActiveCompanion ? "Uncompressed in chat" : "Open Chat"}
+          value={isActiveWorkspace ? rawTurns : "—"}
+          hint={isActiveWorkspace ? "Uncompressed in chat" : "Open Chat"}
           accent="emerald"
         />
         <StatCard
@@ -636,31 +628,6 @@ export function MemoryDashboard({
                   </div>
                 </section>
 
-                <section>
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <div className="flex items-center gap-2">
-                      <Heart className="size-4 text-rose-400/60" aria-hidden />
-                      <h3 className="text-[0.65rem] uppercase tracking-[0.22em] text-white/35 font-semibold">
-                        Personality snapshot
-                      </h3>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setMemoryTab("personality")}
-                      className="text-[0.68rem] text-indigo-300/70 hover:text-indigo-200 transition-colors cursor-pointer"
-                    >
-                      Full chart →
-                    </button>
-                  </div>
-                  <div className="rounded-2xl border border-white/[0.07] bg-white/[0.03] overflow-hidden">
-                    <div className="px-4 py-3.5 border-b border-white/[0.05] bg-rose-500/[0.04]">
-                      <p className="text-sm text-white/60 leading-relaxed italic">{personality.narrative}</p>
-                    </div>
-                    <div className="p-4">
-                      <PersonalityRadar axes={personality.radar.slice(0, 6)} />
-                    </div>
-                  </div>
-                </section>
               </div>
 
               <section>
@@ -675,8 +642,8 @@ export function MemoryDashboard({
                   <LayerCard
                     id="working"
                     name="Working memory"
-                    detail={isActiveCompanion ? `${rawTurns} raw turns` : "Open Chat"}
-                    active={isActiveCompanion && rawTurns > 0}
+                    detail={isActiveWorkspace ? `${rawTurns} raw turns` : "Open Chat"}
+                    active={isActiveWorkspace && rawTurns > 0}
                     expanded={expandedLayer === "working"}
                     onToggle={toggleLayer}
                   >
@@ -684,7 +651,7 @@ export function MemoryDashboard({
                       The most recent messages kept in full before compression. When the conversation grows,
                       older turns roll into the session summary below.
                     </p>
-                    {isActiveCompanion && (
+                    {isActiveWorkspace && (
                       <p className="text-[0.72rem] text-indigo-300/70 mt-2">
                         {rawTurns} turn{rawTurns === 1 ? "" : "s"} currently uncompressed · {messageCount} total in thread
                       </p>
@@ -702,7 +669,7 @@ export function MemoryDashboard({
                     <p className="text-[0.78rem] text-white/45 leading-relaxed mb-2">
                       Rolling narrative compression of your conversations — updated in the background every few turns.
                     </p>
-                    {liveSessionSummary && isActiveCompanion && (
+                    {liveSessionSummary && isActiveWorkspace && (
                       <p className="text-sm text-white/55 leading-relaxed border-l-2 border-indigo-400/40 pl-3">
                         {liveSessionSummary}
                       </p>
@@ -777,70 +744,6 @@ export function MemoryDashboard({
                 </div>
               </section>
             </>
-          )}
-
-          {memoryTab === "personality" && (
-            <div className="flex flex-col gap-6">
-              <div className="rounded-xl border border-white/[0.06] bg-violet-500/[0.04] px-4 py-3.5">
-                <p className="text-sm text-white/55 leading-relaxed italic">{personality.narrative}</p>
-                <p className="text-[0.68rem] text-white/28 mt-2">
-                  Inferred from extracted facts and conversation summaries — not a clinical assessment.
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <section className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5">
-                  <h3 className="text-[0.65rem] uppercase tracking-[0.22em] text-white/35 font-semibold mb-4">
-                    Personality flow
-                  </h3>
-                  <PersonalityRadar axes={personality.radar} />
-                </section>
-
-                <section className="space-y-4">
-                  <h3 className="text-[0.65rem] uppercase tracking-[0.22em] text-white/35 font-semibold">
-                    Trait breakdown
-                  </h3>
-                  {(["social", "emotional", "communication", "cognitive"] as const).map(cat => {
-                    const group = personality.traits.filter(t => t.category === cat);
-                    if (!group.length) return null;
-                    return (
-                      <div key={cat}>
-                        <p className="text-[0.6rem] uppercase tracking-wider text-white/25 mb-2 capitalize">{cat}</p>
-                        <div className="flex flex-col gap-2">
-                          {group.map(t => (
-                            <TraitBar
-                              key={t.id}
-                              label={t.label}
-                              score={t.score}
-                              level={t.level}
-                              evidence={t.evidence}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </section>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5">
-                <TagCloud
-                  label="Topics they discuss"
-                  items={personality.topics}
-                  accent="border-violet-500/15 bg-violet-500/[0.06]"
-                />
-                <TagCloud
-                  label="Problem domains"
-                  items={personality.problemDomains}
-                  accent="border-indigo-500/15 bg-indigo-500/[0.06]"
-                />
-                <TagCloud
-                  label="Emotional tone"
-                  items={personality.emotionalTags}
-                  accent="border-rose-500/15 bg-rose-500/[0.06]"
-                />
-              </div>
-            </div>
           )}
 
           {memoryTab === "facts" && (
@@ -962,7 +865,7 @@ export function MemoryDashboard({
           <Brain className="size-10 text-violet-400/25 mx-auto" aria-hidden />
           <p className="text-sm font-medium text-white/50">No memory built yet</p>
           <p className="text-xs text-white/30 leading-relaxed max-w-sm mx-auto">
-            Start a conversation with {companionName}. Facts, summaries, and communication insights
+            Start a conversation with {workspaceName}. Facts, summaries, and communication insights
             will appear here automatically as you chat.
           </p>
         </div>

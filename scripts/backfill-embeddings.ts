@@ -54,7 +54,7 @@ async function main() {
   const sessions = await prisma.session.findMany({
     select: {
       id:      true,
-      agentId: true,
+      workspaceId: true,
       userId:  true,
     },
     where: {
@@ -97,7 +97,7 @@ async function main() {
         const fragment = await prisma.memoryFragment.create({
           data: {
             userId:    session.userId,
-            agentId:   session.agentId,
+            workspaceId:   session.workspaceId,
             sessionId: session.id,
             content:   msg.content,
             category:  "episodic",

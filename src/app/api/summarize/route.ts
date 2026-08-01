@@ -24,7 +24,7 @@ type SummarizeRequest = {
   existingSummary?: string;
   existingFacts?: Record<string, unknown>;
   sessionId?: string;
-  agentId?: string;
+  workspaceId?: string;
   turnsCovered?: number;
 };
 
@@ -91,7 +91,7 @@ export async function POST(req: NextRequest) {
     existingSummary = "",
     existingFacts   = {},
     sessionId,
-    agentId,
+    workspaceId,
     turnsCovered    = 0,
   } = body;
 
@@ -147,18 +147,18 @@ export async function POST(req: NextRequest) {
           update: { summary: newSummary, turnsCovered },
           create: { sessionId, summary: newSummary, turnsCovered },
         }),
-        // Upsert facts — always per-agent for full companion isolation
-        ...(agentId
+        // Upsert facts — always per-workspace for full isolation
+        ...(workspaceId
           ? Object.entries(newFacts).map(([key, value]) => {
               const serialized = serializeFactValue(value);
               if (!serialized) return null;
-              return db.agentFact.upsert({
-                where:  { agentId_key: { agentId, key } },
+              return db.workspaceFact.upsert({
+                where:  { workspaceId_key: { workspaceId, key } },
                 update: { value: serialized, source: sessionId },
-                create: { agentId, userId, key, value: serialized, source: sessionId },
+                create: { workspaceId, userId, key, value: serialized, source: sessionId },
               });
             }).filter(Boolean)
-          : [] // No agentId = no fact persistence (should never happen in practice)
+          : [] // No workspaceId = no fact persistence (should never happen in practice)
         ),
       ]).catch(err => console.error("[summarize] DB persist failed:", err));
     }

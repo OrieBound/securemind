@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
   // bare sessionId would let any caller append messages to another user's thread.
   const session = await db.session.findFirst({
     where:  { id: sessionId, userId },
-    select: { agentId: true, userId: true },
+    select: { workspaceId: true, userId: true },
   });
   if (!session) {
     return Response.json({ error: "Session not found" }, { status: 404 });
@@ -65,13 +65,13 @@ export async function POST(req: NextRequest) {
   // Embed assistant messages as episodic memory fragments (fire-and-forget).
   // Only assistant messages are embedded — they contain the richest context
   // and are what we want to surface when semantically searching past exchanges.
-  if (role === "assistant" && trimmed.length >= MIN_EMBED_CHARS && session?.agentId) {
+  if (role === "assistant" && trimmed.length >= MIN_EMBED_CHARS && session?.workspaceId) {
     storeMemoryFragment({
-      content:   trimmed,
-      agentId:   session.agentId,
+      content:     trimmed,
+      workspaceId: session.workspaceId,
       sessionId,
-      userId:    session.userId,
-      category:  "episodic",
+      userId:      session.userId,
+      category:    "episodic",
     }).catch(err => console.warn("[messages] embed failed (non-critical):", String(err)));
   }
 

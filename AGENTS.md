@@ -22,7 +22,7 @@ It is currently a **single-user personal project**. Authentication is not implem
 - Routing is by **complexity tier**, not by conversation topic. The seven tiers are:
   **Max, High, Plus, Standard, Light, Fast, Micro** (most → least capable). `DEFAULT_TIER` is `Standard`.
 - Tier selection is deterministic first (`src/lib/models/route-message.ts` scores the message), with an LLM tiebreak in `classifyMode()` in `groq.ts`. The tier list in that function's `VALID` array must stay in sync with `COMPLEXITY_TIERS` in `router.ts`.
-- Tier controls **which model** handles a request. Personality comes entirely from `companionName` + `agentPersonality`. These are independent — do not conflate them.
+- Tier controls **which model** handles a request. Workspace context (`Workspace.context`) shapes the system prompt. These are independent — do not conflate them.
 - Vision requests auto-route to `meta-llama/llama-4-scout-17b-16e-instruct` via Groq.
 - Groq is primary for all tiers. Ollama is fallback only, used when Groq is unavailable or no key is set.
 - Background tasks (summarize, extract) always use the cheapest model (`llama-3.1-8b-instant`). Embeddings use `nomic-embed-text` via Ollama.
@@ -47,8 +47,8 @@ It is currently a **single-user personal project**. Authentication is not implem
 
 ### Security
 - `userId` comes from `getIdentity(req)` in `src/lib/identity.ts` and **nowhere else**. Never read a user or tenant identifier from a request body, query string, or client-settable header.
-- Every query for an `Agent`, `Session`, `Message`, `Document`, or `MemoryFragment` must be scoped by `userId`. Use `findFirst({ where: { id, userId } })` — never `findUnique({ where: { id } })` on a user-owned record.
-- `AgentFact` has no `userId` column. Establish ownership through the agent before reading facts.
+- Every query for a `Workspace`, `Session`, `Message`, `Document`, or `MemoryFragment` must be scoped by `userId`. Use `findFirst({ where: { id, userId } })` — never `findUnique({ where: { id } })` on a user-owned record.
+- `WorkspaceFact` is owned through its workspace. Establish ownership via `Workspace` before reading facts.
 - Return **404**, not 403, when a record exists but belongs to another user.
 - API keys must never appear in code or commits. They live in `.env.local` only.
 - `.env.local` is in `.gitignore`. `.env.example` is the one env file that is committed, and it contains no values.
@@ -69,15 +69,15 @@ src/
   app/
     api/
       chat/route.ts           ← main chat endpoint, SSE streaming
-      agents/route.ts         ← list/create agents
-      agents/[id]/route.ts    ← get/patch/delete single agent
-      session/route.ts        ← load or create session for an agent
-      messages/route.ts       ← persist individual messages
-      memory/route.ts         ← facts, summaries, memory stats
-      documents/route.ts      ← list/upload documents
-      documents/[id]/route.ts ← get/delete single document
-      embed/route.ts          ← embed text into a MemoryFragment
-      summarize/route.ts      ← background memory summarization
+      workspaces/route.ts         ← list/create workspaces
+      workspaces/[id]/route.ts    ← get/patch/delete single workspace
+      session/route.ts            ← load or create session for a workspace
+      messages/route.ts           ← persist individual messages
+      memory/route.ts             ← facts, summaries, memory stats
+      documents/route.ts          ← list/upload documents
+      documents/[id]/route.ts     ← get/delete single document
+      embed/route.ts              ← embed text into a MemoryFragment
+      summarize/route.ts          ← background memory summarization
   lib/
     db.ts                     ← Prisma singleton (PrismaPg adapter)
     identity.ts               ← getIdentity(req) — the only source of userId
@@ -93,13 +93,14 @@ src/
       ollama.ts               ← Ollama streaming provider
       groq.ts                 ← Groq streaming provider + tier classifier
   components/
-    workspace/
-      workspace-shell.tsx     ← main UI: sidebar, chat, intel panel, composer
+    app/
+      app-shell.tsx           ← main UI: sidebar, chat, intel panel, composer
+      workspace-editor.tsx    ← name, description, operational context
       settings-hub.tsx        ← settings, sensitivity, safe terms
 tests/
   authz.test.ts               ← cross-tenant authorization tests
 prisma/
-  schema.prisma               ← DB schema (Agent, Session, Message, etc.)
+  schema.prisma               ← DB schema (Workspace, Session, Message, etc.)
   seed.ts                     ← seed script
 scripts/
   add-vector-embedding.sql    ← creates the pgvector column (manual step)
@@ -119,7 +120,8 @@ docs/adr/                     ← architecture decision records
 - Never use `datasourceUrl` in the `PrismaClient` constructor — use the PrismaPg adapter instead.
 - Never claim Bedrock, Cognito, KMS, or Macie integration exists. None of it is implemented.
 - Never describe conversation "modes" as driving model choice — complexity tiers do.
+- Never reintroduce companion personalities, trait sliders, or a restore path for redacted values.
 
 ## Current status
-- **Working**: chat with streaming, complexity-tier routing, client-side redaction with pre-send review, sensitivity tiers, safe terms, layered memory (working + summary + facts + pgvector), document ingest with server-side scrubbing, multi-agent UI, markdown rendering, server-derived identity with tenant-scoped queries.
+- **Working**: chat with streaming, complexity-tier routing, client-side redaction with pre-send review, sensitivity tiers, safe terms, layered memory (working + summary + facts + pgvector), document ingest with server-side scrubbing, multi-workspace UI, markdown rendering, server-derived identity with tenant-scoped queries.
 - **Not implemented**: authentication, citations in answers, secret detection as a hard-blocked category, prompt-injection defenses for retrieved documents, any AWS service.

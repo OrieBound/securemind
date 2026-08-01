@@ -22,20 +22,20 @@ import { getIdentity } from "@/lib/identity";
 
 export async function GET(req: NextRequest) {
   const { userId } = await getIdentity(req);
-  const agentId = new URL(req.url).searchParams.get("agentId");
+  const workspaceId = new URL(req.url).searchParams.get("workspaceId");
 
   try {
     const docs = await db.document.findMany({
       where: {
         userId,
-        ...(agentId
-          ? { OR: [{ agentId }, { agentId: null }] } // include legacy unassigned uploads
+        ...(workspaceId
+          ? { OR: [{ workspaceId }, { workspaceId: null }] } // include legacy unassigned uploads
           : {}),
       },
       orderBy: { createdAt: "desc" },
       select: {
         id:          true,
-        agentId:     true,
+        workspaceId: true,
         name:        true,
         mimeType:    true,
         sizeBytes:   true,
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
   }
 
   const description = (formData.get("description") as string | null) || null;
-  const agentId     = (formData.get("agentId")     as string | null) || null;
+  const workspaceId = (formData.get("workspaceId") as string | null) || null;
   const mimeType    = resolveMimeType(file.type, file.name);
 
   // Extract text from the uploaded buffer
@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
   const doc = await db.document.create({
     data: {
       userId,
-      agentId,
+      workspaceId,
       name:        file.name,
       mimeType,
       sizeBytes:   file.size,
@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
     },
     select: {
       id:          true,
-      agentId:     true,
+      workspaceId: true,
       name:        true,
       mimeType:    true,
       sizeBytes:   true,

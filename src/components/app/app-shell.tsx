@@ -41,10 +41,10 @@ import {
   type DragEvent,
 } from "react";
 
-import { ComposerInput, type ComposerInputHandle, type ComposerVoiceInsert } from "@/components/workspace/composer-input";
-import { SettingsHub, SettingsSidebarNav, SETTINGS_SECTION_LABELS, SETTINGS_SECTION_KEY, isSettingsSection, type SettingsSection } from "@/components/workspace/settings-hub";
-import { MemoryDashboard } from "@/components/workspace/memory-dashboard";
-import { CompanionCustomize } from "@/components/workspace/companion-customize";
+import { ComposerInput, type ComposerInputHandle, type ComposerVoiceInsert } from "@/components/app/composer-input";
+import { SettingsHub, SettingsSidebarNav, SETTINGS_SECTION_LABELS, SETTINGS_SECTION_KEY, isSettingsSection, type SettingsSection } from "@/components/app/settings-hub";
+import { MemoryDashboard } from "@/components/app/memory-dashboard";
+import { WorkspaceEditor } from "@/components/app/workspace-editor";
 
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -122,7 +122,7 @@ type BookmarkEntry = {
   emojis?: string[];
 };
 
-type AgentFactRecord = {
+type WorkspaceFactRecord = {
   id: string;
   key: string;
   value: string;
@@ -141,7 +141,7 @@ type SessionSummaryRecord = {
 
 type DocRecord = {
   id:             string;
-  agentId:        string | null;
+  workspaceId:        string | null;
   name:           string;
   mimeType:       string;
   sizeBytes:      number;
@@ -179,7 +179,7 @@ type SessionScrubEntry = {
   events:     ScrubEvent[];
   redactions: RedactionRecord[];
   at:         string;
-  agentId?:   string;
+  workspaceId?:   string;
   source?:    "chat" | "document";
   documentId?:   string;
   documentName?: string;
@@ -212,15 +212,14 @@ type DeliverPayload = {
   hadRedactions: boolean;
 };
 
-type Agent = {
+type Workspace = {
   id:            string;
   name:          string;
   emoji:         string;
   color:         string;
-  personality:   string | null;
-  personalityConfig?: unknown;
-  tagline?:      string | null;
-  preferredMode: string;
+  context:       string | null;
+  description:   string | null;
+  modelOverride?: string | null;
   isDefault:     boolean;
   sessions?: { messages: { content: string; role: string }[] }[];
 };
@@ -277,7 +276,7 @@ type RouteHit = {
   tier: string;
   model: string;
   at: string;
-  agentId?: string;
+  workspaceId?: string;
   promptTokens?: number;
   completionTokens?: number;
   costUsd?: number;
@@ -340,17 +339,17 @@ function persistPiiDismissed(ids: Set<string>) {
   try { localStorage.setItem(PII_DISMISSED_KEY, JSON.stringify([...ids])); } catch { /* quota */ }
 }
 
-function agentDisplay(agents: Agent[], agentId?: string): { name: string; emoji?: string } {
-  if (!agentId) return { name: "Unknown companion" };
-  const a = agents.find(x => x.id === agentId);
-  return a ? { name: a.name, emoji: a.emoji } : { name: "Removed companion" };
+function workspaceDisplay(workspaces: Workspace[], workspaceId?: string): { name: string; emoji?: string } {
+  if (!workspaceId) return { name: "Unknown workspace" };
+  const a = workspaces.find(x => x.id === workspaceId);
+  return a ? { name: a.name, emoji: a.emoji } : { name: "Removed workspace" };
 }
 
 /** Keep only companion-tagged hits so All = sum of per-companion counts. */
-function taggedRouteHits(hits: RouteHit[], knownAgentIds?: Set<string>): RouteHit[] {
+function taggedRouteHits(hits: RouteHit[], knownWorkspaceIds?: Set<string>): RouteHit[] {
   return hits.filter(h => {
-    if (!h.agentId) return false;
-    if (knownAgentIds && !knownAgentIds.has(h.agentId)) return false;
+    if (!h.workspaceId) return false;
+    if (knownWorkspaceIds && !knownWorkspaceIds.has(h.workspaceId)) return false;
     return true;
   });
 }
@@ -361,37 +360,37 @@ function persistRouteHistory(hits: RouteHit[]) {
 
 function navTitle(nav: NavId): string {
   if (nav === "settings") return "Settings";
-  if (nav === "companion-settings") return "Customize";
+  if (nav === "workspace-settings") return "Customize";
   if (nav === "security-dashboard") return "Security";
   if (nav === "thread") return "Chat";
   return SUB_NAV_ITEMS.find(n => n.id === nav)?.label ?? nav;
 }
 
-const COMPANION_NAV_IDS = ["thread", "bookmarks", "documents", "memory", "companion-settings"] as const;
-type CompanionNavId = (typeof COMPANION_NAV_IDS)[number];
+const COMPANION_NAV_IDS = ["thread", "bookmarks", "documents", "memory", "workspace-settings"] as const;
+type WorkspaceNavId = (typeof COMPANION_NAV_IDS)[number];
 
-function isCompanionNav(nav: NavId): nav is CompanionNavId {
+function isWorkspaceNav(nav: NavId): nav is WorkspaceNavId {
   return (COMPANION_NAV_IDS as readonly string[]).includes(nav);
 }
 
-function CompanionBreadcrumb({
+function WorkspaceBreadcrumb({
   agent,
   sectionLabel,
   pickerId,
   open,
   onToggle,
-  agents,
+  workspaces,
   onSelectAgent,
 }: {
-  agent: Agent | null | undefined;
+  agent: Workspace | null | undefined;
   sectionLabel: string;
   pickerId?: string;
   open?: boolean;
   onToggle?: () => void;
-  agents?: Agent[];
+  workspaces?: Workspace[];
   onSelectAgent?: (id: string) => void;
 }) {
-  const canPick = agents && onSelectAgent && onToggle;
+  const canPick = workspaces && onSelectAgent && onToggle;
 
   return (
     <nav aria-label="Breadcrumb" className="flex items-center gap-1 min-w-0 text-sm">
@@ -411,8 +410,8 @@ function CompanionBreadcrumb({
           </button>
           {open && (
             <div className="absolute top-full left-0 mt-1 z-30 w-52 rounded-xl bg-[#0e0e14] border border-white/10 shadow-2xl shadow-black/60 py-1 overflow-hidden">
-              <p className="px-3 py-1.5 text-[0.6rem] uppercase tracking-widest text-white/25">Switch companion</p>
-              {agents.map(a => (
+              <p className="px-3 py-1.5 text-[0.6rem] uppercase tracking-widest text-white/25">Switch workspace</p>
+              {workspaces.map(a => (
                 <button
                   key={a.id}
                   type="button"
@@ -596,24 +595,24 @@ function SavingsBaselinePicker({
   );
 }
 
-function CompanionStatsFilter({
-  agents,
+function WorkspaceStatsFilter({
+  workspaces,
   value,
   onChange,
 }: {
-  agents: Agent[];
+  workspaces: Workspace[];
   value: string;
   onChange: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  const selectedAgent = agents.find(a => a.id === value);
+  const selectedAgent = workspaces.find(a => a.id === value);
   const selectedLabel = value === "all"
-    ? "All companions"
+    ? "All workspaces"
     : selectedAgent
       ? `${selectedAgent.emoji} ${selectedAgent.name}`
-      : "All companions";
+      : "All workspaces";
 
   useEffect(() => {
     if (!open) return;
@@ -625,14 +624,14 @@ function CompanionStatsFilter({
   }, [open]);
 
   const options: { id: string; label: string; emoji?: string }[] = [
-    { id: "all", label: "All companions" },
-    ...agents.map(a => ({ id: a.id, label: a.name, emoji: a.emoji })),
+    { id: "all", label: "All workspaces" },
+    ...workspaces.map(a => ({ id: a.id, label: a.name, emoji: a.emoji })),
   ];
 
   return (
     <div ref={rootRef} className="mb-2">
       <div className="flex items-center gap-2">
-        <span className="text-[0.62rem] font-medium text-white/35 shrink-0">Companion</span>
+        <span className="text-[0.62rem] font-medium text-white/35 shrink-0">Workspace</span>
         <div className="relative flex-1 min-w-0">
           <button
             type="button"
@@ -787,16 +786,16 @@ const SUB_NAV_ITEMS = [
     iconColor: "text-violet-300",
   },
 ] as const;
-type NavId = (typeof SUB_NAV_ITEMS)[number]["id"] | "companion-settings" | "settings" | "security-dashboard";
+type NavId = (typeof SUB_NAV_ITEMS)[number]["id"] | "workspace-settings" | "settings" | "security-dashboard";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-const ACTIVE_AGENT_KEY = "securemind-active-agent";
-const messagesCacheKey = (agentId: string) => `sm_msgs_${agentId}`;
+const ACTIVE_WORKSPACE_KEY = "sm_active_workspace";
+const messagesCacheKey = (workspaceId: string) => `sm_msgs_${workspaceId}`;
 
-function readCachedMessages(agentId: string): ChatMessage[] | null {
+function readCachedMessages(workspaceId: string): ChatMessage[] | null {
   try {
-    const raw = sessionStorage.getItem(messagesCacheKey(agentId));
+    const raw = sessionStorage.getItem(messagesCacheKey(workspaceId));
     if (!raw) return null;
     const parsed = JSON.parse(raw) as ChatMessage[];
     return Array.isArray(parsed) ? parsed : null;
@@ -805,9 +804,9 @@ function readCachedMessages(agentId: string): ChatMessage[] | null {
   }
 }
 
-function writeCachedMessages(agentId: string, msgs: ChatMessage[]) {
+function writeCachedMessages(workspaceId: string, msgs: ChatMessage[]) {
   try {
-    sessionStorage.setItem(messagesCacheKey(agentId), JSON.stringify(msgs));
+    sessionStorage.setItem(messagesCacheKey(workspaceId), JSON.stringify(msgs));
   } catch { /* quota / private browsing */ }
 }
 
@@ -926,7 +925,7 @@ function RedactedBlock({ category }: { category: string }) {
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
 
-function CompanionAvatar({
+function WorkspaceAvatar({
   name,
   emoji,
   color,
@@ -967,18 +966,18 @@ function CompanionAvatar({
 
 const MessageBubble = memo(function MessageBubble({
   message,
-  companionName,
-  companionEmoji,
-  companionColor,
+  workspaceName,
+  workspaceEmoji,
+  workspaceColor,
   onBookmark,
   highlighted = false,
   showTimestamp = true,
 }: {
   showTimestamp?: boolean;
   message: ChatMessage;
-  companionName: string;
-  companionEmoji?: string;
-  companionColor?: string;
+  workspaceName: string;
+  workspaceEmoji?: string;
+  workspaceColor?: string;
   onBookmark: (id: string) => void;
   highlighted?: boolean;
 }) {
@@ -1095,7 +1094,7 @@ const MessageBubble = memo(function MessageBubble({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <CompanionAvatar name={companionName} emoji={companionEmoji} color={companionColor} />
+      <WorkspaceAvatar name={workspaceName} emoji={workspaceEmoji} color={workspaceColor} />
 
       <div className="flex-1 min-w-0 relative pt-0.5">
         {/* Bookmark */}
@@ -1112,7 +1111,7 @@ const MessageBubble = memo(function MessageBubble({
           <Bookmark className={cn("size-3", message.bookmarked && "fill-current")} aria-hidden />
         </button>
 
-        <p className="mb-1 text-[0.68rem] font-medium text-white/35">{companionName}</p>
+        <p className="mb-1 text-[0.68rem] font-medium text-white/35">{workspaceName}</p>
         <div className="text-sm text-foreground/90">{body}</div>
 
         {/* Route badge — shows which mode + model handled this turn */}
@@ -1159,12 +1158,12 @@ const MessageBubble = memo(function MessageBubble({
   );
 });
 
-// ─── CompanionSectionHeader ───────────────────────────────────────────────────
+// ─── WorkspaceSectionHeader ───────────────────────────────────────────────────
 // Dropdown header shared by Chat, Bookmarks, Documents, and Memory views.
 
-function CompanionSectionHeader({
-  agents,
-  viewAgentId,
+function WorkspaceSectionHeader({
+  workspaces,
+  viewWorkspaceId,
   sectionLabel,
   pickerId,
   open,
@@ -1173,28 +1172,28 @@ function CompanionSectionHeader({
   subtitle,
   actions,
 }: {
-  agents: Agent[];
-  viewAgentId: string | null;
+  workspaces: Workspace[];
+  viewWorkspaceId: string | null;
   sectionLabel: string;
   pickerId: string;
   open: boolean;
   onToggle: () => void;
-  onSelect: (agentId: string) => void;
+  onSelect: (workspaceId: string) => void;
   subtitle?: React.ReactNode;
   actions?: React.ReactNode;
 }) {
-  const viewAgent = agents.find(a => a.id === viewAgentId);
+  const viewWorkspace = workspaces.find(a => a.id === viewWorkspaceId);
 
   return (
     <div className="flex items-start justify-between gap-3">
       <div className="flex-1 min-w-0">
-        <CompanionBreadcrumb
-          agent={viewAgent}
+        <WorkspaceBreadcrumb
+          agent={viewWorkspace}
           sectionLabel={sectionLabel}
           pickerId={pickerId}
           open={open}
           onToggle={onToggle}
-          agents={agents}
+          workspaces={workspaces}
           onSelectAgent={onSelect}
         />
         {subtitle}
@@ -1206,12 +1205,12 @@ function CompanionSectionHeader({
 
 function BookmarkCard({
   bookmark,
-  companionEmoji,
+  workspaceEmoji,
   onOpen,
   onRemove,
 }: {
   bookmark: BookmarkEntry;
-  companionEmoji: string;
+  workspaceEmoji: string;
   onOpen: () => void;
   onRemove: () => void;
 }) {
@@ -1244,7 +1243,7 @@ function BookmarkCard({
           )}
           aria-hidden
         >
-          {isUser ? "🙂" : companionEmoji}
+          {isUser ? "🙂" : workspaceEmoji}
         </span>
 
         <div className="min-w-0 flex-1">
@@ -1423,7 +1422,7 @@ function DocumentCard({
         </p>
       </div>
 
-      {!doc.agentId && (
+      {!doc.workspaceId && (
         <p className="text-[0.62rem] text-amber-400/70 mb-2">Unassigned — from a removed companion</p>
       )}
 
@@ -1607,7 +1606,7 @@ function VoiceBar({
 
 // ─── WorkspaceShell ───────────────────────────────────────────────────────────
 
-export function WorkspaceShell() {
+export function AppShell() {
 
   // ── core state ──────────────────────────────────────────────────────────────
   const [activeNav, setActiveNav] = useState<NavId>("thread");
@@ -1719,23 +1718,23 @@ export function WorkspaceShell() {
   const pendingClarifications = useRef<string[]>([]);
   const [turnCount, setTurnCount] = useState(0);
   const [routeStatsRange, setRouteStatsRange] = useState<StatsRange>("today");
-  const [routeStatsCompanionId, setRouteStatsCompanionId] = useState("all");
+  const [routeStatsWorkspaceId, setRouteStatsWorkspaceId] = useState("all");
   const [piiStatsRange, setPiiStatsRange]     = useState<StatsRange>("today");
-  const [piiStatsCompanionId, setPiiStatsCompanionId] = useState("all");
+  const [piiStatsWorkspaceId, setPiiStatsWorkspaceId] = useState("all");
   const [routeHistory, setRouteHistory]       = useState<RouteHit[]>([]);
   const [piiArchive, setPiiArchive]           = useState<SessionScrubEntry[]>([]);
   const [piiSensitivity, setPiiSensitivityState] = useState<PiiSensitivityTier>(DEFAULT_SENSITIVITY);
   const [safeTerms, setSafeTerms]             = useState<SafeTerm[]>(DEFAULT_SAFE_TERMS);
   const [pendingSend, setPendingSend]         = useState<PendingSend | null>(null);
   const [highlightedPiiRecordId, setHighlightedPiiRecordId] = useState<string | null>(null);
-  const [openCompanionPickerId, setOpenCompanionPickerId] = useState<string | null>(null);
-  const [deleteConfirmAgent, setDeleteConfirmAgent] = useState<Agent | null>(null);
+  const [openWorkspacePickerId, setOpenWorkspacePickerId] = useState<string | null>(null);
+  const [deleteConfirmWorkspace, setDeleteConfirmWorkspace] = useState<Workspace | null>(null);
   const [deleteWithBackup, setDeleteWithBackup]     = useState(true);
   const [deleteBusy, setDeleteBusy]                 = useState(false);
   const [dismissedPiiIds, setDismissedPiiIds]       = useState<Set<string>>(new Set());
   const [showDismissedPii, setShowDismissedPii]     = useState(false);
-  const toggleCompanionPicker = useCallback((id: string) => {
-    setOpenCompanionPickerId(prev => (prev === id ? null : id));
+  const toggleWorkspacePicker = useCallback((id: string) => {
+    setOpenWorkspacePickerId(prev => (prev === id ? null : id));
   }, []);
   const sessionStartedAtRef                   = useRef<Date | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
@@ -1746,18 +1745,18 @@ export function WorkspaceShell() {
   const sessionIdRef = useRef<string | null>(null);
 
   // ── agent state ──────────────────────────────────────────────────────────────
-  const [agents, setAgents]               = useState<Agent[]>([]);
-  const [activeAgentId, setActiveAgentId] = useState<string | null>(null);
-  const [expandedAgentId, setExpandedAgentId] = useState<string | null>(null);
+  const [workspaces, setWorkspaces]               = useState<Workspace[]>([]);
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
+  const [expandedWorkspaceId, setExpandedWorkspaceId] = useState<string | null>(null);
   // Which companion's content is shown in the current section (Chat, Bookmarks, etc.)
-  const [viewAgentId, setViewAgentId] = useState<string | null>(null);
-  const viewAgentIdRef = useRef<string | null>(null);
+  const [viewWorkspaceId, setViewWorkspaceId] = useState<string | null>(null);
+  const viewWorkspaceIdRef = useRef<string | null>(null);
   const [viewBookmarks, setViewBookmarks] = useState<BookmarkEntry[]>([]);
 
-  const activeAgent  = agents.find(a => a.id === activeAgentId) ?? null;
-  const viewAgent    = agents.find(a => a.id === viewAgentId) ?? null;
-  const companionName = activeAgent?.name ?? DEFAULT_NAME;
-  const viewAgentName = viewAgent?.name ?? companionName;
+  const activeWorkspace  = workspaces.find(a => a.id === activeWorkspaceId) ?? null;
+  const viewWorkspace    = workspaces.find(a => a.id === viewWorkspaceId) ?? null;
+  const workspaceName = activeWorkspace?.name ?? DEFAULT_NAME;
+  const viewWorkspaceName = viewWorkspace?.name ?? workspaceName;
 
   // ── intel panel + model overrides ───────────────────────────────────────────
   const [isIntelOpen,       setIsIntelOpen]       = useState(true);
@@ -1782,8 +1781,8 @@ export function WorkspaceShell() {
   const [summarizedCount, setSummarizedCount] = useState(0);
 
   // Full memory view — fetched from DB when the Memory tab opens
-  const [agentFacts,         setAgentFacts]         = useState<AgentFactRecord[]>([]);
-  const [userFacts,          setUserFacts]           = useState<AgentFactRecord[]>([]);
+  const [workspaceFacts,         setWorkspaceFacts]         = useState<WorkspaceFactRecord[]>([]);
+  const [userFacts,          setUserFacts]           = useState<WorkspaceFactRecord[]>([]);
   const [allSessionSummaries, setAllSessionSummaries] = useState<SessionSummaryRecord[]>([]);
   const [memoryStats,        setMemoryStats]        = useState<{ semanticFragmentCount: number; documentFragmentCount: number } | null>(null);
   const [memoryLoading,      setMemoryLoading]       = useState(false);
@@ -1793,17 +1792,17 @@ export function WorkspaceShell() {
   const extractedFactsRef  = useRef<Record<string, string>>({});
   const summarizedCountRef = useRef(0);
   const messagesRef        = useRef<ChatMessage[]>([]);
-  const loadedAgentRef     = useRef<string | null>(null);
+  const loadedWorkspaceRef     = useRef<string | null>(null);
 
   useEffect(() => { sessionSummaryRef.current  = sessionSummary;  }, [sessionSummary]);
   useEffect(() => { extractedFactsRef.current  = extractedFacts;  }, [extractedFacts]);
   useEffect(() => { summarizedCountRef.current = summarizedCount; }, [summarizedCount]);
   useEffect(() => { messagesRef.current        = messages;        }, [messages]);
   useEffect(() => {
-    if (activeAgentId && messages.length > 0) {
-      writeCachedMessages(activeAgentId, messages);
+    if (activeWorkspaceId && messages.length > 0) {
+      writeCachedMessages(activeWorkspaceId, messages);
     }
-  }, [messages, activeAgentId]);
+  }, [messages, activeWorkspaceId]);
   useEffect(() => {
     activeNavRef.current = activeNav;
     // Clear the unseen badge the moment the user opens Bookmarks
@@ -1812,15 +1811,15 @@ export function WorkspaceShell() {
 
   // Sync expanded agent to match the active agent whenever it changes
   useEffect(() => {
-    if (activeAgentId) setExpandedAgentId(activeAgentId);
-  }, [activeAgentId]);
+    if (activeWorkspaceId) setExpandedWorkspaceId(activeWorkspaceId);
+  }, [activeWorkspaceId]);
 
   // ── bookmark localStorage persistence ───────────────────────────────────────
   // Load bookmarks when the active agent changes
   useEffect(() => {
-    if (!activeAgentId) return;
+    if (!activeWorkspaceId) return;
     try {
-      const stored = localStorage.getItem(`sm_bm_${activeAgentId}`);
+      const stored = localStorage.getItem(`sm_bm_${activeWorkspaceId}`);
       if (stored) {
         const parsed: BookmarkEntry[] = JSON.parse(stored);
         setBookmarks(parsed);
@@ -1834,42 +1833,42 @@ export function WorkspaceShell() {
       }
     } catch { /* ignore malformed storage */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeAgentId]);
+  }, [activeWorkspaceId]);
 
   // Persist bookmarks whenever they change
   useEffect(() => {
-    if (!activeAgentId) return;
-    localStorage.setItem(`sm_bm_${activeAgentId}`, JSON.stringify(bookmarks));
-  }, [bookmarks, activeAgentId]);
+    if (!activeWorkspaceId) return;
+    localStorage.setItem(`sm_bm_${activeWorkspaceId}`, JSON.stringify(bookmarks));
+  }, [bookmarks, activeWorkspaceId]);
 
   // ── memory fetch ────────────────────────────────────────────────────────────
   useEffect(() => {
-    if (activeNav !== "memory" || !viewAgentId) return;
+    if (activeNav !== "memory" || !viewWorkspaceId) return;
     setMemoryLoading(true);
-    fetch(`/api/memory?agentId=${viewAgentId}`)
+    fetch(`/api/memory?workspaceId=${viewWorkspaceId}`)
       .then(r => r.json())
       .then(data => {
-        setAgentFacts(data.agentFacts ?? []);
+        setWorkspaceFacts(data.workspaceFacts ?? []);
         setUserFacts(data.userFacts ?? []);
         setAllSessionSummaries(data.sessionSummaries ?? []);
         setMemoryStats(data.stats ?? null);
       })
       .catch(() => { /* silently ignore — in-session data is still shown */ })
       .finally(() => setMemoryLoading(false));
-  }, [activeNav, viewAgentId]);
+  }, [activeNav, viewWorkspaceId]);
 
-  // ── view bookmarks (per companion) ──────────────────────────────────────────
+  // ── view bookmarks (per workspace) ──────────────────────────────────────────
   useEffect(() => {
-    if (activeNav !== "bookmarks" || !viewAgentId) return;
+    if (activeNav !== "bookmarks" || !viewWorkspaceId) return;
     try {
-      const stored = localStorage.getItem(`sm_bm_${viewAgentId}`);
+      const stored = localStorage.getItem(`sm_bm_${viewWorkspaceId}`);
       setViewBookmarks(stored ? JSON.parse(stored) as BookmarkEntry[] : []);
     } catch {
       setViewBookmarks([]);
     }
-  }, [activeNav, viewAgentId]);
+  }, [activeNav, viewWorkspaceId]);
 
-  useEffect(() => { viewAgentIdRef.current = viewAgentId; }, [viewAgentId]);
+  useEffect(() => { viewWorkspaceIdRef.current = viewWorkspaceId; }, [viewWorkspaceId]);
 
   // Load persisted routing + PII history
   useEffect(() => {
@@ -1905,15 +1904,15 @@ export function WorkspaceShell() {
 
   // Drop routing stats for deleted companions so All stays equal to the sum of individuals
   useEffect(() => {
-    if (agents.length === 0) return;
-    const known = new Set(agents.map(a => a.id));
+    if (workspaces.length === 0) return;
+    const known = new Set(workspaces.map(a => a.id));
     setRouteHistory(prev => {
       const next = taggedRouteHits(prev, known);
       if (next.length === prev.length) return prev;
       persistRouteHistory(next);
       return next;
     });
-  }, [agents]);
+  }, [workspaces]);
 
   // ── document library state ───────────────────────────────────────────────────
   const [documents,          setDocuments]          = useState<DocRecord[]>([]);
@@ -1945,24 +1944,21 @@ export function WorkspaceShell() {
   const [floatingDate, setFloatingDate] = useState<string | null>(null);
   const abortRef     = useRef<AbortController | null>(null);
 
-  // ── Load agents then session on mount ────────────────────────────────────────
+  // ── Load workspaces then session on mount ────────────────────────────────────────
   useEffect(() => {
-    fetch("/api/agents")
+    fetch("/api/workspaces")
       .then(r => r.json())
-      .then((data: Agent[]) => {
-        setAgents(data);
+      .then((data: Workspace[]) => {
+        setWorkspaces(data);
         const savedId = typeof window !== "undefined"
-          ? localStorage.getItem(ACTIVE_AGENT_KEY)
+          ? localStorage.getItem(ACTIVE_WORKSPACE_KEY)
           : null;
         const savedAgent = savedId ? data.find(a => a.id === savedId) : undefined;
         const target = savedAgent ?? data.find(a => a.isDefault) ?? data[0];
         if (target) {
-          setActiveAgentId(target.id);
-          setViewAgentId(target.id);
-          setExpandedAgentId(target.id);
-          if (MODES.includes(target.preferredMode as Mode)) {
-            setMode(target.preferredMode as Mode);
-          }
+          setActiveWorkspaceId(target.id);
+          setViewWorkspaceId(target.id);
+          setExpandedWorkspaceId(target.id);
           loadSession(target.id, target.name);
         }
       })
@@ -1970,10 +1966,10 @@ export function WorkspaceShell() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadSession = (agentId: string, agentName: string) => {
+  const loadSession = (workspaceId: string, agentName: string) => {
     sessionStartedAtRef.current = new Date();
-    const sameConversation = loadedAgentRef.current === agentId && messagesRef.current.length > 0;
-    const cached = readCachedMessages(agentId);
+    const sameConversation = loadedWorkspaceRef.current === workspaceId && messagesRef.current.length > 0;
+    const cached = readCachedMessages(workspaceId);
 
     setSessionLoading(true);
     setSessionSaveError(null);
@@ -1989,7 +1985,7 @@ export function WorkspaceShell() {
       }
     }
 
-    fetch(`/api/session?agentId=${encodeURIComponent(agentId)}`)
+    fetch(`/api/session?workspaceId=${encodeURIComponent(workspaceId)}`)
       .then(r => {
         if (!r.ok) throw new Error(`Session load failed (${r.status})`);
         return r.json();
@@ -2004,7 +2000,7 @@ export function WorkspaceShell() {
         if (!data.sessionId) throw new Error("No session ID returned");
         sessionIdRef.current = data.sessionId;
         setSessionReady(true);
-        loadedAgentRef.current = agentId;
+        loadedWorkspaceRef.current = workspaceId;
 
         if (data.messages.length > 0) {
           const loaded = data.messages.map(m => ({
@@ -2014,7 +2010,7 @@ export function WorkspaceShell() {
             createdAt: m.createdAt,
           }));
           setMessages(loaded);
-          writeCachedMessages(agentId, loaded);
+          writeCachedMessages(workspaceId, loaded);
         } else {
           const seed = [{
             id:        "seed",
@@ -2023,7 +2019,7 @@ export function WorkspaceShell() {
             createdAt: new Date().toISOString(),
           }];
           setMessages(seed);
-          writeCachedMessages(agentId, seed);
+          writeCachedMessages(workspaceId, seed);
         }
 
         setSessionSummary(data.sessionSummary ?? "");
@@ -2123,7 +2119,7 @@ export function WorkspaceShell() {
         existingSummary: sessionSummaryRef.current,
         existingFacts:   extractedFactsRef.current,
         sessionId:       sessionIdRef.current,
-        agentId:         activeAgentId,
+        workspaceId:         activeWorkspaceId,
         turnsCovered:    newCount,
       }),
     })
@@ -2489,7 +2485,7 @@ export function WorkspaceShell() {
     setTurnCount(turn);
 
     if (hadRedactions) {
-      const scrubAgentId = activeAgentId ?? undefined;
+      const scrubAgentId = activeWorkspaceId ?? undefined;
       const redactions: RedactionRecord[] = scrubEvents.map(ev => ({
         id:       crypto.randomUUID(),
         category: ev.category,
@@ -2502,7 +2498,7 @@ export function WorkspaceShell() {
         events: scrubEvents,
         at: new Date().toISOString(),
         redactions,
-        agentId: scrubAgentId,
+        workspaceId: scrubAgentId,
         safeTermMatches: safeTermMatches.length > 0 ? safeTermMatches : undefined,
       };
       setScrubLog(p => [...p, scrubEntry]);
@@ -2558,9 +2554,7 @@ export function WorkspaceShell() {
         body: JSON.stringify({
           message:           messageToSend,
           mode,
-          companionName,
-          agentPersonality:  activeAgent?.personality ?? "",
-          agentId:           activeAgentId ?? "",
+          workspaceId:       activeWorkspaceId ?? "",
           images:            imageDataUrls,
           sessionId:         sessionIdRef.current ?? "local",
           sessionSummary:    sessionSummaryRef.current,
@@ -2615,7 +2609,7 @@ export function WorkspaceShell() {
                 tier:    parsed.route!.mode,
                 model:   parsed.route!.model,
                 at:      new Date().toISOString(),
-                agentId: activeAgentId ?? undefined,
+                workspaceId: activeWorkspaceId ?? undefined,
               };
               setRouteHistory(prev => {
                 const next = taggedRouteHits([...prev, hit]).slice(-500);
@@ -2714,7 +2708,7 @@ export function WorkspaceShell() {
       }
     }
   }, [
-    turnCount, mode, companionName, activeAgent, activeAgentId, modelSelectionMode,
+    turnCount, mode, workspaceName, activeWorkspace, activeWorkspaceId, modelSelectionMode,
     fixedModelId, modeModelOverrides, messages, lastRouteInfo,
   ]);
 
@@ -2799,17 +2793,13 @@ export function WorkspaceShell() {
   handleSendRef.current = handleSend;
 
   // ── agent switching ──────────────────────────────────────────────────────────
-  const switchAgent = useCallback((agent: Agent) => {
-    if (agent.id === activeAgentId) return;
+  const switchWorkspace = useCallback((agent: Workspace) => {
+    if (agent.id === activeWorkspaceId) return;
     abortRef.current?.abort();
-    try { localStorage.setItem(ACTIVE_AGENT_KEY, agent.id); } catch { /* private browsing */ }
-    setActiveAgentId(agent.id);
-    setViewAgentId(agent.id);
-    setExpandedAgentId(agent.id);
-    // Apply the agent's preferred mode
-    if (MODES.includes(agent.preferredMode as Mode)) {
-      setMode(agent.preferredMode as Mode);
-    }
+    try { localStorage.setItem(ACTIVE_WORKSPACE_KEY, agent.id); } catch { /* private browsing */ }
+    setActiveWorkspaceId(agent.id);
+    setViewWorkspaceId(agent.id);
+    setExpandedWorkspaceId(agent.id);
     setBookmarks([]);
     setScrubLog([]);
     pendingClarifications.current = [];
@@ -2817,41 +2807,41 @@ export function WorkspaceShell() {
     composerRef.current?.clear();
     loadSession(agent.id, agent.name);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeAgentId]);
+  }, [activeWorkspaceId]);
 
-  const handleAgentClick = useCallback((agent: Agent) => {
-    if (agent.id === activeAgentId) {
+  const handleWorkspaceClick = useCallback((agent: Workspace) => {
+    if (agent.id === activeWorkspaceId) {
       // Toggle expand for the already-active agent
-      setExpandedAgentId(prev => prev === agent.id ? null : agent.id);
+      setExpandedWorkspaceId(prev => prev === agent.id ? null : agent.id);
     } else {
       // Switch to this agent and expand its sub-nav
-      switchAgent(agent);
-      setExpandedAgentId(agent.id);
+      switchWorkspace(agent);
+      setExpandedWorkspaceId(agent.id);
       setActiveNav("thread");
     }
-  }, [activeAgentId, switchAgent]);
+  }, [activeWorkspaceId, switchWorkspace]);
 
-  const createAgent = useCallback(async (draft: Partial<Agent>) => {
-    const res  = await fetch("/api/agents", {
+  const createWorkspace = useCallback(async (draft: Partial<Workspace>) => {
+    const res  = await fetch("/api/workspaces", {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify(draft),
     });
-    const agent = await res.json() as Agent;
-    setAgents(p => [...p, agent]);
-    switchAgent(agent);
+    const agent = await res.json() as Workspace;
+    setWorkspaces(p => [...p, agent]);
+    switchWorkspace(agent);
     return agent;
-  }, [switchAgent]);
+  }, [switchWorkspace]);
 
-  const createNewCompanion = useCallback(async () => {
-    const agent = await createAgent({ name: "New companion" });
-    setViewAgentId(agent.id);
-    setExpandedAgentId(agent.id);
-    setActiveNav("companion-settings");
-  }, [createAgent]);
+  const createNewWorkspace = useCallback(async () => {
+    const agent = await createWorkspace({ name: "New workspace" });
+    setViewWorkspaceId(agent.id);
+    setExpandedWorkspaceId(agent.id);
+    setActiveNav("workspace-settings");
+  }, [createWorkspace]);
 
-  const saveAgent = useCallback(async (id: string, patch: Partial<Agent> & { personalityConfig?: unknown; tagline?: string }) => {
-    const res  = await fetch(`/api/agents/${id}`, {
+  const saveWorkspace = useCallback(async (id: string, patch: Partial<Workspace>) => {
+    const res  = await fetch(`/api/workspaces/${id}`, {
       method:  "PATCH",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify(patch),
@@ -2860,28 +2850,28 @@ export function WorkspaceShell() {
       const body = await res.json().catch(() => ({})) as { error?: string };
       throw new Error(body.error ?? `Save failed (${res.status})`);
     }
-    const updated = await res.json() as Agent;
-    setAgents(p => p.map(a => a.id === id ? { ...a, ...updated } : a));
+    const updated = await res.json() as Workspace;
+    setWorkspaces(p => p.map(a => a.id === id ? { ...a, ...updated } : a));
   }, []);
 
-  const deleteAgent = useCallback(async (id: string) => {
-    const res = await fetch(`/api/agents/${id}`, { method: "DELETE" });
+  const deleteWorkspace = useCallback(async (id: string) => {
+    const res = await fetch(`/api/workspaces/${id}`, { method: "DELETE" });
     if (!res.ok) {
       const body = await res.json().catch(() => ({})) as { error?: string };
       throw new Error(body.error ?? "Could not delete companion");
     }
-    const remaining = agents.filter(a => a.id !== id);
-    setAgents(remaining);
+    const remaining = workspaces.filter(a => a.id !== id);
+    setWorkspaces(remaining);
     try { localStorage.removeItem(`sm_bm_${id}`); } catch { /* ignore */ }
-    if (activeAgentId === id && remaining.length > 0) {
-      switchAgent(remaining[0]);
+    if (activeWorkspaceId === id && remaining.length > 0) {
+      switchWorkspace(remaining[0]);
     }
-    if (viewAgentId === id && remaining.length > 0) {
-      setViewAgentId(remaining[0].id);
+    if (viewWorkspaceId === id && remaining.length > 0) {
+      setViewWorkspaceId(remaining[0].id);
     }
-  }, [agents, activeAgentId, viewAgentId, switchAgent]);
+  }, [workspaces, activeWorkspaceId, viewWorkspaceId, switchWorkspace]);
 
-  const downloadCompanionBackup = useCallback(async (agent: Agent) => {
+  const downloadWorkspaceBackup = useCallback(async (agent: Workspace) => {
     let bookmarks: unknown[] = [];
     try {
       const bm = localStorage.getItem(`sm_bm_${agent.id}`);
@@ -2892,7 +2882,7 @@ export function WorkspaceShell() {
       version:    1,
       agent,
       bookmarks,
-      note: "Profile and bookmarks export. Chat history and documents remain in your database until the companion is deleted.",
+      note: "Profile and bookmarks export. Chat history and documents remain in your database until the workspace is deleted.",
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -2903,29 +2893,29 @@ export function WorkspaceShell() {
     URL.revokeObjectURL(url);
   }, []);
 
-  const confirmDeleteCompanion = useCallback(async () => {
-    if (!deleteConfirmAgent) return;
+  const confirmDeleteWorkspace = useCallback(async () => {
+    if (!deleteConfirmWorkspace) return;
     setDeleteBusy(true);
     try {
-      if (deleteWithBackup) await downloadCompanionBackup(deleteConfirmAgent);
-      await deleteAgent(deleteConfirmAgent.id);
-      setDeleteConfirmAgent(null);
+      if (deleteWithBackup) await downloadWorkspaceBackup(deleteConfirmWorkspace);
+      await deleteWorkspace(deleteConfirmWorkspace.id);
+      setDeleteConfirmWorkspace(null);
       setActiveNav("thread");
     } catch (err) {
-      console.error("[agents] delete failed:", err);
+      console.error("[workspaces] delete failed:", err);
     } finally {
       setDeleteBusy(false);
     }
-  }, [deleteConfirmAgent, deleteWithBackup, deleteAgent, downloadCompanionBackup]);
+  }, [deleteConfirmWorkspace, deleteWithBackup, deleteWorkspace, downloadWorkspaceBackup]);
 
   // ── document library ─────────────────────────────────────────────────────────
 
-  const fetchDocuments = useCallback(async (agentId?: string | null) => {
-    const id = agentId ?? viewAgentIdRef.current;
+  const fetchDocuments = useCallback(async (workspaceId?: string | null) => {
+    const id = workspaceId ?? viewWorkspaceIdRef.current;
     setDocLoading(true);
     setDocError(null);
     try {
-      const url = id ? `/api/documents?agentId=${id}` : "/api/documents";
+      const url = id ? `/api/documents?workspaceId=${id}` : "/api/documents";
       const res = await fetch(url);
       if (res.ok) {
         setDocuments(await res.json() as DocRecord[]);
@@ -2944,25 +2934,25 @@ export function WorkspaceShell() {
 
   // Refetch documents when the viewed companion or Documents tab changes
   useEffect(() => {
-    if (viewAgentId && activeNav === "documents") fetchDocuments(viewAgentId);
-  }, [viewAgentId, activeNav, fetchDocuments]);
+    if (viewWorkspaceId && activeNav === "documents") fetchDocuments(viewWorkspaceId);
+  }, [viewWorkspaceId, activeNav, fetchDocuments]);
 
   // Switch which companion's content is shown in the current section
-  const selectViewAgent = useCallback((agentId: string) => {
-    setViewAgentId(agentId);
-    setExpandedAgentId(agentId);
-    setOpenCompanionPickerId(null);
+  const selectViewWorkspace = useCallback((workspaceId: string) => {
+    setViewWorkspaceId(workspaceId);
+    setExpandedWorkspaceId(workspaceId);
+    setOpenWorkspacePickerId(null);
 
-    const agent = agents.find(a => a.id === agentId);
+    const agent = workspaces.find(a => a.id === workspaceId);
     if (!agent) return;
 
     if (activeNav === "thread") {
-      if (agentId !== activeAgentId) switchAgent(agent);
+      if (workspaceId !== activeWorkspaceId) switchWorkspace(agent);
     } else if (activeNav === "documents") {
       setSelectedDoc(null);
-      fetchDocuments(agentId);
+      fetchDocuments(workspaceId);
     }
-  }, [agents, activeNav, activeAgentId, switchAgent, fetchDocuments]);
+  }, [workspaces, activeNav, activeWorkspaceId, switchWorkspace, fetchDocuments]);
 
   // Poll a single document until it leaves "processing"
   const pollDocument = useCallback((id: string, ms = 3000) => {
@@ -2998,7 +2988,7 @@ export function WorkspaceShell() {
     setDocError(null);
     const fd = new FormData();
     fd.append("file", file);
-    if (viewAgentIdRef.current) fd.append("agentId", viewAgentIdRef.current);
+    if (viewWorkspaceIdRef.current) fd.append("workspaceId", viewWorkspaceIdRef.current);
     try {
       const res = await fetch("/api/documents", { method: "POST", body: fd });
       if (res.ok) {
@@ -3011,7 +3001,7 @@ export function WorkspaceShell() {
             turn: 0,
             events: doc.scrubEvents,
             at: doc.createdAt,
-            agentId: doc.agentId ?? undefined,
+            workspaceId: doc.workspaceId ?? undefined,
             source: "document",
             documentId: doc.id,
             documentName: doc.name,
@@ -3116,15 +3106,15 @@ export function WorkspaceShell() {
 
   // Close companion picker dropdown on outside click
   useEffect(() => {
-    if (!openCompanionPickerId) return;
+    if (!openWorkspacePickerId) return;
     const handler = (e: MouseEvent) => {
       const t = e.target as Node;
-      const root = document.querySelector(`[data-companion-picker-root="${openCompanionPickerId}"]`);
-      if (!root?.contains(t)) setOpenCompanionPickerId(null);
+      const root = document.querySelector(`[data-companion-picker-root="${openWorkspacePickerId}"]`);
+      if (!root?.contains(t)) setOpenWorkspacePickerId(null);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
-  }, [openCompanionPickerId]);
+  }, [openWorkspacePickerId]);
 
   const onFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
@@ -3154,7 +3144,7 @@ export function WorkspaceShell() {
       const preview = t.length > 200 ? t.slice(0, 200) + "…" : t;
       setBookmarks(p => [...p, {
         messageId,
-        label:     msg.role === "assistant" ? companionName : "You",
+        label:     msg.role === "assistant" ? workspaceName : "You",
         role:      msg.role,
         preview,
         heavy:     msg.content.includes("redacted]"),
@@ -3168,16 +3158,16 @@ export function WorkspaceShell() {
         activeNavRef.current === "bookmarks" ? prev : new Set([...prev, messageId]),
       );
     }
-  }, [bookmarks, companionName, messages]);
+  }, [bookmarks, workspaceName, messages]);
 
-  const removeBookmark = useCallback((agentId: string, messageId: string) => {
+  const removeBookmark = useCallback((workspaceId: string, messageId: string) => {
     const applyRemove = (list: BookmarkEntry[]) => list.filter(b => b.messageId !== messageId);
 
-    if (agentId === activeAgentId) {
+    if (workspaceId === activeWorkspaceId) {
       setBookmarks(applyRemove);
       setMessages(p => p.map(m => m.id === messageId ? { ...m, bookmarked: false } : m));
     }
-    if (viewAgentId === agentId) {
+    if (viewWorkspaceId === workspaceId) {
       setViewBookmarks(applyRemove);
     }
     setUnseenBookmarkIds(prev => {
@@ -3187,13 +3177,13 @@ export function WorkspaceShell() {
     });
 
     try {
-      const stored = localStorage.getItem(`sm_bm_${agentId}`);
+      const stored = localStorage.getItem(`sm_bm_${workspaceId}`);
       if (stored) {
         const parsed = JSON.parse(stored) as BookmarkEntry[];
-        localStorage.setItem(`sm_bm_${agentId}`, JSON.stringify(applyRemove(parsed)));
+        localStorage.setItem(`sm_bm_${workspaceId}`, JSON.stringify(applyRemove(parsed)));
       }
     } catch { /* ignore */ }
-  }, [activeAgentId, viewAgentId]);
+  }, [activeWorkspaceId, viewWorkspaceId]);
 
   const dismissPiiRecord = useCallback((recordId: string) => {
     setDismissedPiiIds(prev => {
@@ -3224,31 +3214,31 @@ export function WorkspaceShell() {
   }, []);
 
   useEffect(() => {
-    if (activeNav === "bookmarks" && viewAgentId === activeAgentId) {
+    if (activeNav === "bookmarks" && viewWorkspaceId === activeWorkspaceId) {
       setViewBookmarks(bookmarks);
     }
-  }, [bookmarks, viewAgentId, activeAgentId, activeNav]);
+  }, [bookmarks, viewWorkspaceId, activeWorkspaceId, activeNav]);
 
   const scrollToMessage = useCallback((id: string) => {
-    const agent = viewAgentId ? agents.find(a => a.id === viewAgentId) : null;
-    if (agent && agent.id !== activeAgentId) switchAgent(agent);
+    const agent = viewWorkspaceId ? workspaces.find(a => a.id === viewWorkspaceId) : null;
+    if (agent && agent.id !== activeWorkspaceId) switchWorkspace(agent);
     pendingScrollIdRef.current = id;
     setActiveNav("thread");
     setBookmarks(prev => prev.map(b => b.messageId === id ? { ...b, read: true } : b));
     setViewBookmarks(prev => prev.map(b => b.messageId === id ? { ...b, read: true } : b));
-    if (viewAgentId) {
+    if (viewWorkspaceId) {
       try {
-        const stored = localStorage.getItem(`sm_bm_${viewAgentId}`);
+        const stored = localStorage.getItem(`sm_bm_${viewWorkspaceId}`);
         if (stored) {
           const parsed = JSON.parse(stored) as BookmarkEntry[];
           localStorage.setItem(
-            `sm_bm_${viewAgentId}`,
+            `sm_bm_${viewWorkspaceId}`,
             JSON.stringify(parsed.map(b => b.messageId === id ? { ...b, read: true } : b)),
           );
         }
       } catch { /* ignore */ }
     }
-  }, [viewAgentId, activeAgentId, agents, switchAgent]);
+  }, [viewWorkspaceId, activeWorkspaceId, workspaces, switchWorkspace]);
 
   const groupedViewBookmarks = useMemo(
     () => groupBookmarksByDate(viewBookmarks),
@@ -3282,10 +3272,10 @@ export function WorkspaceShell() {
   const totalRedactions = scrubLog.reduce((s, e) => s + e.events.reduce((ss, ev) => ss + ev.count, 0), 0);
 
   const filteredRouteHits = (() => {
-    const known = new Set(agents.map(a => a.id));
+    const known = new Set(workspaces.map(a => a.id));
     const tagged = taggedRouteHits(filterByRange(routeHistory, routeStatsRange), known);
-    if (routeStatsCompanionId === "all") return tagged;
-    return tagged.filter(h => h.agentId === routeStatsCompanionId);
+    if (routeStatsWorkspaceId === "all") return tagged;
+    return tagged.filter(h => h.workspaceId === routeStatsWorkspaceId);
   })();
   const tierUsageCounts = MODES.map(tier => ({
     tier,
@@ -3329,8 +3319,8 @@ export function WorkspaceShell() {
   })();
   const filteredPiiEntries = (() => {
     const byRange = filterByRange(mergedPiiEntries, piiStatsRange);
-    if (piiStatsCompanionId === "all") return byRange;
-    return byRange.filter(e => e.agentId === piiStatsCompanionId);
+    if (piiStatsWorkspaceId === "all") return byRange;
+    return byRange.filter(e => e.workspaceId === piiStatsWorkspaceId);
   })();
   const activePiiItems = filteredPiiEntries.flatMap(entry =>
     entry.redactions
@@ -3360,8 +3350,8 @@ export function WorkspaceShell() {
       .slice(0, 3),
   [activePiiItems]);
 
-  const openPiiRecord = useCallback((recordId: string, agentId?: string) => {
-    if (agentId) setPiiStatsCompanionId(agentId);
+  const openPiiRecord = useCallback((recordId: string, workspaceId?: string) => {
+    if (workspaceId) setPiiStatsWorkspaceId(workspaceId);
     setHighlightedPiiRecordId(recordId);
     setActiveNav("security-dashboard");
   }, []);
@@ -3413,17 +3403,17 @@ export function WorkspaceShell() {
 
             {/* Complexity usage — how often each tier was called */}
             <IntelCard label="Complexity usage">
-              <CompanionStatsFilter
-                agents={agents}
-                value={routeStatsCompanionId}
-                onChange={setRouteStatsCompanionId}
+              <WorkspaceStatsFilter
+                workspaces={workspaces}
+                value={routeStatsWorkspaceId}
+                onChange={setRouteStatsWorkspaceId}
               />
               <StatsRangePicker value={routeStatsRange} onChange={setRouteStatsRange} />
               <p className="text-[0.62rem] text-white/30 mt-2 mb-2">
                 {totalRouteCalls === 0
-                  ? routeStatsCompanionId === "all"
+                  ? routeStatsWorkspaceId === "all"
                     ? "No AI responses yet for this range."
-                    : "No responses for this companion in this range."
+                    : "No responses for this workspace in this range."
                   : `${totalRouteCalls} response${totalRouteCalls !== 1 ? "s" : ""} routed`}
               </p>
               <div className="space-y-1">
@@ -3770,12 +3760,12 @@ export function WorkspaceShell() {
                   </p>
                   <ul className="space-y-1">
                     {recentPiiItems.map(({ entry, rec }) => {
-                      const ag = agentDisplay(agents, entry.agentId);
+                      const ag = workspaceDisplay(workspaces, entry.workspaceId);
                       return (
                         <li key={rec.id}>
                           <button
                             type="button"
-                            onClick={() => openPiiRecord(rec.id, entry.agentId)}
+                            onClick={() => openPiiRecord(rec.id, entry.workspaceId)}
                             className="w-full text-left rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-2 hover:bg-white/[0.06] hover:border-indigo-500/25 transition-colors cursor-pointer group"
                           >
                             <div className="flex items-center justify-between gap-2">
@@ -3827,10 +3817,10 @@ export function WorkspaceShell() {
             </button>
 
             <IntelCard label="Cost summary">
-              <CompanionStatsFilter
-                agents={agents}
-                value={routeStatsCompanionId}
-                onChange={setRouteStatsCompanionId}
+              <WorkspaceStatsFilter
+                workspaces={workspaces}
+                value={routeStatsWorkspaceId}
+                onChange={setRouteStatsWorkspaceId}
               />
               <StatsRangePicker value={routeStatsRange} onChange={setRouteStatsRange} />
               {savingsStats.responseCount === 0 ? (
@@ -3945,7 +3935,7 @@ export function WorkspaceShell() {
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
 
-      {deleteConfirmAgent && (
+      {deleteConfirmWorkspace && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
           <div className="w-full max-w-md rounded-2xl bg-[#0e0e14] border border-white/10 p-6 shadow-2xl space-y-4">
             <div className="flex items-start gap-3">
@@ -3953,9 +3943,9 @@ export function WorkspaceShell() {
                 <Trash2 className="size-5 text-red-400" aria-hidden />
               </div>
               <div>
-                <h2 className="text-base font-bold text-white/90">Remove {deleteConfirmAgent.name}?</h2>
+                <h2 className="text-base font-bold text-white/90">Remove {deleteConfirmWorkspace.name}?</h2>
                 <p className="text-sm text-white/45 mt-1.5 leading-relaxed">
-                  All contents for this companion will be permanently deleted — chats, memory, documents, and bookmarks.
+                  All contents for this workspace will be permanently deleted — chats, memory, documents, and bookmarks.
                 </p>
               </div>
             </div>
@@ -3976,7 +3966,7 @@ export function WorkspaceShell() {
                 variant="ghost"
                 className="text-white/50"
                 disabled={deleteBusy}
-                onClick={() => setDeleteConfirmAgent(null)}
+                onClick={() => setDeleteConfirmWorkspace(null)}
               >
                 Cancel
               </Button>
@@ -3984,7 +3974,7 @@ export function WorkspaceShell() {
                 type="button"
                 className="bg-red-600 hover:bg-red-500 text-white"
                 disabled={deleteBusy}
-                onClick={() => void confirmDeleteCompanion()}
+                onClick={() => void confirmDeleteWorkspace()}
               >
                 {deleteBusy ? "Removing…" : "Remove permanently"}
               </Button>
@@ -4085,27 +4075,27 @@ export function WorkspaceShell() {
           </div>
         </div>
 
-        {/* Companions + optional settings nav */}
+        {/* Workspaces + optional settings nav */}
         <div className="flex flex-col flex-1 min-h-0">
           <div className="flex flex-col gap-1 px-2.5 py-3 overflow-y-auto flex-1 min-h-0">
           <div className="flex items-center justify-between px-1.5 mb-2">
-            <p className="text-[0.58rem] uppercase tracking-[0.28em] text-white/35 font-semibold">Companions</p>
+            <p className="text-[0.58rem] uppercase tracking-[0.28em] text-white/35 font-semibold">Workspaces</p>
             <button
-              onClick={() => { void createNewCompanion(); }}
+              onClick={() => { void createNewWorkspace(); }}
               className="flex size-6 items-center justify-center rounded-lg text-white/35 hover:text-white/70 hover:bg-white/6 transition-colors cursor-pointer"
-              title="New companion"
+              title="New workspace"
             >
               <span className="text-base leading-none">+</span>
             </button>
           </div>
 
-          {agents.map(agent => {
-            const isViewing = agent.id === viewAgentId;
-            const isExpanded = expandedAgentId === agent.id;
+          {workspaces.map(agent => {
+            const isViewing = agent.id === viewWorkspaceId;
+            const isExpanded = expandedWorkspaceId === agent.id;
 
             return (
               <div key={agent.id} className="rounded-xl">
-                {/* Companion row — avatar customizes; name+chevron expand/switch */}
+                {/* Workspace row — avatar customizes; name+chevron expand/switch */}
                 <div className={cn(
                   "flex w-full items-center gap-1.5 px-1.5 py-1.5 rounded-xl transition-colors",
                   isViewing ? "bg-white/[0.07]" : "hover:bg-white/[0.04]",
@@ -4114,9 +4104,9 @@ export function WorkspaceShell() {
                     type="button"
                     onClick={e => {
                       e.stopPropagation();
-                      setViewAgentId(agent.id);
-                      setExpandedAgentId(agent.id);
-                      setActiveNav("companion-settings");
+                      setViewWorkspaceId(agent.id);
+                      setExpandedWorkspaceId(agent.id);
+                      setActiveNav("workspace-settings");
                     }}
                     className="flex size-9 shrink-0 items-center justify-center rounded-xl text-base transition-all hover:ring-2 hover:ring-white/20 hover:scale-[1.06] active:scale-100 cursor-pointer"
                     style={{ backgroundColor: agent.color + "28", border: `1px solid ${agent.color}55` }}
@@ -4127,7 +4117,7 @@ export function WorkspaceShell() {
 
                   <button
                     type="button"
-                    onClick={() => handleAgentClick(agent)}
+                    onClick={() => handleWorkspaceClick(agent)}
                     className="flex flex-1 min-w-0 items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left cursor-pointer"
                   >
                     <p className={cn(
@@ -4151,8 +4141,8 @@ export function WorkspaceShell() {
                     <div className="ml-4 mt-1 mb-1.5 flex flex-col gap-0.5 border-l-2 border-white/[0.08] pl-2">
                       {SUB_NAV_ITEMS.map(item => {
                         const Icon = item.icon;
-                        const isNavActive = activeNav === item.id && viewAgentId === agent.id;
-                        const badge = item.id === "bookmarks" && agent.id === activeAgentId
+                        const isNavActive = activeNav === item.id && viewWorkspaceId === agent.id;
+                        const badge = item.id === "bookmarks" && agent.id === activeWorkspaceId
                           ? unseenBookmarkIds.size
                           : 0;
                         return (
@@ -4160,12 +4150,12 @@ export function WorkspaceShell() {
                             key={item.id}
                             type="button"
                             onClick={() => {
-                              setOpenCompanionPickerId(null);
-                              setViewAgentId(agent.id);
-                              setExpandedAgentId(agent.id);
+                              setOpenWorkspacePickerId(null);
+                              setViewWorkspaceId(agent.id);
+                              setExpandedWorkspaceId(agent.id);
                               setActiveNav(item.id as NavId);
                               if (item.id === "thread") {
-                                if (agent.id !== activeAgentId) switchAgent(agent);
+                                if (agent.id !== activeWorkspaceId) switchWorkspace(agent);
                               } else if (item.id === "documents") {
                                 fetchDocuments(agent.id);
                               }
@@ -4200,27 +4190,27 @@ export function WorkspaceShell() {
                       <button
                         type="button"
                         onClick={() => {
-                          setOpenCompanionPickerId(null);
-                          setViewAgentId(agent.id);
-                          setExpandedAgentId(agent.id);
-                          setActiveNav("companion-settings");
+                          setOpenWorkspacePickerId(null);
+                          setViewWorkspaceId(agent.id);
+                          setExpandedWorkspaceId(agent.id);
+                          setActiveNav("workspace-settings");
                         }}
                         className={cn(
                           "group flex w-full items-center gap-2 rounded-lg px-1.5 py-2 text-left transition-all cursor-pointer",
-                          activeNav === "companion-settings" && viewAgentId === agent.id
+                          activeNav === "workspace-settings" && viewWorkspaceId === agent.id
                             ? "bg-white/[0.09] text-white/90 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]"
                             : "text-white/42 hover:bg-white/[0.05] hover:text-white/72",
                         )}
                       >
                         <span className={cn(
                           "flex size-7 shrink-0 items-center justify-center rounded-lg border transition-colors",
-                          activeNav === "companion-settings" && viewAgentId === agent.id
+                          activeNav === "workspace-settings" && viewWorkspaceId === agent.id
                             ? "bg-slate-500/20 border-slate-500/25"
                             : "bg-white/[0.04] border-white/[0.06] group-hover:bg-white/[0.07]",
                         )}>
                           <Pencil className={cn(
                             "size-3.5",
-                            activeNav === "companion-settings" && viewAgentId === agent.id
+                            activeNav === "workspace-settings" && viewWorkspaceId === agent.id
                               ? "text-slate-300"
                               : "text-white/38 group-hover:text-white/58",
                           )} aria-hidden />
@@ -4298,16 +4288,16 @@ export function WorkspaceShell() {
                 ? "opacity-100 translate-y-0"
                 : "opacity-0 translate-y-1 pointer-events-none absolute inset-0",
             )}>
-            {isCompanionNav(headerWorkNav) ? (
+            {isWorkspaceNav(headerWorkNav) ? (
               <>
-                <CompanionBreadcrumb
-                  agent={viewAgent}
+                <WorkspaceBreadcrumb
+                  agent={viewWorkspace}
                   sectionLabel={navTitle(headerWorkNav)}
                   pickerId="header"
-                  open={openCompanionPickerId === "header"}
-                  onToggle={() => toggleCompanionPicker("header")}
-                  agents={agents}
-                  onSelectAgent={selectViewAgent}
+                  open={openWorkspacePickerId === "header"}
+                  onToggle={() => toggleWorkspacePicker("header")}
+                  workspaces={workspaces}
+                  onSelectAgent={selectViewWorkspace}
                 />
                 {headerWorkNav === "thread" && isStreaming && (
                   <button
@@ -4385,14 +4375,14 @@ export function WorkspaceShell() {
           /* Bookmarks view */
           <div className="flex-1 overflow-y-auto px-5 py-6">
             <div className="max-w-2xl mx-auto flex flex-col gap-5">
-              <CompanionSectionHeader
-                agents={agents}
-                viewAgentId={viewAgentId}
+              <WorkspaceSectionHeader
+                workspaces={workspaces}
+                viewWorkspaceId={viewWorkspaceId}
                 sectionLabel="Bookmarks"
                 pickerId="bookmarks"
-                open={openCompanionPickerId === "bookmarks"}
-                onToggle={() => toggleCompanionPicker("bookmarks")}
-                onSelect={selectViewAgent}
+                open={openWorkspacePickerId === "bookmarks"}
+                onToggle={() => toggleWorkspacePicker("bookmarks")}
+                onSelect={selectViewWorkspace}
                 subtitle={
                   viewBookmarks.length > 0 ? (
                     <p className="text-[0.7rem] text-white/30 mt-0.5 px-1.5">
@@ -4410,10 +4400,10 @@ export function WorkspaceShell() {
                       onClick={() => {
                         const updated = viewBookmarks.map(b => ({ ...b, read: true }));
                         setViewBookmarks(updated);
-                        if (viewAgentId) {
-                          localStorage.setItem(`sm_bm_${viewAgentId}`, JSON.stringify(updated));
+                        if (viewWorkspaceId) {
+                          localStorage.setItem(`sm_bm_${viewWorkspaceId}`, JSON.stringify(updated));
                         }
-                        if (viewAgentId === activeAgentId) setBookmarks(updated);
+                        if (viewWorkspaceId === activeWorkspaceId) setBookmarks(updated);
                       }}
                       className="text-[0.7rem] text-indigo-400/60 hover:text-indigo-400 transition-colors flex items-center gap-1 shrink-0"
                     >
@@ -4427,7 +4417,7 @@ export function WorkspaceShell() {
               <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
                 <p className="text-sm text-white/50 leading-relaxed">
                   Messages you&apos;ve pinned from chats with{" "}
-                  <span className="text-white/70 font-medium">{viewAgent?.name ?? "this companion"}</span>.
+                  <span className="text-white/70 font-medium">{viewWorkspace?.name ?? "this workspace"}</span>.
                   {" "}Click a bookmark to jump to that moment in the conversation.
                 </p>
               </div>
@@ -4454,9 +4444,9 @@ export function WorkspaceShell() {
                         <BookmarkCard
                           key={bm.messageId}
                           bookmark={bm}
-                          companionEmoji={viewAgent?.emoji ?? "🤖"}
+                          workspaceEmoji={viewWorkspace?.emoji ?? "🤖"}
                           onOpen={() => scrollToMessage(bm.messageId)}
-                          onRemove={() => viewAgentId && removeBookmark(viewAgentId, bm.messageId)}
+                          onRemove={() => viewWorkspaceId && removeBookmark(viewWorkspaceId, bm.messageId)}
                         />
                       ))}
                     </div>
@@ -4470,20 +4460,20 @@ export function WorkspaceShell() {
           /* ── Memory dashboard ── */
           <div className="flex-1 overflow-y-auto px-5 py-6">
             <div className="max-w-4xl mx-auto flex flex-col gap-6">
-              <CompanionSectionHeader
-                agents={agents}
-                viewAgentId={viewAgentId}
+              <WorkspaceSectionHeader
+                workspaces={workspaces}
+                viewWorkspaceId={viewWorkspaceId}
                 sectionLabel="Memory"
                 pickerId="memory"
-                open={openCompanionPickerId === "memory"}
-                onToggle={() => toggleCompanionPicker("memory")}
-                onSelect={selectViewAgent}
+                open={openWorkspacePickerId === "memory"}
+                onToggle={() => toggleWorkspacePicker("memory")}
+                onSelect={selectViewWorkspace}
                 subtitle={
                   !memoryLoading ? (
                     <p className="text-[0.7rem] text-white/30 mt-0.5 px-1.5">
-                      {viewAgentId === activeAgentId
-                        ? "Live profile for this companion"
-                        : `Viewing ${viewAgentName}'s learned profile`}
+                      {viewWorkspaceId === activeWorkspaceId
+                        ? "Live profile for this workspace"
+                        : `Viewing ${viewWorkspaceName}'s learned profile`}
                     </p>
                   ) : (
                     <p className="text-[0.7rem] text-white/30 mt-0.5 px-1.5 animate-pulse">Syncing…</p>
@@ -4491,15 +4481,15 @@ export function WorkspaceShell() {
                 }
               />
               <MemoryDashboard
-                companionName={viewAgentName}
-                agentFacts={agentFacts}
+                workspaceName={viewWorkspaceName}
+                workspaceFacts={workspaceFacts}
                 userFacts={userFacts}
                 sessionSummaries={allSessionSummaries}
-                liveSessionSummary={viewAgentId === activeAgentId ? sessionSummary : ""}
-                liveFacts={viewAgentId === activeAgentId ? extractedFacts : {}}
+                liveSessionSummary={viewWorkspaceId === activeWorkspaceId ? sessionSummary : ""}
+                liveFacts={viewWorkspaceId === activeWorkspaceId ? extractedFacts : {}}
                 memoryLoading={memoryLoading}
                 memoryStats={memoryStats}
-                isActiveCompanion={viewAgentId === activeAgentId}
+                isActiveWorkspace={viewWorkspaceId === activeWorkspaceId}
                 messageCount={messages.length}
                 summarizedCount={summarizedCount}
               />
@@ -4566,10 +4556,10 @@ export function WorkspaceShell() {
                 )}
               </div>
 
-              <CompanionStatsFilter
-                agents={agents}
-                value={piiStatsCompanionId}
-                onChange={setPiiStatsCompanionId}
+              <WorkspaceStatsFilter
+                workspaces={workspaces}
+                value={piiStatsWorkspaceId}
+                onChange={setPiiStatsWorkspaceId}
               />
 
               <div className="flex flex-wrap items-center gap-3">
@@ -4615,7 +4605,7 @@ export function WorkspaceShell() {
                     <ul className="space-y-2 border-l-2 border-white/[0.08] ml-2 pl-4">
                       {items.map(({ entry, rec }) => {
                         const isDismissed = dismissedPiiIds.has(rec.id);
-                        const ag = agentDisplay(agents, entry.agentId);
+                        const ag = workspaceDisplay(workspaces, entry.workspaceId);
                         return (
                           <li
                             key={rec.id}
@@ -4690,36 +4680,36 @@ export function WorkspaceShell() {
             </div>
           </div>
 
-        ) : workNav === "companion-settings" ? (
-          /* ── Companion customize studio ── */
+        ) : workNav === "workspace-settings" ? (
+          /* ── Workspace customize studio ── */
           <div className="flex-1 overflow-y-auto px-5 py-6">
             <div className="max-w-4xl mx-auto flex flex-col gap-5">
-              <CompanionSectionHeader
-                agents={agents}
-                viewAgentId={viewAgentId}
+              <WorkspaceSectionHeader
+                workspaces={workspaces}
+                viewWorkspaceId={viewWorkspaceId}
                 sectionLabel="Customize"
-                pickerId="companion-settings"
-                open={openCompanionPickerId === "companion-settings"}
-                onToggle={() => toggleCompanionPicker("companion-settings")}
-                onSelect={selectViewAgent}
+                pickerId="workspace-settings"
+                open={openWorkspacePickerId === "workspace-settings"}
+                onToggle={() => toggleWorkspacePicker("workspace-settings")}
+                onSelect={selectViewWorkspace}
                 subtitle={
-                  viewAgent ? (
+                  viewWorkspace ? (
                     <p className="text-[0.7rem] text-white/30 mt-0.5 px-1.5">
-                      Shape how {viewAgent.name} talks, thinks, and responds
+                      Name, description, and operational context for this workspace
                     </p>
                   ) : undefined
                 }
               />
 
-              {viewAgent && (
-                <CompanionCustomize
-                  agent={viewAgent}
-                  onSave={async patch => saveAgent(viewAgent.id, patch)}
+              {viewWorkspace && (
+                <WorkspaceEditor
+                  workspace={viewWorkspace}
+                  onSave={async patch => { await saveWorkspace(viewWorkspace.id, patch); }}
                   onDelete={
-                    !viewAgent.isDefault && agents.length > 1
+                    !viewWorkspace.isDefault && workspaces.length > 1
                       ? () => {
                           setDeleteWithBackup(true);
-                          setDeleteConfirmAgent(viewAgent);
+                          setDeleteConfirmWorkspace(viewWorkspace);
                         }
                       : undefined
                   }
@@ -4900,20 +4890,20 @@ export function WorkspaceShell() {
                       <Upload className="size-10 text-indigo-300 mx-auto mb-3" aria-hidden />
                       <p className="text-base font-semibold text-indigo-100">Drop to upload</p>
                       <p className="text-sm text-indigo-200/60 mt-1">
-                        Files are added to {viewAgent?.name ?? "this companion"}&apos;s library
+                        Files are added to {viewWorkspace?.name ?? "this workspace"}&apos;s library
                       </p>
                     </div>
                   </div>
                 )}
 
-                <CompanionSectionHeader
-                  agents={agents}
-                  viewAgentId={viewAgentId}
+                <WorkspaceSectionHeader
+                  workspaces={workspaces}
+                  viewWorkspaceId={viewWorkspaceId}
                   sectionLabel="Documents"
                   pickerId="documents"
-                  open={openCompanionPickerId === "documents"}
-                  onToggle={() => toggleCompanionPicker("documents")}
-                  onSelect={selectViewAgent}
+                  open={openWorkspacePickerId === "documents"}
+                  onToggle={() => toggleWorkspacePicker("documents")}
+                  onSelect={selectViewWorkspace}
                   subtitle={
                     documents.length > 0 ? (
                       <p className="text-[0.7rem] text-white/30 mt-0.5 px-1.5">
@@ -4947,7 +4937,7 @@ export function WorkspaceShell() {
                 <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3.5 space-y-2.5">
                   <p className="text-sm text-white/50 leading-relaxed">
                     Build a reference library for{" "}
-                    <span className="text-white/75 font-medium">{viewAgent?.name ?? "this companion"}</span>.
+                    <span className="text-white/75 font-medium">{viewWorkspace?.name ?? "this workspace"}</span>.
                     Uploaded files are stored in your database, scrubbed for PII, split into searchable chunks, and
                     automatically pulled into chat when you ask related questions.
                   </p>
@@ -4955,7 +4945,7 @@ export function WorkspaceShell() {
                     <li>Text is extracted from your file (PDFs included)</li>
                     <li>PII is redacted using the same patterns as chat — only sanitized text is stored or embedded</li>
                     <li>Content is chunked and embedded with vector search (pgvector)</li>
-                    <li>Relevant passages surface in conversation — scoped to this companion only</li>
+                    <li>Relevant passages surface in conversation — scoped to this workspace only</li>
                   </ol>
                 </div>
 
@@ -5085,9 +5075,9 @@ export function WorkspaceShell() {
                         )}
                         <MessageBubble
                           message={msg}
-                          companionName={companionName}
-                          companionEmoji={activeAgent?.emoji}
-                          companionColor={activeAgent?.color}
+                          workspaceName={workspaceName}
+                          workspaceEmoji={activeWorkspace?.emoji}
+                          workspaceColor={activeWorkspace?.color}
                           onBookmark={toggleBookmark}
                           highlighted={highlightedMessageId === msg.id}
                         />
@@ -5166,7 +5156,7 @@ export function WorkspaceShell() {
                   ) : (
                     <ComposerInput
                       ref={composerRef}
-                      companionName={companionName}
+                      workspaceName={workspaceName}
                       sessionLoading={sessionLoading}
                       sessionReady={sessionReady}
                       isStreaming={isStreaming}

@@ -38,6 +38,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# Local database dumps — contain conversation content
+/backups/
+
 # Secrets / credentials — never commit these.
 # .env.example is the one exception: it documents required variables with no values.
 .env*

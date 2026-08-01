@@ -14,7 +14,7 @@ Built with Next.js 16 (App Router), TypeScript, Tailwind v4, Prisma 7, and Postg
 - **Pre-send review.** When anything is detected, a dialog shows what was found and exactly what will be transmitted. You send the redacted text or go back and edit. There is no path that sends the original.
 - **Safe terms.** Declare values that are not sensitive — CIDR ranges, domains, prefixes, exact strings — so infrastructure notes are not shredded by the scrubber. Safe terms are matched *before* detection, so nothing is ever exposed after the fact. Social Security and card numbers can never be safe-listed.
 - **Layered memory.** Recent turns (working memory), a rolling summary, extracted facts, and pgvector semantic retrieval over past messages and uploaded documents.
-- **Multi-agent.** Several assistants, each with its own personality, memory, and documents.
+- **Workspaces.** Separate operational contexts (for example Production Payments vs Customer Portal), each with its own memory and documents.
 - **Cost-aware routing.** Messages are scored for complexity and routed to a cheaper or stronger model accordingly. Estimated spend is shown in the UI.
 - **Document ingest.** Upload text, Markdown, PDF, or DOCX. Text is extracted, scrubbed server-side, chunked, and embedded.
 
@@ -108,7 +108,7 @@ Key modules:
 | `src/lib/models/route-message.ts` | Deterministic complexity scoring |
 | `src/lib/memory.ts` | Fragment storage and semantic retrieval |
 | `src/lib/documents.ts` | Extraction, server-side scrubbing, chunking |
-| `src/components/workspace/workspace-shell.tsx` | The workspace UI |
+| `src/components/app/app-shell.tsx` | The main application UI |
 
 ## Security model
 
@@ -118,7 +118,7 @@ Redaction is layered, and each layer assumes the one before it can be bypassed.
 2. **Pre-send review** — you see the exact string that will be sent. Cancelling leaves your draft untouched in the composer.
 3. **Server-side ingest scrubbing** — uploaded documents are scrubbed again at `scrubDocumentText()` before persistence or embedding, because browser controls cannot be trusted alone.
 4. **No restore path** — redacted values are not stored anywhere, so there is nothing to leak later. Detection records carry a category and sanitized context only. If detection was wrong, adjust sensitivity or add a safe term and retype.
-5. **Server-derived identity** — routes obtain `userId` from `getIdentity(req)` and never from the request. Every agent, session, document, and memory query is scoped by it.
+5. **Server-derived identity** — routes obtain `userId` from `getIdentity(req)` and never from the request. Every workspace, session, document, and memory query is scoped by it.
 
 `npm test` enforces the parts that can be tested statically: that no raw value appears in any field of a scrub result, and that each route scopes its query by the server-derived user.
 
