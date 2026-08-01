@@ -20,6 +20,11 @@ import { routeModel, buildSystemPrompt, ollamaFallbackForMode, getCostTier, DEFA
 import { routeMessage } from "@/lib/models/route-message";
 import { selectWorkingMemory } from "@/lib/tokens";
 import { retrieveSemanticMemory } from "@/lib/memory";
+import {
+  insufficientEvidenceBlock,
+  messageNeedsEvidence,
+  packageEvidence,
+} from "@/lib/evidence";
 import { db } from "@/lib/db";
 import { getIdentity } from "@/lib/identity";
 import type { ChatMessage } from "@/lib/models/types";
@@ -158,12 +163,15 @@ export async function POST(req: NextRequest) {
   if (sessionSummary.trim()) {
     systemPrompt += `\n\nConversation so far:\n${sessionSummary}`;
   }
-  // Retrieved context is the evidence the answer should rest on. It is labelled
-  // as retrieved so the model can tell it apart from its own training data —
-  // which M3 builds on to require citations and to detect unsupported claims.
-  if (semanticHits.length > 0) {
-    systemPrompt += `\n\nRetrieved context from this workspace's documents and history:\n` +
-      semanticHits.map(h => `- ${h.content}`).join("\n");
+  // Numbered evidence for citations; when empty, push insufficient-evidence
+  // language so fabrication is the expensive path for ops questions.
+  const { citations, promptBlock } = packageEvidence(semanticHits);
+  if (promptBlock) {
+    systemPrompt += promptBlock;
+  } else {
+    systemPrompt += insufficientEvidenceBlock(
+      messageNeedsEvidence(message, { isTrivial }),
+    );
   }
 
   // Vision array format when images are attached.
@@ -200,6 +208,18 @@ export async function POST(req: NextRequest) {
           },
         };
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(routeMeta)}\n\n`));
+
+        if (citations.length > 0) {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ citations })}\n\n`),
+          );
+        } else if (messageNeedsEvidence(message, { isTrivial })) {
+          controller.enqueue(
+            encoder.encode(
+              `data: ${JSON.stringify({ evidence: { status: "insufficient" as const } })}\n\n`,
+            ),
+          );
+        }
 
         const emit = (delta: string) =>
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta })}\n\n`));

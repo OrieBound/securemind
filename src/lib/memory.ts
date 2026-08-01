@@ -16,10 +16,12 @@ import { db } from "@/lib/db";
 import { embedText } from "@/lib/models/ollama";
 
 export type SemanticHit = {
-  id:         string;
-  content:    string;
-  category:   string;
-  similarity: number;   // 0–1, higher = more relevant
+  id:           string;
+  content:      string;
+  category:     string;
+  similarity:   number;   // 0–1, higher = more relevant
+  documentId?:  string | null;
+  documentName?: string | null;
 };
 
 // Minimum similarity threshold — hits below this are too noisy to be useful
@@ -95,15 +97,18 @@ export async function retrieveSemanticMemory(
 
     const vectorStr = `[${vectorResult.join(",")}]`;
 
-    // All fragment types (episodic, semantic, document) are scoped to the workspace
+    // All fragment types (episodic, semantic, document) are scoped to the workspace.
+    // LEFT JOIN Document so citation UI can show the source filename.
     const hits = await db.$queryRawUnsafe<SemanticHit[]>(
-      `SELECT id, content, category,
-              1 - (embedding <=> $1::vector) AS similarity
-       FROM   "MemoryFragment"
-       WHERE  "userId"      = $2
-         AND  "workspaceId" = $3
-         AND  embedding     IS NOT NULL
-       ORDER BY embedding <=> $1::vector
+      `SELECT mf.id, mf.content, mf.category, mf."documentId",
+              d.name AS "documentName",
+              1 - (mf.embedding <=> $1::vector) AS similarity
+       FROM   "MemoryFragment" mf
+       LEFT JOIN "Document" d ON d.id = mf."documentId"
+       WHERE  mf."userId"      = $2
+         AND  mf."workspaceId" = $3
+         AND  mf.embedding     IS NOT NULL
+       ORDER BY mf.embedding <=> $1::vector
        LIMIT  $4`,
       vectorStr,
       userId,

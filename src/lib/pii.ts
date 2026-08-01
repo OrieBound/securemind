@@ -251,6 +251,16 @@ const PATTERNS: PatternDef[] = [
     exemptible: true,
     pattern: /\b[A-Z]{1,2}[0-9]{7,9}\b/g,
   },
+  // Secrets are hard-blocked: always scanned (minTier low) and never safe-listable.
+  {
+    category: "secret",
+    label: "API keys & secrets",
+    minTier: "low",
+    exemptible: false,
+    // High-signal credential shapes — prefer known prefixes over generic entropy.
+    pattern:
+      /(?:-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----[\s\S]+?-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----)|(?:\b(?:sk_live_|sk_test_|rk_live_|rk_test_)[A-Za-z0-9]{16,}\b)|(?:\b(?:ghp_|gho_|ghu_|ghs_|ghr_)[A-Za-z0-9_]{20,}\b)|(?:\bgithub_pat_[A-Za-z0-9_]{20,}\b)|(?:\bxox[baprs]-[A-Za-z0-9-]{10,}\b)|(?:\bAKIA[0-9A-Z]{16}\b)|(?:\b(?:sk-|sk-proj-)[A-Za-z0-9_-]{20,}\b)|(?:\bAIza[0-9A-Za-z_-]{35}\b)/g,
+  },
 ];
 
 /** Human-readable catalog — shown in the Security panel. */
@@ -297,7 +307,7 @@ export function allScannedCategories(): string[] {
  * Validates a proposed safe term before it is saved.
  *
  * Rejects anything that looks like a non-exemptible category, so the safe-terms
- * list cannot become a side channel for storing an SSN or a card number.
+ * list cannot become a side channel for storing an SSN, card number, or secret.
  */
 export function validateSafeTerm(
   value: string,

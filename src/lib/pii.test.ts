@@ -68,6 +68,27 @@ describe("detection — true positives", () => {
     expect(found).toEqual(["email", "phone"]);
   });
 
+  it("detects an AWS access key id", () => {
+    expect(categories("key AKIAIOSFODNN7EXAMPLE used")).toContain("secret");
+  });
+
+  it("detects a GitHub personal access token", () => {
+    expect(categories("token ghp_abcdefghijklmnopqrstuvwxyz0123456789")).toContain("secret");
+  });
+
+  it("detects a Stripe live secret key", () => {
+    expect(categories("stripe sk_live_abcdefghijklmnopqrstuv")).toContain("secret");
+  });
+
+  it("detects a PEM private key block", () => {
+    const pem = "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA0Z3VS5JJcds3xfn\n-----END RSA PRIVATE KEY-----";
+    expect(categories(pem)).toContain("secret");
+  });
+
+  it("detects secrets even at the lowest sensitivity tier", () => {
+    expect(categories("key AKIAIOSFODNN7EXAMPLE", { sensitivity: "low" })).toContain("secret");
+  });
+
   it("counts repeated hits of the same category", () => {
     const r = scrubPII("a@x.io and b@y.io and c@z.io");
     expect(r.scrubEvents.find(e => e.category === "email")?.count).toBe(3);
@@ -95,6 +116,18 @@ describe("detection — false positives", () => {
 
   it("does not flag a bare 10-digit id starting with 1", () => {
     expect(categories("order 1234567890")).not.toContain("phone");
+  });
+
+  it("does not flag the word secret alone", () => {
+    expect(categories("rotate the secret after deploy")).not.toContain("secret");
+  });
+
+  it("does not flag a short sk- prefix without enough entropy", () => {
+    expect(categories("prefix sk-short")).not.toContain("secret");
+  });
+
+  it("does not flag an incomplete AKIA prefix", () => {
+    expect(categories("look for AKIA-prefixed access keys")).not.toContain("secret");
   });
 });
 
@@ -252,7 +285,15 @@ describe("validateSafeTerm", () => {
   });
 
   it("exposes the non-exemptible category list", () => {
-    expect(NON_EXEMPTIBLE_CATEGORIES).toEqual(expect.arrayContaining(["SSN", "card number"]));
+    expect(NON_EXEMPTIBLE_CATEGORIES).toEqual(
+      expect.arrayContaining(["SSN", "card number", "secret"]),
+    );
+  });
+
+  it("rejects an AWS access key as a literal safe term", () => {
+    const result = validateSafeTerm("AKIAIOSFODNN7EXAMPLE", "literal");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/api keys/i);
   });
 });
 
@@ -263,6 +304,7 @@ describe("no raw value escapes the scrubber", () => {
     { text: "card 4242424242424242",         raw: "4242424242424242" },
     { text: "call (415) 555-0142",           raw: "(415) 555-0142" },
     { text: "origin 8.8.8.8",                raw: "8.8.8.8" },
+    { text: "key AKIAIOSFODNN7EXAMPLE",      raw: "AKIAIOSFODNN7EXAMPLE" },
   ];
 
   for (const { text, raw } of SECRETS) {

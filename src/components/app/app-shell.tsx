@@ -23,6 +23,7 @@ import {
   Globe,
   MapPin,
   Fingerprint,
+  KeyRound,
   SlidersHorizontal,
   Sparkles,
   Square,
@@ -98,6 +99,16 @@ type RouteInfo = {
   savedUsd?: number;   // savings vs 70B baseline
 };
 
+type CitationRef = {
+  index: number;
+  fragmentId: string;
+  category: string;
+  documentId: string | null;
+  documentName: string | null;
+  preview: string;
+  similarity: number;
+};
+
 type ChatMessage = {
   id: string;
   role: "user" | "assistant";
@@ -109,6 +120,10 @@ type ChatMessage = {
   error?: string;
   images?: string[];   // base64 data URLs for inline image display
   routeInfo?: RouteInfo;
+  /** Retrieved sources for this turn — from the chat SSE `citations` event. */
+  citations?: CitationRef[];
+  /** Set when the server found no usable evidence for an evidence-seeking question. */
+  evidenceStatus?: "insufficient";
 };
 
 type BookmarkEntry = {
@@ -270,6 +285,7 @@ const PII_SCAN_ICONS: Record<string, typeof Mail> = {
   "IPv4 addresses": Globe,
   "Street addresses": MapPin,
   "Passport / national ID patterns": Fingerprint,
+  "API keys & secrets": KeyRound,
 };
 
 type RouteHit = {
@@ -1129,6 +1145,36 @@ const MessageBubble = memo(function MessageBubble({
                   ? `${message.routeInfo.latencyMs}ms`
                   : `${(message.routeInfo.latencyMs / 1000).toFixed(1)}s`}
               </span>
+            )}
+          </div>
+        )}
+        {(message.citations?.length || message.evidenceStatus === "insufficient") && !message.error && (
+          <div className="mt-2.5 space-y-1.5">
+            {message.evidenceStatus === "insufficient" && !message.citations?.length && (
+              <p className="flex items-center gap-1.5 text-[0.65rem] text-amber-200/50">
+                <ShieldAlert className="size-3 shrink-0" aria-hidden />
+                No retrieved evidence for this turn
+              </p>
+            )}
+            {message.citations && message.citations.length > 0 && (
+              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] px-3 py-2 space-y-1.5">
+                <p className="text-[0.58rem] uppercase tracking-wider text-white/30 font-semibold">
+                  Sources
+                </p>
+                <ul className="space-y-1">
+                  {message.citations.map(c => (
+                    <li key={c.fragmentId} className="flex items-start gap-2 text-[0.68rem] text-white/45">
+                      <span className="shrink-0 font-mono text-indigo-300/70">[{c.index}]</span>
+                      <span className="min-w-0">
+                        <span className="text-white/55 font-medium">
+                          {c.documentName ?? (c.category === "document" ? "Document" : "Memory")}
+                        </span>
+                        <span className="text-white/30"> — {c.preview}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
           </div>
         )}
@@ -2582,8 +2628,20 @@ export function AppShell() {
               delta?: string;
               error?: string;
               route?: RouteInfo;
+              citations?: CitationRef[];
+              evidence?: { status: "insufficient" };
               usage?: { promptTokens: number; completionTokens: number };
             };
+            if (parsed.citations?.length) {
+              setMessages(p => p.map(m =>
+                m.id === asstId ? { ...m, citations: parsed.citations } : m,
+              ));
+            }
+            if (parsed.evidence?.status === "insufficient") {
+              setMessages(p => p.map(m =>
+                m.id === asstId ? { ...m, evidenceStatus: "insufficient" } : m,
+              ));
+            }
             if (parsed.route) {
               setMessages(p => p.map(m =>
                 m.id === asstId ? { ...m, routeInfo: parsed.route } : m,
@@ -4660,7 +4718,8 @@ export function AppShell() {
                 Client-side patterns scan every message before send. Raw values are never stored.
                 Matches become placeholders like <code className="font-mono text-white/45">[phone redacted]</code>.
                 Reduce false positives with sensitivity tiers and safe terms in App settings.
-                Secret detection and citations land in a later milestone.
+                API keys and private-key blocks are hard-blocked (always scanned, never safe-listed).
+                Answers cite retrieved Knowledge and memory as numbered sources when available.
               </div>
             </div>
           </div>
