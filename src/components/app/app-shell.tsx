@@ -41,11 +41,23 @@ import {
   useState,
   type DragEvent,
 } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { ComposerInput, type ComposerInputHandle, type ComposerVoiceInsert } from "@/components/app/composer-input";
 import { SettingsHub, SettingsSidebarNav, SETTINGS_SECTION_LABELS, SETTINGS_SECTION_KEY, isSettingsSection, type SettingsSection } from "@/components/app/settings-hub";
 import { MemoryDashboard } from "@/components/app/memory-dashboard";
 import { WorkspaceEditor } from "@/components/app/workspace-editor";
+import { SecurityAnalyticsView } from "@/components/analytics/security-view";
+import { UsageAnalyticsView } from "@/components/analytics/usage-view";
+import { CostAnalyticsView } from "@/components/analytics/cost-view";
+import {
+  fetchAnalyticsJson,
+  fmtPct,
+  fmtUsd as fmtAnalyticsUsd,
+  postSecurityEvents,
+  shortModel,
+} from "@/lib/analytics/client";
 
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -1695,7 +1707,16 @@ function VoiceBar({
 
 // ─── WorkspaceShell ───────────────────────────────────────────────────────────
 
-export function AppShell() {
+export type AnalyticsViewId = "security" | "usage" | "cost";
+
+type AppShellProps = {
+  /** When set, center pane shows full analytics (same shell, Evidence rail hidden). */
+  analyticsView?: AnalyticsViewId;
+};
+
+export function AppShell({ analyticsView }: AppShellProps = {}) {
+  const router = useRouter();
+  const isAnalytics = Boolean(analyticsView);
 
   // ── core state ──────────────────────────────────────────────────────────────
   const [activeNav, setActiveNav] = useState<NavId>("thread");
@@ -1747,22 +1768,13 @@ export function AppShell() {
     setSettingsEntering(false);
   }, [activeNav, settingsAnimatingOut]);
 
-  const openSecurityDashboard = useCallback((fromSettingsSection?: SettingsSection) => {
-    settingsReturnSectionRef.current = fromSettingsSection ?? null;
-    setSecurityBackLabel(fromSettingsSection ? "Back to settings" : "Back to investigate");
-    setActiveNav("security-dashboard");
-  }, []);
+  const openSecurityDashboard = useCallback((_fromSettingsSection?: SettingsSection) => {
+    router.push("/analytics/security");
+  }, [router]);
 
   const exitSecurityDashboard = useCallback(() => {
-    const returnSection = settingsReturnSectionRef.current;
-    settingsReturnSectionRef.current = null;
-    if (returnSection) {
-      setSettingsSection(returnSection);
-      setActiveNav("settings");
-    } else {
-      setActiveNav("thread");
-    }
-  }, [setSettingsSection]);
+    router.push("/");
+  }, [router]);
   const [groqByokDraft, setGroqByokDraft] = useState("");
   const [groqByokSaved, setGroqByokSaved] = useState(false);
   const [mode, setMode]           = useState<Mode>("Standard" as Mode);
@@ -1848,7 +1860,35 @@ export function AppShell() {
   const viewWorkspaceName = viewWorkspace?.name ?? workspaceName;
 
   // ── intel panel + model overrides ───────────────────────────────────────────
-  const [isIntelOpen,       setIsIntelOpen]       = useState(true);
+  const [isIntelOpen,       setIsIntelOpen]       = useState(!analyticsView);
+  const [railSummary, setRailSummary] = useState<{
+    security: { findings: number; highRiskBlocked: number; topCategory: string | null };
+    usage: { requests: number; tokens: number; groundedRate: number | null; topModel: string | null };
+    cost: { estimatedCostUsd: number; avgCostPerRequest: number | null; routingSavingsUsd: number };
+  } | null>(null);
+
+  useEffect(() => {
+    if (isAnalytics) setIsIntelOpen(false);
+  }, [isAnalytics]);
+
+  useEffect(() => {
+    if (isAnalytics) return;
+    let cancelled = false;
+    fetchAnalyticsJson<{
+      security: { findings: number; highRiskBlocked: number; topCategory: string | null };
+      usage: { requests: number; tokens: number; groundedRate: number | null; topModel: string | null };
+      cost: { estimatedCostUsd: number; avgCostPerRequest: number | null; routingSavingsUsd: number };
+    }>("summary", { range: "30d", workspaceId: activeWorkspaceId })
+      .then(d => {
+        if (!cancelled) setRailSummary(d);
+      })
+      .catch(() => {
+        if (!cancelled) setRailSummary(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAnalytics, activeWorkspaceId, turnCount]);
   const [openPickerMode,    setOpenPickerMode]    = useState<string | null>(null);
   const [modeModelOverrides, setModeModelOverrides] = useState<Record<string, string>>({});
   const [modelSelectionMode, setModelSelectionMode] = useState<"auto" | "fixed">("auto");
@@ -2601,6 +2641,17 @@ export function AppShell() {
         persistPiiArchive(next);
         return next;
       });
+      void postSecurityEvents({
+        workspaceId: scrubAgentId,
+        sensitivity: piiSensitivity,
+        events: scrubEvents.map(ev => ({
+          category: ev.category,
+          source: "investigate" as const,
+          outcome: ev.category === "secret" ? ("blocked" as const) : ("redacted" as const),
+          count: ev.count,
+          resourceKind: "message" as const,
+        })),
+      });
     }
 
     const clarifications = pendingClarifications.current.splice(0);
@@ -2821,7 +2872,7 @@ export function AppShell() {
     }
   }, [
     turnCount, mode, workspaceName, activeWorkspace, activeWorkspaceId, modelSelectionMode,
-    fixedModelId, modeModelOverrides, messages, lastRouteInfo,
+    fixedModelId, modeModelOverrides, messages, lastRouteInfo, piiSensitivity,
   ]);
 
   const handleSend = useCallback(async (textOverride?: string) => {
@@ -3592,6 +3643,34 @@ export function AppShell() {
         {/* Scrollable tab body */}
         <div className="flex-1 min-h-0 overflow-y-auto mt-3">
           <TabsContent value="context" className="mt-0 space-y-2 pb-8">
+            <IntelCard label="Last 30 days">
+              <div className="space-y-1.5 text-xs text-white/70">
+                <div className="flex justify-between gap-2">
+                  <span className="text-white/45">Requests</span>
+                  <span className="font-mono tabular-nums">{railSummary?.usage.requests ?? 0}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-white/45">Tokens</span>
+                  <span className="font-mono tabular-nums">{railSummary?.usage.tokens ?? 0}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-white/45">Grounded answers</span>
+                  <span className="font-mono tabular-nums">{fmtPct(railSummary?.usage.groundedRate)}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-white/45">Most-used model</span>
+                  <span className="truncate">{shortModel(railSummary?.usage.topModel)}</span>
+                </div>
+              </div>
+              <Link
+                href="/analytics/usage"
+                className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-indigo-400/35 bg-indigo-500/15 py-2.5 text-[0.72rem] font-semibold text-indigo-200/95 hover:bg-indigo-500/25 transition-colors"
+              >
+                <BarChart2 className="size-3.5 shrink-0" aria-hidden />
+                Open full usage view
+                <ChevronRight className="size-3.5 shrink-0 opacity-70" aria-hidden />
+              </Link>
+            </IntelCard>
 
             {/* Complexity usage — how often each tier was called */}
             <IntelCard label="Complexity usage">
@@ -3883,31 +3962,30 @@ export function AppShell() {
 
 
           <TabsContent value="security" className="mt-0 space-y-2 pb-8">
-            <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/[0.08] p-3 space-y-2.5">
-              <div className="flex items-start gap-2.5">
-                <Shield className="size-4 text-indigo-400 shrink-0 mt-0.5" aria-hidden />
-                <div>
-                  <p className="text-xs font-semibold text-indigo-200/90">Security history</p>
-                  <p className="text-[0.62rem] text-white/45 mt-1 leading-relaxed">
-                    Glance only. Open the full view for detection history by workspace and date.
-                  </p>
+            <IntelCard label="Last 30 days">
+              <div className="space-y-1.5 text-xs text-white/70">
+                <div className="flex justify-between gap-2">
+                  <span className="text-white/45">Findings</span>
+                  <span className="font-mono tabular-nums">{railSummary?.security.findings ?? 0}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-white/45">High-risk blocked</span>
+                  <span className="font-mono tabular-nums">{railSummary?.security.highRiskBlocked ?? 0}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-white/45">Most common</span>
+                  <span className="truncate">{railSummary?.security.topCategory ?? "—"}</span>
                 </div>
               </div>
-              <ul className="text-[0.62rem] text-white/40 space-y-1 pl-5 list-disc leading-relaxed">
-                <li>Every redaction, by workspace and date</li>
-                <li>Dismiss false alarms or delete events</li>
-                <li>See which safe terms suppressed a match</li>
-              </ul>
-              <button
-                type="button"
-                onClick={() => openSecurityDashboard()}
-                className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-indigo-400/35 bg-indigo-500/15 py-2.5 text-[0.72rem] font-semibold text-indigo-200/95 hover:bg-indigo-500/25 transition-colors cursor-pointer"
+              <Link
+                href="/analytics/security"
+                className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-indigo-400/35 bg-indigo-500/15 py-2.5 text-[0.72rem] font-semibold text-indigo-200/95 hover:bg-indigo-500/25 transition-colors"
               >
                 <Shield className="size-3.5 shrink-0" aria-hidden />
                 Open full security view
                 <ChevronRight className="size-3.5 shrink-0 opacity-70" aria-hidden />
-              </button>
-            </div>
+              </Link>
+            </IntelCard>
 
             <IntelCard label="PII protection">
               <div className="flex gap-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-3 py-2.5">
@@ -3995,20 +4073,35 @@ export function AppShell() {
 
           {/* ── Savings tab ─────────────────────────────────────────────────── */}
           <TabsContent value="savings" className="mt-0 space-y-2 pb-8">
-            <button
-              type="button"
-              disabled
-              title="Insights portal — coming soon"
-              className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-emerald-500/25 bg-emerald-500/10 py-2.5 text-[0.72rem] font-semibold text-emerald-200/90 cursor-not-allowed opacity-60"
-            >
-              <BarChart2 className="size-3.5 shrink-0" aria-hidden />
-              Open savings insights
-              <span className="text-[0.5rem] uppercase tracking-wider text-white/25 bg-white/5 border border-white/10 px-1 py-0.5 rounded">
-                soon
-              </span>
-            </button>
+            <IntelCard label="Last 30 days">
+              <div className="space-y-1.5 text-xs text-white/70">
+                <div className="flex justify-between gap-2">
+                  <span className="text-white/45">Estimated cost</span>
+                  <span className="font-mono tabular-nums">{fmtAnalyticsUsd(railSummary?.cost.estimatedCostUsd)}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-white/45">Avg / request</span>
+                  <span className="font-mono tabular-nums">{fmtAnalyticsUsd(railSummary?.cost.avgCostPerRequest)}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-white/45">Routing savings (est.)</span>
+                  <span className="font-mono tabular-nums">{fmtAnalyticsUsd(railSummary?.cost.routingSavingsUsd)}</span>
+                </div>
+              </div>
+              <p className="text-[0.58rem] text-white/30 mt-2 leading-relaxed">
+                Estimated AI inference cost only — not AWS or infrastructure spend.
+              </p>
+              <Link
+                href="/analytics/cost"
+                className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 py-2.5 text-[0.72rem] font-semibold text-emerald-200/90 hover:bg-emerald-500/20 transition-colors"
+              >
+                <BarChart2 className="size-3.5 shrink-0" aria-hidden />
+                Open full cost view
+                <ChevronRight className="size-3.5 shrink-0 opacity-70" aria-hidden />
+              </Link>
+            </IntelCard>
 
-            <IntelCard label="Cost summary">
+            <IntelCard label="Session cost (this browser)">
               <WorkspaceStatsFilter
                 workspaces={workspaces}
                 value={routeStatsWorkspaceId}
@@ -4530,7 +4623,8 @@ export function AppShell() {
             </div>
           </div>
 
-          {/* Mobile intelligence sheet */}
+          {/* Mobile intelligence sheet — hidden on full analytics views */}
+          {!isAnalytics && (
           <Sheet>
             <SheetTrigger
               className={cn(
@@ -4549,6 +4643,7 @@ export function AppShell() {
               </div>
             </SheetContent>
           </Sheet>
+          )}
         </div>
 
         {/* Content */}
@@ -4563,7 +4658,25 @@ export function AppShell() {
             )}
             aria-hidden={!workContentShown}
           >
-        {workNav === "bookmarks" ? (
+        {analyticsView ? (
+          <div className="flex-1 min-h-0 overflow-hidden">
+            {analyticsView === "security" && (
+              <SecurityAnalyticsView
+                workspaces={workspaces.map(w => ({ id: w.id, name: w.name }))}
+              />
+            )}
+            {analyticsView === "usage" && (
+              <UsageAnalyticsView
+                workspaces={workspaces.map(w => ({ id: w.id, name: w.name }))}
+              />
+            )}
+            {analyticsView === "cost" && (
+              <CostAnalyticsView
+                workspaces={workspaces.map(w => ({ id: w.id, name: w.name }))}
+              />
+            )}
+          </div>
+        ) : workNav === "bookmarks" ? (
           /* Bookmarks view */
           <div className="flex-1 overflow-y-auto px-5 py-6">
             <div className="max-w-2xl mx-auto flex flex-col gap-5">
@@ -5509,6 +5622,7 @@ export function AppShell() {
       </main>
 
       {/* ── Intel panel separator + collapse toggle (desktop) ───────────── */}
+      {!isAnalytics && (
       <div className="hidden lg:flex items-stretch relative shrink-0 z-20">
         <div className="w-px bg-white/6 h-full" />
         {/* Button anchored to the LEFT of the separator — always fully visible */}
@@ -5533,8 +5647,10 @@ export function AppShell() {
           )} />
         </button>
       </div>
+      )}
 
       {/* ── Intelligence panel (desktop) ─────────────────────────────────── */}
+      {!isAnalytics && (
       <aside className={cn(
         "hidden lg:flex shrink-0 flex-col bg-sidebar overflow-hidden",
         "transition-[width,opacity] duration-300 ease-in-out",
@@ -5548,6 +5664,7 @@ export function AppShell() {
           {IntelligencePanel}
         </div>
       </aside>
+      )}
     </div>
   );
 }

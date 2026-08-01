@@ -23,9 +23,11 @@ const workspace = {
 const session       = { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn() };
 const message       = { findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn(), create: vi.fn() };
 const workspaceFact = { findMany: vi.fn() };
+const securityEvent = { findMany: vi.fn(), createMany: vi.fn() };
+const inferenceEvent = { findMany: vi.fn(), create: vi.fn() };
 
 vi.mock("@/lib/db", () => ({
-  db: { workspace, session, message, workspaceFact },
+  db: { workspace, session, message, workspaceFact, securityEvent, inferenceEvent },
 }));
 vi.mock("@/lib/memory", () => ({
   storeMemoryFragment: vi.fn(),
@@ -108,7 +110,7 @@ describe("PATCH /api/workspaces/:id", () => {
   it("scopes the ownership check to the server-derived user", async () => {
     const { PATCH } = await import("@/app/api/workspaces/[id]/route");
     workspace.findFirst.mockResolvedValue({
-      id: "w1", userId: SERVER_USER, name: "General", context: null, description: null,
+      id: "w1", userId: SERVER_USER, name: "Cloud Operations", context: null, description: null,
     });
     workspace.update.mockResolvedValue({ id: "w1" });
 
@@ -218,6 +220,56 @@ describe("GET /api/memory", () => {
 
     expect(res.status).toBe(404);
     expect(workspaceFact.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/analytics/security", () => {
+  it("returns 404 when workspaceId is not owned", async () => {
+    const { GET } = await import("@/app/api/analytics/security/route");
+    workspace.findFirst.mockResolvedValue(null);
+
+    const res = await GET(
+      new NextRequest("http://localhost/api/analytics/security?workspaceId=other"),
+    );
+
+    expect(res.status).toBe(404);
+    expect(securityEvent.findMany).not.toHaveBeenCalled();
+  });
+
+  it("scopes owned-workspace lookups to the server-derived user", async () => {
+    const { GET } = await import("@/app/api/analytics/security/route");
+    workspace.findFirst.mockResolvedValue({ id: "w1" });
+    securityEvent.findMany.mockResolvedValue([]);
+    workspace.findMany.mockResolvedValue([{ id: "w1", name: "Cloud Operations" }]);
+
+    await GET(
+      new NextRequest("http://localhost/api/analytics/security?workspaceId=w1&userId=attacker"),
+    );
+
+    expect(workspace.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "w1", userId: SERVER_USER } }),
+    );
+    expect(securityEvent.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ userId: SERVER_USER, workspaceId: "w1" }),
+      }),
+    );
+  });
+});
+
+describe("POST /api/analytics/security", () => {
+  it("rejects payloads that try to include raw values", async () => {
+    const { POST } = await import("@/app/api/analytics/security/route");
+    const req = new NextRequest("http://localhost/api/analytics/security", {
+      method: "POST",
+      body: JSON.stringify({
+        events: [{ category: "email", source: "investigate", outcome: "redacted", value: "a@b.com" }],
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(422);
+    expect(securityEvent.createMany).not.toHaveBeenCalled();
   });
 });
 

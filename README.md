@@ -18,6 +18,7 @@ Security-focused cloud-operations knowledge assistant: sanitize sensitive text b
 - **Citations + citation audit** against retrieved fragments
 - **Prompt-injection fencing** on retrieved evidence
 - **Complexity-tier model routing** (Groq / Ollama; optional Bedrock)
+- **Security / Usage / Cost analytics** at `/analytics/*` (persisted sanitized telemetry; Evidence rail shows compact summaries)
 - **CI** on GitHub Actions (`npm ci`, Prisma generate, typecheck, tests)
 
 ## Requirements
