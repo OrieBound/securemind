@@ -11,6 +11,12 @@ jobs:
     name: Test · Typecheck · Lint
     runs-on: ubuntu-latest
 
+    env:
+      # Prisma config reads DIRECT_URL; no live DB is needed for generate/tests.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+      AUTH_MODE: local
+
     steps:
       - uses: actions/checkout@v4
 
