@@ -230,10 +230,14 @@ export function modePromptInstructions(decision: TurnDecision): string {
   switch (decision.responseStyle) {
     case "social":
       return (
-        `\n\nResponse mode — conversational:\n` +
-        `- Reply in one or two natural sentences.\n` +
-        `- No headings, no investigation template, no citations, no retrieval commentary.\n` +
-        `- A warm offer to help investigate is fine.`
+        `\n\nResponse mode — conversational greeting or acknowledgement:\n` +
+        `- Reply like a calm colleague: one short, natural sentence (two max).\n` +
+        `- Do NOT narrate or diagnose the user's message ` +
+        `(avoid "It seems like you're just saying hello", "I see this is a greeting", etc.).\n` +
+        `- Do NOT mention documents, Knowledge, sources, cloud operations framing, or security topics unless they asked.\n` +
+        `- No headings, lists, citations, or investigation template.\n` +
+        `- Good: "Hey — what would you like to dig into?" / "You're welcome." / "Sounds good."\n` +
+        `- Bad: explaining that they greeted you, or pitching SecureMind features unprompted.`
       );
     case "clarify":
       return (

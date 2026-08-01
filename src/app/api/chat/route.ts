@@ -184,8 +184,12 @@ export async function POST(req: NextRequest) {
   const candidateCount = candidateHits.length;
   const evidenceCount = evidenceHits.length;
 
-  let systemPrompt = buildSystemPrompt({ workspaceName, workspaceContext });
-  systemPrompt += modePromptInstructions(turn);
+  // Social turns get a light prompt — full ops grounding rules make Micro models
+  // sound like they're diagnosing the greeting.
+  let systemPrompt =
+    turn.mode === "social"
+      ? `You are SecureMind, a helpful workspace assistant.` + modePromptInstructions(turn)
+      : buildSystemPrompt({ workspaceName, workspaceContext }) + modePromptInstructions(turn);
 
   const knownFacts = Object.entries(facts).filter(([, v]) => v);
   if (knownFacts.length > 0 && turn.mode !== "social") {
@@ -221,7 +225,8 @@ export async function POST(req: NextRequest) {
 
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
-    ...recentHistory,
+    // Keep greetings free of prior investigation context that biases the reply.
+    ...(turn.mode === "social" ? [] : recentHistory),
     { role: "user", content: userContent },
   ];
 
