@@ -34,8 +34,8 @@ export const SETTINGS_SECTION_KEY = "sm_settings_section";
 
 export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
   overview:           "Overview",
-  "insights-context": "Context",
-  "insights-savings": "Savings",
+  "insights-context": "Usage",
+  "insights-savings": "Cost",
   "insights-security":"Security",
   workspace:          "Workspace",
   inference:          "Inference & API",
@@ -244,7 +244,7 @@ export function SettingsSidebarNav({
         active={section === "insights-context"}
         onClick={() => onSectionChange("insights-context")}
         icon={Sparkles}
-        label="Context"
+        label="Usage"
         indent
         compact
       />
@@ -252,7 +252,7 @@ export function SettingsSidebarNav({
         active={section === "insights-savings"}
         onClick={() => onSectionChange("insights-savings")}
         icon={BarChart2}
-        label="Savings"
+        label="Cost"
         indent
         compact
       />
@@ -405,14 +405,14 @@ export function SettingsHub({
                 Insights
               </p>
               <OverviewCard
-                title="Context"
-                description="Complexity routing, model tiers, and usage."
+                title="Usage"
+                description="Complexity routing, model tiers, and response counts."
                 stat={totalRouteCalls > 0 ? `${totalRouteCalls} responses tracked` : "No data yet"}
                 accent="indigo"
                 onClick={() => onSectionChange("insights-context")}
               />
               <OverviewCard
-                title="Savings"
+                title="Cost"
                 description="Spend, baseline comparison, and model costs."
                 stat={savingsStats.responseCount > 0
                   ? `${fmtUsd(savingsStats.totalCost)} spent · ${fmtUsd(savingsStats.totalSaved)} saved`
@@ -422,7 +422,7 @@ export function SettingsHub({
               />
               <OverviewCard
                 title="Security"
-                description="PII detections, approvals, and governance."
+                description="Detection history, sensitivity, and safe terms."
                 stat={totalPiiActive > 0 ? `${totalPiiActive} active detections` : "No detections"}
                 accent="amber"
                 onClick={() => onSectionChange("insights-security")}
@@ -431,14 +431,14 @@ export function SettingsHub({
                 App
               </p>
               <OverviewCard
-                title="Workspace"
-                description="App-wide preferences and PII exceptions."
+                title="Detection policy"
+                description="Sensitivity tiers and safe terms for this device."
                 accent="indigo"
                 onClick={() => onSectionChange("workspace")}
               />
               <OverviewCard
                 title="Inference & API"
-                description="Bedrock (default) or bring your own Groq key."
+                description="Groq key and provider notes. Bedrock is not wired up yet."
                 accent="indigo"
                 onClick={() => onSectionChange("inference")}
               />
@@ -456,7 +456,7 @@ export function SettingsHub({
                 )}
               </div>
               <p className="text-[0.62rem] text-white/35 leading-relaxed">
-                Use the <strong className="text-white/50 font-medium">Context</strong> tab in Cognitive Overlays for tier usage and model mapping.
+                Use the <strong className="text-white/50 font-medium">Usage</strong> tab in the Evidence panel for tier usage and model mapping.
                 Full charts will live here in the Insights portal.
               </p>
               <button
@@ -490,7 +490,7 @@ export function SettingsHub({
                 </div>
               </div>
               <p className="text-[0.62rem] text-white/35 leading-relaxed">
-                Use the <strong className="text-white/50 font-medium">Savings</strong> tab in Cognitive Overlays for live breakdowns.
+                Use the <strong className="text-white/50 font-medium">Cost</strong> tab in the Evidence panel for live breakdowns.
               </p>
               <button
                 type="button"
@@ -511,11 +511,11 @@ export function SettingsHub({
               <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-4">
                 <p className="text-xs font-semibold text-amber-200/90">Active detections</p>
                 <p className="text-2xl font-bold tabular-nums text-white/90 mt-2">{totalPiiActive}</p>
-                <p className="text-[0.62rem] text-white/35 mt-1">in current time range (excludes approved & dismissed)</p>
+                <p className="text-[0.62rem] text-white/35 mt-1">in current time range (excludes dismissed)</p>
               </div>
               <p className="text-[0.62rem] text-white/35 leading-relaxed">
-                The overlay <strong className="text-white/50 font-medium">Security</strong> tab is the quick glance.
-                The full dashboard supports approve, dismiss, and revoke actions.
+                The Evidence panel <strong className="text-white/50 font-medium">Security</strong> tab is the glance.
+                Open the full view for history by workspace and date.
               </p>
               <button
                 type="button"
@@ -523,7 +523,7 @@ export function SettingsHub({
                 className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/12 py-2.5 text-[0.72rem] font-semibold text-indigo-200/95 hover:bg-indigo-500/18 transition-colors cursor-pointer"
               >
                 <Shield className="size-3.5 shrink-0" aria-hidden />
-                Open security dashboard
+                Open full security view
                 <ChevronRight className="size-3.5 shrink-0 opacity-70" aria-hidden />
               </button>
             </div>
@@ -595,7 +595,7 @@ export function SettingsHub({
                   <div>
                     <p className="text-sm font-semibold text-white/80">Inference providers</p>
                     <p className="text-[0.62rem] text-white/40 mt-1 leading-relaxed">
-                      Groq handles chat by default, with Ollama as a local fallback when Groq is
+                      Groq handles inference by default, with Ollama as a local fallback when Groq is
                       unavailable or no key is set. Amazon Bedrock is not wired up yet.
                     </p>
                   </div>

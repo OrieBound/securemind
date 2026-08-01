@@ -359,10 +359,10 @@ function persistRouteHistory(hits: RouteHit[]) {
 }
 
 function navTitle(nav: NavId): string {
-  if (nav === "settings") return "Settings";
-  if (nav === "workspace-settings") return "Customize";
+  if (nav === "settings") return "App settings";
+  if (nav === "workspace-settings") return "Workspace";
   if (nav === "security-dashboard") return "Security";
-  if (nav === "thread") return "Chat";
+  if (nav === "thread") return "Investigate";
   return SUB_NAV_ITEMS.find(n => n.id === nav)?.label ?? nav;
 }
 
@@ -759,21 +759,14 @@ const COMPANION_EMOJIS = [
 const SUB_NAV_ITEMS = [
   {
     id: "thread" as const,
-    label: "Chat",
+    label: "Investigate",
     icon: MessageSquare,
     iconWrap: "bg-indigo-500/20 border-indigo-500/25",
     iconColor: "text-indigo-300",
   },
   {
-    id: "bookmarks" as const,
-    label: "Bookmarks",
-    icon: Bookmark,
-    iconWrap: "bg-amber-500/20 border-amber-500/25",
-    iconColor: "text-amber-300",
-  },
-  {
     id: "documents" as const,
-    label: "Documents",
+    label: "Knowledge",
     icon: FileText,
     iconWrap: "bg-emerald-500/20 border-emerald-500/25",
     iconColor: "text-emerald-300",
@@ -784,6 +777,13 @@ const SUB_NAV_ITEMS = [
     icon: Brain,
     iconWrap: "bg-violet-500/20 border-violet-500/25",
     iconColor: "text-violet-300",
+  },
+  {
+    id: "bookmarks" as const,
+    label: "Saved",
+    icon: Bookmark,
+    iconWrap: "bg-amber-500/20 border-amber-500/25",
+    iconColor: "text-amber-300",
   },
 ] as const;
 type NavId = (typeof SUB_NAV_ITEMS)[number]["id"] | "workspace-settings" | "settings" | "security-dashboard";
@@ -1040,7 +1040,7 @@ const MessageBubble = memo(function MessageBubble({
           {/* Bookmark button */}
           <button
             onClick={() => onBookmark(message.id)}
-            aria-label={message.bookmarked ? "Remove bookmark" : "Bookmark"}
+            aria-label={message.bookmarked ? "Remove from saved" : "Save conclusion"}
             className={cn(
               "absolute -top-2 -left-7 rounded-full p-1 transition-all duration-150",
               "bg-white/5 border border-white/8 hover:bg-white/10",
@@ -1100,7 +1100,7 @@ const MessageBubble = memo(function MessageBubble({
         {/* Bookmark */}
         <button
           onClick={() => onBookmark(message.id)}
-          aria-label={message.bookmarked ? "Remove bookmark" : "Bookmark"}
+          aria-label={message.bookmarked ? "Remove from saved" : "Save conclusion"}
           className={cn(
             "absolute -top-3 right-0 rounded-full p-1 transition-all duration-150",
             "bg-white/5 border border-white/8 hover:bg-white/10",
@@ -1293,14 +1293,14 @@ function BookmarkCard({
           <div className="mt-3 pt-2.5 border-t border-white/[0.06] flex items-center justify-between gap-2">
             <span className="text-[0.68rem] text-white/28 group-hover:text-indigo-300/85 transition-colors flex items-center gap-1.5">
               <MessageSquare className="size-3 shrink-0" aria-hidden />
-              Open in chat
+              Open in investigate
               <ChevronRight className="size-3 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" aria-hidden />
             </span>
             <span
               role="button"
               tabIndex={0}
-              title="Remove bookmark"
-              aria-label="Remove bookmark"
+              title="Remove from saved"
+              aria-label="Remove from saved"
               onClick={e => { e.stopPropagation(); onRemove(); }}
               onKeyDown={e => {
                 if (e.key === "Enter" || e.key === " ") {
@@ -1423,7 +1423,7 @@ function DocumentCard({
       </div>
 
       {!doc.workspaceId && (
-        <p className="text-[0.62rem] text-amber-400/70 mb-2">Unassigned — from a removed companion</p>
+        <p className="text-[0.62rem] text-amber-400/70 mb-2">Unassigned — from a removed workspace</p>
       )}
 
       <div className="flex items-center gap-1.5 mb-2">
@@ -1611,7 +1611,7 @@ export function AppShell() {
   // ── core state ──────────────────────────────────────────────────────────────
   const [activeNav, setActiveNav] = useState<NavId>("thread");
   const [settingsSection, setSettingsSectionState] = useState<SettingsSection>("overview");
-  const [securityBackLabel, setSecurityBackLabel] = useState("Back to chat");
+  const [securityBackLabel, setSecurityBackLabel] = useState("Back to investigate");
   const settingsReturnSectionRef = useRef<SettingsSection | null>(null);
   const lastWorkNavRef = useRef<NavId>("thread");
   const [settingsAnimatingOut, setSettingsAnimatingOut] = useState(false);
@@ -1660,7 +1660,7 @@ export function AppShell() {
 
   const openSecurityDashboard = useCallback((fromSettingsSection?: SettingsSection) => {
     settingsReturnSectionRef.current = fromSettingsSection ?? null;
-    setSecurityBackLabel(fromSettingsSection ? "Back to settings" : "Back to chat");
+    setSecurityBackLabel(fromSettingsSection ? "Back to settings" : "Back to investigate");
     setActiveNav("security-dashboard");
   }, []);
 
@@ -2858,7 +2858,7 @@ export function AppShell() {
     const res = await fetch(`/api/workspaces/${id}`, { method: "DELETE" });
     if (!res.ok) {
       const body = await res.json().catch(() => ({})) as { error?: string };
-      throw new Error(body.error ?? "Could not delete companion");
+      throw new Error(body.error ?? "Could not delete workspace");
     }
     const remaining = workspaces.filter(a => a.id !== id);
     setWorkspaces(remaining);
@@ -2882,13 +2882,13 @@ export function AppShell() {
       version:    1,
       agent,
       bookmarks,
-      note: "Profile and bookmarks export. Chat history and documents remain in your database until the workspace is deleted.",
+      note: "Workspace profile and saved conclusions export. Investigation history and knowledge remain in your database until the workspace is deleted.",
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${agent.name.replace(/\s+/g, "-").toLowerCase()}-companion-backup.json`;
+    link.download = `${agent.name.replace(/\s+/g, "-").toLowerCase()}-workspace-backup.json`;
     link.click();
     URL.revokeObjectURL(url);
   }, []);
@@ -3378,15 +3378,13 @@ export function AppShell() {
           <Sparkles className="size-4 text-indigo-400" aria-hidden />
         </div>
         <div>
-          <p className="text-[0.95rem] font-bold text-white/85 leading-none tracking-tight">Cognitive Overlays</p>
-          <p className="text-[0.62rem] text-indigo-400/50 mt-0.5 font-medium">Context · Savings · Security</p>
+          <p className="text-[0.95rem] font-bold text-white/85 leading-none tracking-tight">Evidence</p>
+          <p className="text-[0.62rem] text-indigo-400/50 mt-0.5 font-medium">Security · Usage · Cost</p>
         </div>
       </div>
 
-      <Tabs defaultValue="context" className="flex flex-1 min-h-0 flex-col">
+      <Tabs defaultValue="security" className="flex flex-1 min-h-0 flex-col">
         <TabsList className="grid grid-cols-3 shrink-0 bg-white/4 border border-white/6">
-          <TabsTrigger value="context" className="text-xs">Context</TabsTrigger>
-          <TabsTrigger value="savings" className="text-xs">Savings</TabsTrigger>
           <TabsTrigger value="security" className="text-xs">
             Security
             {totalRedactions > 0 && (
@@ -3395,6 +3393,8 @@ export function AppShell() {
               </span>
             )}
           </TabsTrigger>
+          <TabsTrigger value="context" className="text-xs">Usage</TabsTrigger>
+          <TabsTrigger value="savings" className="text-xs">Cost</TabsTrigger>
         </TabsList>
 
         {/* Scrollable tab body */}
@@ -3695,16 +3695,16 @@ export function AppShell() {
               <div className="flex items-start gap-2.5">
                 <Shield className="size-4 text-indigo-400 shrink-0 mt-0.5" aria-hidden />
                 <div>
-                  <p className="text-xs font-semibold text-indigo-200/90">Full security dashboard</p>
+                  <p className="text-xs font-semibold text-indigo-200/90">Security history</p>
                   <p className="text-[0.62rem] text-white/45 mt-1 leading-relaxed">
-                    This panel is a quick glance. Open the main dashboard for full history and controls.
+                    Glance only. Open the full view for detection history by workspace and date.
                   </p>
                 </div>
               </div>
               <ul className="text-[0.62rem] text-white/40 space-y-1 pl-5 list-disc leading-relaxed">
-                <li>Review every detection by companion and date</li>
-                <li>Approve exact values or revoke exceptions</li>
+                <li>Every redaction, by workspace and date</li>
                 <li>Dismiss false alarms or delete events</li>
+                <li>See which safe terms suppressed a match</li>
               </ul>
               <button
                 type="button"
@@ -3712,7 +3712,7 @@ export function AppShell() {
                 className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-indigo-400/35 bg-indigo-500/15 py-2.5 text-[0.72rem] font-semibold text-indigo-200/95 hover:bg-indigo-500/25 transition-colors cursor-pointer"
               >
                 <Shield className="size-3.5 shrink-0" aria-hidden />
-                Open security dashboard
+                Open full security view
                 <ChevronRight className="size-3.5 shrink-0 opacity-70" aria-hidden />
               </button>
             </div>
@@ -3945,7 +3945,7 @@ export function AppShell() {
               <div>
                 <h2 className="text-base font-bold text-white/90">Remove {deleteConfirmWorkspace.name}?</h2>
                 <p className="text-sm text-white/45 mt-1.5 leading-relaxed">
-                  All contents for this workspace will be permanently deleted — chats, memory, documents, and bookmarks.
+                  All contents for this workspace will be permanently deleted — investigations, memory, knowledge, and saved conclusions.
                 </p>
               </div>
             </div>
@@ -3957,7 +3957,7 @@ export function AppShell() {
                 className="mt-0.5 accent-indigo-500"
               />
               <span className="text-xs text-white/50 leading-relaxed">
-                Download a backup file first (profile + bookmarks). Chat history in the database is not included in this export yet.
+                Download a backup file first (profile + saved conclusions). Investigation history in the database is not included in this export yet.
               </span>
             </label>
             <div className="flex gap-2 justify-end pt-1">
@@ -4110,7 +4110,7 @@ export function AppShell() {
                     }}
                     className="flex size-9 shrink-0 items-center justify-center rounded-xl text-base transition-all hover:ring-2 hover:ring-white/20 hover:scale-[1.06] active:scale-100 cursor-pointer"
                     style={{ backgroundColor: agent.color + "28", border: `1px solid ${agent.color}55` }}
-                    title={`Customize ${agent.name}`}
+                    title={`Workspace settings · ${agent.name}`}
                   >
                     {agent.emoji}
                   </button>
@@ -4215,7 +4215,7 @@ export function AppShell() {
                               : "text-white/38 group-hover:text-white/58",
                           )} aria-hidden />
                         </span>
-                        <span className="text-[0.8125rem] font-medium flex-1">Customize</span>
+                        <span className="text-[0.8125rem] font-medium flex-1">Workspace</span>
                       </button>
                     </div>
                   </div>
@@ -4350,7 +4350,7 @@ export function AppShell() {
             </SheetTrigger>
             <SheetContent side="right" className="w-full sm:max-w-sm flex flex-col p-0 bg-sidebar border-white/8">
               <SheetHeader className="px-5 pt-5 pb-4 border-b border-white/6 shrink-0">
-                <SheetTitle className="text-base font-bold tracking-tight">Cognitive Overlays</SheetTitle>
+                <SheetTitle className="text-base font-bold tracking-tight">Evidence</SheetTitle>
               </SheetHeader>
               <div className="flex-1 min-h-0 overflow-hidden px-4 py-4">
                 {IntelligencePanel}
@@ -4378,7 +4378,7 @@ export function AppShell() {
               <WorkspaceSectionHeader
                 workspaces={workspaces}
                 viewWorkspaceId={viewWorkspaceId}
-                sectionLabel="Bookmarks"
+                sectionLabel="Saved"
                 pickerId="bookmarks"
                 open={openWorkspacePickerId === "bookmarks"}
                 onToggle={() => toggleWorkspacePicker("bookmarks")}
@@ -4416,18 +4416,18 @@ export function AppShell() {
 
               <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
                 <p className="text-sm text-white/50 leading-relaxed">
-                  Messages you&apos;ve pinned from chats with{" "}
+                  Saved conclusions and pinned answers from investigations in{" "}
                   <span className="text-white/70 font-medium">{viewWorkspace?.name ?? "this workspace"}</span>.
-                  {" "}Click a bookmark to jump to that moment in the conversation.
+                  {" "}Open one to jump back to that moment in the thread.
                 </p>
               </div>
 
               {viewBookmarks.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-white/10 px-5 py-10 text-center space-y-3">
                   <Bookmark className="size-8 text-amber-400/25 mx-auto" aria-hidden />
-                  <p className="text-sm font-medium text-white/50">No pinned messages yet</p>
+                  <p className="text-sm font-medium text-white/50">No saved conclusions yet</p>
                   <p className="text-xs text-white/30 leading-relaxed max-w-sm mx-auto">
-                    Open Chat, hover any message, and tap the bookmark icon to save it here for quick reference.
+                    Open Investigate, hover any answer, and tap the bookmark icon to save it here.
                   </p>
                 </div>
               ) : (
@@ -4436,7 +4436,7 @@ export function AppShell() {
                     <h3 className="sticky top-0 z-[1] -mx-1 mb-2.5 px-1 py-1.5 text-[0.65rem] uppercase tracking-[0.22em] text-white/30 font-semibold backdrop-blur-sm bg-[#0d0d11]/80">
                       {group.label}
                       <span className="ml-2 normal-case tracking-normal text-white/20 font-normal">
-                        · {group.items.length} {group.items.length === 1 ? "bookmark" : "bookmarks"}
+                        · {group.items.length} saved
                       </span>
                     </h3>
                     <div className="flex flex-col gap-2.5">
@@ -4510,9 +4510,10 @@ export function AppShell() {
                     <ChevronLeft className="size-4" aria-hidden />
                     {securityBackLabel}
                   </button>
-                  <h2 className="text-lg font-bold text-white/90 tracking-tight">Security dashboard</h2>
+                  <h2 className="text-lg font-bold text-white/90 tracking-tight">Security</h2>
                   <p className="text-sm text-white/40 mt-1 max-w-lg">
-                    Full PII history by companion. To allow a false flag, type the exact value from your message — only that string is approved, not the whole category.
+                    Detection history for this account. False positives are handled with sensitivity
+                    tiers and safe terms — there is no way to restore a redacted value.
                   </p>
                 </div>
                 <div className="text-right shrink-0">
@@ -4672,22 +4673,22 @@ export function AppShell() {
 
               <div className="rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-[0.62rem] text-white/35 leading-relaxed">
                 <p className="text-white/50 font-medium mb-1">How detection works</p>
-                Client-side regex patterns scan every message before send. Raw values are never stored.
+                Client-side patterns scan every message before send. Raw values are never stored.
                 Matches become placeholders like <code className="font-mono text-white/45">[phone redacted]</code>.
-                Patterns can produce false positives (e.g. any 9-digit sequence may match SSN shape) — approve the exact value to exclude only that string.
-                Context-aware review (names, ambiguous matches) is planned for a future phase.
+                Reduce false positives with sensitivity tiers and safe terms in App settings.
+                Secret detection and citations land in a later milestone.
               </div>
             </div>
           </div>
 
         ) : workNav === "workspace-settings" ? (
-          /* ── Workspace customize studio ── */
+          /* ── Workspace settings ── */
           <div className="flex-1 overflow-y-auto px-5 py-6">
             <div className="max-w-4xl mx-auto flex flex-col gap-5">
               <WorkspaceSectionHeader
                 workspaces={workspaces}
                 viewWorkspaceId={viewWorkspaceId}
-                sectionLabel="Customize"
+                sectionLabel="Workspace"
                 pickerId="workspace-settings"
                 open={openWorkspacePickerId === "workspace-settings"}
                 onToggle={() => toggleWorkspacePicker("workspace-settings")}
@@ -4751,7 +4752,7 @@ export function AppShell() {
                     className="flex items-center gap-1.5 text-sm text-white/45 hover:text-white/70 transition-colors"
                   >
                     <ChevronLeft className="size-4" aria-hidden />
-                    Document Library
+                    Knowledge
                   </button>
                   <button
                     onClick={() => deleteDocument(selectedDoc.id)}
@@ -4779,7 +4780,7 @@ export function AppShell() {
                         <p className="mt-0.5 text-sm text-white/45">{selectedDoc.description}</p>
                       )}
                       <p className="mt-2 text-[0.72rem] text-white/35 leading-relaxed">
-                        Only sanitized text is stored and indexed. Chunks are retrieved automatically during chat when your questions match the content.
+                        Only sanitized text is stored and indexed. Chunks are retrieved automatically during investigations when your questions match.
                       </p>
                     </div>
                   </div>
@@ -4939,13 +4940,13 @@ export function AppShell() {
                     Build a reference library for{" "}
                     <span className="text-white/75 font-medium">{viewWorkspace?.name ?? "this workspace"}</span>.
                     Uploaded files are stored in your database, scrubbed for PII, split into searchable chunks, and
-                    automatically pulled into chat when you ask related questions.
+                    automatically retrieved during investigations when your questions match.
                   </p>
                   <ol className="text-[0.72rem] text-white/35 space-y-1 list-decimal list-inside leading-relaxed">
                     <li>Text is extracted from your file (PDFs included)</li>
-                    <li>PII is redacted using the same patterns as chat — only sanitized text is stored or embedded</li>
+                    <li>PII is redacted using the same patterns as Investigate — only sanitized text is stored or embedded</li>
                     <li>Content is chunked and embedded with vector search (pgvector)</li>
-                    <li>Relevant passages surface in conversation — scoped to this workspace only</li>
+                    <li>Relevant passages surface in investigations — scoped to this workspace only</li>
                   </ol>
                 </div>
 
@@ -5001,7 +5002,7 @@ export function AppShell() {
                   <div className="text-center pb-4">
                     <p className="text-xs text-white/25 leading-relaxed max-w-md mx-auto">
                       No documents yet — drop a file above or use Upload file. PII in uploads is scrubbed before
-                      storage and embedding, same as chat messages.
+                      storage and embedding, same as investigation messages.
                     </p>
                   </div>
                 )}

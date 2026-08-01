@@ -561,14 +561,14 @@ export function MemoryDashboard({
       {/* Guidance */}
       <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3.5 space-y-2">
         <p className="text-sm text-white/50 leading-relaxed">
-          A living profile of what{" "}
-          <span className="text-white/75 font-medium">{workspaceName}</span> has learned from your
-          conversations — facts, communication style, and rolling summaries. Everything here is
-          inferred automatically; nothing is shared outside your workspace.
+          What{" "}
+          <span className="text-white/75 font-medium">{workspaceName}</span> has retained from
+          investigations — facts and rolling summaries grounded in this workspace&apos;s knowledge.
+          Nothing here is shared outside your account.
         </p>
         <p className="text-[0.72rem] text-white/32 leading-relaxed">
-          Chat to refine this profile. Summaries compress past conversations; extracted facts persist
-          across sessions for this companion.
+          Investigate to grow this memory. Summaries compress past threads; extracted facts persist
+          across sessions for this workspace.
         </p>
       </div>
 
@@ -586,7 +586,7 @@ export function MemoryDashboard({
         <StatCard
           label="Working turns"
           value={isActiveWorkspace ? rawTurns : "—"}
-          hint={isActiveWorkspace ? "Uncompressed in chat" : "Open Chat"}
+          hint={isActiveWorkspace ? "Uncompressed in thread" : "Open Investigate"}
           accent="emerald"
         />
         <StatCard
@@ -642,7 +642,7 @@ export function MemoryDashboard({
                   <LayerCard
                     id="working"
                     name="Working memory"
-                    detail={isActiveWorkspace ? `${rawTurns} raw turns` : "Open Chat"}
+                    detail={isActiveWorkspace ? `${rawTurns} raw turns` : "Open Investigate"}
                     active={isActiveWorkspace && rawTurns > 0}
                     expanded={expandedLayer === "working"}
                     onToggle={toggleLayer}
@@ -865,8 +865,8 @@ export function MemoryDashboard({
           <Brain className="size-10 text-violet-400/25 mx-auto" aria-hidden />
           <p className="text-sm font-medium text-white/50">No memory built yet</p>
           <p className="text-xs text-white/30 leading-relaxed max-w-sm mx-auto">
-            Start a conversation with {workspaceName}. Facts, summaries, and communication insights
-            will appear here automatically as you chat.
+            Start an investigation in {workspaceName}. Facts and summaries will appear here
+            automatically as you work.
           </p>
         </div>
       )}

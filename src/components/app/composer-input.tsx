@@ -117,7 +117,7 @@ export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputP
 
     return (
       <div className="flex items-center gap-2 px-4 pt-3 pb-2">
-        <label className="sr-only" htmlFor="composer">Message {workspaceName}</label>
+        <label className="sr-only" htmlFor="composer">Ask about {workspaceName}</label>
         <input
           id="composer"
           ref={inputRef}
@@ -129,7 +129,7 @@ export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputP
               onSend();
             }
           }}
-          placeholder={sessionLoading ? "Loading conversation…" : `Message ${workspaceName}`}
+          placeholder={sessionLoading ? "Loading conversation…" : `Ask about ${workspaceName}…`}
           disabled={isStreaming || sessionLoading || !sessionReady}
           autoComplete="off"
           className="flex-1 bg-transparent text-sm text-white/90 placeholder:text-white/25 outline-none border-none"
