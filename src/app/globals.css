@@ -1,0 +1,195 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/*
+ * SecureMind is dark-first.
+ * :root carries the dark theme directly — no light/dark toggle needed yet.
+ * Accent: indigo/violet (oklch ~264°) matching the cloud-engineer aesthetic.
+ */
+:root {
+  /* Page layers — deep near-black with a subtle blue undertone */
+  --background:           oklch(0.065 0.008 265);
+  --foreground:           oklch(0.96  0.004 265);
+
+  --card:                 oklch(0.105 0.007 265);
+  --card-foreground:      oklch(0.96  0.004 265);
+
+  --popover:              oklch(0.115 0.008 265);
+  --popover-foreground:   oklch(0.96  0.004 265);
+
+  /* Indigo accent — primary interactive colour */
+  --primary:              oklch(0.63 0.22 264);
+  --primary-foreground:   oklch(0.99 0    0);
+
+  --secondary:            oklch(0.155 0.007 265);
+  --secondary-foreground: oklch(0.96  0.004 265);
+
+  --muted:                oklch(0.145 0.006 265);
+  --muted-foreground:     oklch(0.50  0.008 265);
+
+  --accent:               oklch(0.155 0.01 265);
+  --accent-foreground:    oklch(0.96  0.004 265);
+
+  --destructive:          oklch(0.65 0.22 22);
+
+  --border:               oklch(1 0 0 / 7%);
+  --input:                oklch(1 0 0 / 8%);
+  --ring:                 oklch(0.63 0.22 264 / 55%);
+
+  --radius: 0.75rem;
+
+  /* Sidebar — very slightly lighter than page */
+  --sidebar:                    oklch(0.085 0.008 265);
+  --sidebar-foreground:         oklch(0.96  0.004 265);
+  --sidebar-primary:            oklch(0.63  0.22  264);
+  --sidebar-primary-foreground: oklch(0.99  0     0);
+  --sidebar-accent:             oklch(1     0     0   / 5.5%);
+  --sidebar-accent-foreground:  oklch(0.96  0.004 265);
+  --sidebar-border:             oklch(1     0     0   / 6%);
+  --sidebar-ring:               oklch(0.63  0.22  264 / 50%);
+
+  --chart-1: oklch(0.63 0.22 264);
+  --chart-2: oklch(0.72 0.16 200);
+  --chart-3: oklch(0.55 0.18 300);
+  --chart-4: oklch(0.68 0.14 160);
+  --chart-5: oklch(0.60 0.20 30);
+}
+
+/* Keep a .dark alias for any shadcn components that check for the class */
+.dark {
+  --background:           oklch(0.065 0.008 265);
+  --foreground:           oklch(0.96  0.004 265);
+  --card:                 oklch(0.105 0.007 265);
+  --card-foreground:      oklch(0.96  0.004 265);
+  --popover:              oklch(0.115 0.008 265);
+  --popover-foreground:   oklch(0.96  0.004 265);
+  --primary:              oklch(0.63  0.22  264);
+  --primary-foreground:   oklch(0.99  0     0);
+  --secondary:            oklch(0.155 0.007 265);
+  --secondary-foreground: oklch(0.96  0.004 265);
+  --muted:                oklch(0.145 0.006 265);
+  --muted-foreground:     oklch(0.50  0.008 265);
+  --accent:               oklch(0.155 0.01  265);
+  --accent-foreground:    oklch(0.96  0.004 265);
+  --destructive:          oklch(0.65  0.22  22);
+  --border:               oklch(1 0 0 / 7%);
+  --input:                oklch(1 0 0 / 8%);
+  --ring:                 oklch(0.63 0.22 264 / 55%);
+  --sidebar:                    oklch(0.085 0.008 265);
+  --sidebar-foreground:         oklch(0.96  0.004 265);
+  --sidebar-primary:            oklch(0.63  0.22  264);
+  --sidebar-primary-foreground: oklch(0.99  0     0);
+  --sidebar-accent:             oklch(1     0     0   / 5.5%);
+  --sidebar-accent-foreground:  oklch(0.96  0.004 265);
+  --sidebar-border:             oklch(1     0     0   / 6%);
+  --sidebar-ring:               oklch(0.63  0.22  264 / 50%);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* Smooth scrollbar styling */
+::-webkit-scrollbar        { width: 5px; height: 5px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: oklch(1 0 0 / 12%); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: oklch(1 0 0 / 20%); }
+
+/* Chat message markdown rendering */
+.chat-prose p                  { margin-bottom: 0.55em; line-height: 1.65; }
+.chat-prose p:last-child       { margin-bottom: 0; }
+.chat-prose strong             { color: oklch(0.96 0 0); font-weight: 600; }
+.chat-prose em                 { color: oklch(0.82 0.02 265); font-style: italic; }
+.chat-prose ul                 { list-style: disc; padding-left: 1.25em; margin: 0.5em 0; space-y: 0.2em; }
+.chat-prose ol                 { list-style: decimal; padding-left: 1.25em; margin: 0.5em 0; }
+.chat-prose li                 { margin-bottom: 0.2em; line-height: 1.55; }
+.chat-prose li > p             { margin-bottom: 0.2em; }
+.chat-prose h1,.chat-prose h2  { font-size: 1em; font-weight: 700; margin: 0.75em 0 0.35em; color: oklch(0.95 0 0); }
+.chat-prose h3,.chat-prose h4  { font-size: 0.9em; font-weight: 600; margin: 0.6em 0 0.25em; color: oklch(0.9 0 0); }
+.chat-prose code               { font-family: var(--font-geist-mono); font-size: 0.82em; background: oklch(1 0 0 / 7%); border: 1px solid oklch(1 0 0 / 10%); border-radius: 4px; padding: 0.1em 0.35em; }
+.chat-prose pre                { background: oklch(1 0 0 / 5%); border: 1px solid oklch(1 0 0 / 8%); border-radius: 10px; padding: 0.85em 1em; overflow-x: auto; margin: 0.6em 0; }
+.chat-prose pre code           { background: none; border: none; padding: 0; font-size: 0.8em; }
+.chat-prose blockquote         { border-left: 2px solid oklch(0.55 0.12 265); padding-left: 0.85em; color: oklch(0.7 0 0); margin: 0.5em 0; font-style: italic; }
+.chat-prose a                  { color: oklch(0.72 0.14 265); text-decoration: underline; text-underline-offset: 3px; }
+.chat-prose hr                 { border-color: oklch(1 0 0 / 8%); margin: 0.75em 0; }
+
+/* Hand cursor on everything interactive */
+button,
+[role="button"],
+[role="tab"],
+a,
+select,
+label,
+summary {
+  cursor: pointer;
+}
+
+/* Hide Next.js dev tools badge — all feedback comes from the terminal */
+nextjs-portal {
+  display: none !important;
+}
+
+/* Voice overlay — bar idle-breath animation */
+@keyframes voice-bar-idle {
+  0%, 100% { transform: scaleY(0.35); }
+  50%       { transform: scaleY(1); }
+}
+.voice-bar-idle {
+  animation: voice-bar-idle 1.2s ease-in-out infinite;
+  transform-origin: bottom;
+}

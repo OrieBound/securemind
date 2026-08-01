@@ -1,0 +1,169 @@
+// SecureMind — Prisma schema
+// Local dev: Neon (free PostgreSQL)
+// Production: Aurora Serverless v2 (swap DATABASE_URL only)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Agents ──────────────────────────────────────────────────────────────────
+// Each agent is a distinct AI companion with its own personality, history, and memory.
+// Users can create multiple agents and switch between them.
+
+model Agent {
+  id            String    @id @default(cuid())
+  userId        String    @default("local")
+  name          String    @default("Sage")
+  emoji         String    @default("🧠")        // avatar fallback
+  color         String    @default("#6366f1")    // indigo default
+  personality       String?                          // compiled snippet → system prompt
+  personalityConfig Json?                            // structured Customize source
+  tagline           String?                          // short UI subtitle
+  preferredMode     String    @default("Companion")
+  modelOverride String?                          // null = use mode routing
+  isDefault     Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions      Session[]
+  facts         AgentFact[]
+  fragments     MemoryFragment[]
+  documents     Document[]
+
+  @@index([userId, updatedAt])
+}
+
+// ─── Sessions ────────────────────────────────────────────────────────────────
+// One session = one continuous conversation thread, tied to a specific agent.
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String   @default("local")
+  agentId   String
+  title     String?
+  mode      String   @default("Companion")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  agent     Agent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  messages  Message[]
+  summary   SessionSummary?
+
+  @@index([userId, agentId, updatedAt])
+}
+
+// ─── Messages ────────────────────────────────────────────────────────────────
+
+model Message {
+  id        String   @id @default(cuid())
+  sessionId String
+  role      String   // "user" | "assistant"
+  content   String   // sanitized — no raw PII ever stored
+  createdAt DateTime @default(now())
+
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+}
+
+// ─── Session summary ─────────────────────────────────────────────────────────
+
+model SessionSummary {
+  id           String   @id @default(cuid())
+  sessionId    String   @unique
+  summary      String
+  turnsCovered Int      @default(0)
+  updatedAt    DateTime @updatedAt
+
+  session      Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+// ─── Agent facts ─────────────────────────────────────────────────────────────
+// Per-agent extracted facts. Each agent builds its own understanding of the user.
+
+model AgentFact {
+  id         String   @id @default(cuid())
+  agentId    String
+  userId     String   @default("local")
+  key        String
+  value      String
+  confidence Float    @default(0.8)
+  source     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  agent      Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, key])
+  @@index([agentId])
+}
+
+// ─── User facts ──────────────────────────────────────────────────────────────
+// Global user facts shared across all agents (name, age, etc.)
+
+model UserFact {
+  id         String   @id @default(cuid())
+  userId     String   @default("local")
+  key        String
+  value      String
+  confidence Float    @default(0.8)
+  source     String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([userId, key])
+  @@index([userId])
+}
+
+// ─── Documents ───────────────────────────────────────────────────────────────
+// Uploaded files available for retrieval across all agents.
+
+model Document {
+  id           String   @id @default(cuid())
+  userId       String   @default("local")
+  agentId      String?                          // which companion owns this document
+  name         String
+  mimeType     String
+  sizeBytes    Int
+  content      String   // sanitized extracted text — PII scrubbed at ingest; raw binary never stored
+  description  String?  // user-supplied annotation
+  status       String   @default("processing") // processing | ready | failed
+  chunkCount   Int      @default(0)             // number of embedded MemoryFragment chunks
+  redactionCount Int    @default(0)             // PII placeholders applied at ingest
+  scrubEvents    Json?                           // [{ category, count }] aggregate at ingest
+  createdAt    DateTime @default(now())
+
+  agent        Agent?         @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  fragments    MemoryFragment[]
+
+  @@index([userId])
+  @@index([userId, agentId])
+  @@index([userId, status])
+}
+
+// ─── Memory fragments (Phase B — vector embeddings) ──────────────────────────
+// Unified vector store for both conversation memory and document chunks.
+// Requires pgvector: run `CREATE EXTENSION IF NOT EXISTS vector;` in Neon SQL editor.
+// nomic-embed-text produces 768-dim vectors.
+
+model MemoryFragment {
+  id         String                     @id @default(cuid())
+  userId     String                     @default("local")
+  agentId    String?
+  documentId String?
+  sessionId  String?
+  content    String
+  category   String                     @default("episodic")  // "episodic" | "semantic" | "document"
+  embedding  Unsupported("vector(768)")?                       // nomic-embed-text 768-dim · set via raw SQL
+  createdAt  DateTime                   @default(now())
+
+  agent      Agent?    @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  document   Document? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([userId, agentId])
+  @@index([userId, category])
+}
