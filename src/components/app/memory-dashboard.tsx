@@ -567,7 +567,7 @@ export function MemoryDashboard({
           Nothing here is shared outside your account.
         </p>
         <p className="text-[0.72rem] text-white/32 leading-relaxed">
-          Investigate to grow this memory. Summaries compress past threads; extracted facts persist
+          Chat to grow this memory. Summaries compress past threads; extracted facts persist
           across sessions for this workspace.
         </p>
       </div>
@@ -586,7 +586,7 @@ export function MemoryDashboard({
         <StatCard
           label="Working turns"
           value={isActiveWorkspace ? rawTurns : "—"}
-          hint={isActiveWorkspace ? "Uncompressed in thread" : "Open Investigate"}
+          hint={isActiveWorkspace ? "Uncompressed in thread" : "Open Chat"}
           accent="emerald"
         />
         <StatCard
@@ -642,7 +642,7 @@ export function MemoryDashboard({
                   <LayerCard
                     id="working"
                     name="Working memory"
-                    detail={isActiveWorkspace ? `${rawTurns} raw turns` : "Open Investigate"}
+                    detail={isActiveWorkspace ? `${rawTurns} raw turns` : "Open Chat"}
                     active={isActiveWorkspace && rawTurns > 0}
                     expanded={expandedLayer === "working"}
                     onToggle={toggleLayer}

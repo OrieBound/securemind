@@ -63,7 +63,7 @@ export function AnalyticsShell({
             className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs text-white/70 hover:text-white hover:bg-white/[0.07]"
           >
             <ArrowLeft className="size-3.5" aria-hidden />
-            Investigate
+            Chat
           </Link>
           <nav
             className="inline-flex rounded-lg border border-white/10 bg-black/20 p-0.5"

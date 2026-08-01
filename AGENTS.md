@@ -17,12 +17,12 @@ It is a **single-user personal project**. Default auth is `AUTH_MODE=local`. Opt
 
 ## Architecture rules
 
-### Turn policy (Investigate)
+### Turn policy (Chat)
 - Retrieval, citation UI, and response style are decided by `src/lib/turn-policy/decide-turn.ts` — not by scattered greeting regexes in the chat route.
 - Follow the user's topic. The workspace scopes Knowledge access; it is not a conversational boundary.
 - Social / general / app-help / provenance / correction turns must not retrieve workspace Knowledge or show Sources. Grounding is `not_applicable`.
 - Workspace-grounded and investigation turns retrieve, apply `EVIDENCE_MIN_SIMILARITY` (0.5), and show only sources actually cited.
-- Assistant speaker label in the UI is **SecureMind** (or unlabeled). Workspace names (e.g. Cloud Operations) are page context only — never the message speaker.
+- The **workspace name** is the assistant speaker identity in chat (Companion-style). Product chrome stays SecureMind; default seed workspace is **Aegis**.
 - `reasonCode` is telemetry only — never put it in assistant-visible text.
 
 ### Prompt layers
@@ -147,5 +147,5 @@ docs/adr/                     ← architecture decision records
 - Never reintroduce companion personalities, trait sliders, or a restore path for redacted values.
 
 ## Current status
-- **Working**: Investigate chat with streaming, complexity-tier routing, client-side redaction with pre-send review, sensitivity tiers, safe terms, hard-blocked secret detection, prompt-injection fencing for retrieved evidence, layered memory, Knowledge ingest (text/PDF/code + image vision extract when Groq is set), chat attachments into Knowledge, citations + citation audit, insufficient-evidence prompting, multi-workspace UI, optional Bedrock adapter, Floci Cognito login (cookie session), Docker Compose (optional Postgres + Floci), GitHub Actions CI.
+- **Working**: Chat with streaming, complexity-tier routing, client-side redaction with pre-send review, sensitivity tiers, safe terms, hard-blocked secret detection, prompt-injection fencing for retrieved evidence, layered memory, Knowledge ingest (text/PDF/code + image vision extract when Groq is set), chat attachments into Knowledge, citations + citation audit, insufficient-evidence prompting, multi-workspace UI, Insights rail (Security/Usage/Cost), optional Bedrock adapter, Floci Cognito login (cookie session), Docker Compose (optional Postgres + Floci), GitHub Actions CI.
 - **Not implemented / not claimed**: LLM-as-judge claim verification, KMS/Macie, real AWS Cognito as a hosted product path, production multi-tenant auth. Default without Cognito env remains `AUTH_MODE=local`.

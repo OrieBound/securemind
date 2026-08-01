@@ -110,7 +110,7 @@ describe("PATCH /api/workspaces/:id", () => {
   it("scopes the ownership check to the server-derived user", async () => {
     const { PATCH } = await import("@/app/api/workspaces/[id]/route");
     workspace.findFirst.mockResolvedValue({
-      id: "w1", userId: SERVER_USER, name: "Cloud Operations", context: null, description: null,
+      id: "w1", userId: SERVER_USER, name: "Aegis", context: null, description: null,
     });
     workspace.update.mockResolvedValue({ id: "w1" });
 
@@ -240,7 +240,7 @@ describe("GET /api/analytics/security", () => {
     const { GET } = await import("@/app/api/analytics/security/route");
     workspace.findFirst.mockResolvedValue({ id: "w1" });
     securityEvent.findMany.mockResolvedValue([]);
-    workspace.findMany.mockResolvedValue([{ id: "w1", name: "Cloud Operations" }]);
+    workspace.findMany.mockResolvedValue([{ id: "w1", name: "Aegis" }]);
 
     await GET(
       new NextRequest("http://localhost/api/analytics/security?workspaceId=w1&userId=attacker"),

@@ -17,8 +17,8 @@ datasource db {
 model Workspace {
   id            String    @id @default(cuid())
   userId        String    @default("local")
-  name          String    @default("Cloud Operations")
-  emoji         String    @default("☁️")       // visual identification in the sidebar
+  name          String    @default("Aegis")
+  emoji         String    @default("🛡️")       // visual identification in the sidebar
   color         String    @default("#6366f1")
   context       String?                          // what this workspace covers → system prompt
   description   String?                          // short UI subtitle

@@ -10,7 +10,7 @@ import type { AnalyticsRange } from "@/lib/analytics/types";
 
 const RANGES = new Set<AnalyticsRange>(["today", "7d", "30d", "all"]);
 
-/** Compact KPIs for the Investigate Evidence rail. */
+/** Compact KPIs for the Chat Insights rail. */
 export async function GET(req: NextRequest) {
   let userId: string;
   try {

@@ -12,13 +12,13 @@ Security-focused cloud-operations knowledge assistant: sanitize sensitive text b
 
 - **Client-side redaction** with pre-send review (no path that sends the raw detected value)
 - **Safe terms** (CIDR / domain / prefix / literal); SSN, card numbers, and secrets cannot be allowlisted
-- **Workspaces** with Investigate, Knowledge, Memory, Saved
+- **Workspaces** with Chat, Knowledge, Memory, Saved
 - **Knowledge ingest** for text, PDF, code, and images (images use Groq vision when configured; extracted text is scrubbed)
 - **Chat attachments** land in the same Knowledge library as Knowledge-tab uploads
 - **Citations + citation audit** against retrieved fragments
 - **Prompt-injection fencing** on retrieved evidence
 - **Complexity-tier model routing** (Groq / Ollama; optional Bedrock)
-- **Security / Usage / Cost analytics** at `/analytics/*` (persisted sanitized telemetry; Evidence rail shows compact summaries)
+- **Security / Usage / Cost analytics** at `/analytics/*` (persisted sanitized telemetry; Insights rail shows compact summaries)
 - **CI** on GitHub Actions (`npm ci`, Prisma generate, typecheck, tests)
 
 ## Requirements

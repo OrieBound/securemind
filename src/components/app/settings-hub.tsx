@@ -456,7 +456,7 @@ export function SettingsHub({
                 )}
               </div>
               <p className="text-[0.62rem] text-white/35 leading-relaxed">
-                Use the <strong className="text-white/50 font-medium">Usage</strong> tab in the Evidence panel for tier usage and model mapping.
+                Use the <strong className="text-white/50 font-medium">Usage</strong> tab in the Insights panel for tier usage and model mapping.
                 Full charts will live here in the Insights portal.
               </p>
               <button
@@ -490,7 +490,7 @@ export function SettingsHub({
                 </div>
               </div>
               <p className="text-[0.62rem] text-white/35 leading-relaxed">
-                Use the <strong className="text-white/50 font-medium">Cost</strong> tab in the Evidence panel for live breakdowns.
+                Use the <strong className="text-white/50 font-medium">Cost</strong> tab in the Insights panel for live breakdowns.
               </p>
               <button
                 type="button"
@@ -514,7 +514,7 @@ export function SettingsHub({
                 <p className="text-[0.62rem] text-white/35 mt-1">in current time range (excludes dismissed)</p>
               </div>
               <p className="text-[0.62rem] text-white/35 leading-relaxed">
-                The Evidence panel <strong className="text-white/50 font-medium">Security</strong> tab is the glance.
+                The Insights panel <strong className="text-white/50 font-medium">Security</strong> tab is the glance.
                 Open the full view for history by workspace and date.
               </p>
               <button

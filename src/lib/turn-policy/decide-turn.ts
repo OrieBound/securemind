@@ -1,5 +1,5 @@
 /**
- * Deterministic turn-mode classifier for SecureMind Investigate.
+ * Deterministic turn-mode classifier for SecureMind Chat.
  * Owns retrieval / citation / UI decisions. Complexity tier routing stays in route-message.ts.
  */
 

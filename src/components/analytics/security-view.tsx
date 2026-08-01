@@ -248,7 +248,7 @@ export function SecurityAnalyticsView({ workspaces }: Props) {
 
         <ChartFrame
           title="Source"
-          interpretation="Where findings originated: Investigate chat, Knowledge documents, or image OCR."
+          interpretation="Where findings originated: Chat, Knowledge documents, or image OCR."
           rangeLabel={rangeLabel}
           workspaceLabel={workspaceLabel}
           loading={loading}

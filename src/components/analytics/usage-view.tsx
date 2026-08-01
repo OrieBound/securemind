@@ -179,7 +179,7 @@ export function UsageAnalyticsView({ workspaces }: Props) {
 
         <ChartFrame
           title="Routing-tier distribution"
-          interpretation="Complexity tiers selected for Investigate turns."
+          interpretation="Complexity tiers selected for Chat turns."
           rangeLabel={rangeLabel}
           workspaceLabel={workspaceLabel}
           loading={loading}
@@ -251,7 +251,7 @@ export function UsageAnalyticsView({ workspaces }: Props) {
       <section className="rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-5">
         <h3 className="text-sm font-semibold text-white/90 mb-3">By workspace</h3>
         {!loading && (data?.byWorkspace.length ?? 0) === 0 && (
-          <p className="text-sm text-white/35">No usage events yet. Ask a question in Investigate to start recording.</p>
+          <p className="text-sm text-white/35">No usage events yet. Ask a question in Chat to start recording.</p>
         )}
         {(data?.byWorkspace.length ?? 0) > 0 && (
           <div className="overflow-x-auto">

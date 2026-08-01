@@ -412,7 +412,7 @@ function navTitle(nav: NavId): string {
   if (nav === "settings") return "App settings";
   if (nav === "workspace-settings") return "Workspace";
   if (nav === "security-dashboard") return "Security";
-  if (nav === "thread") return "Investigate";
+  if (nav === "thread") return "Chat";
   return SUB_NAV_ITEMS.find(n => n.id === nav)?.label ?? nav;
 }
 
@@ -776,8 +776,7 @@ function fmtUsd(d: number): string {
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
-const DEFAULT_WORKSPACE_NAME = "Cloud Operations";
-const ASSISTANT_LABEL = "SecureMind";
+const DEFAULT_WORKSPACE_NAME = "Aegis";
 
 // Complexity tiers — ordered most capable → cheapest (mirrors router.ts COMPLEXITY_TIERS)
 const MODES = [
@@ -794,7 +793,7 @@ type Mode = (typeof MODES)[number];
 const SUB_NAV_ITEMS = [
   {
     id: "thread" as const,
-    label: "Investigate",
+    label: "Chat",
     icon: MessageSquare,
     iconWrap: "bg-indigo-500/20 border-indigo-500/25",
     iconColor: "text-indigo-300",
@@ -1009,7 +1008,7 @@ const MessageBubble = memo(function MessageBubble({
 }: {
   showTimestamp?: boolean;
   message: ChatMessage;
-  /** Workspace name is page context only — not the assistant speaker label. */
+  /** Workspace name doubles as the assistant speaker identity in chat. */
   workspaceName: string;
   workspaceEmoji?: string;
   workspaceColor?: string;
@@ -1129,7 +1128,7 @@ const MessageBubble = memo(function MessageBubble({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <WorkspaceAvatar name={ASSISTANT_LABEL} emoji={workspaceEmoji} color={workspaceColor} />
+      <WorkspaceAvatar name={workspaceName} emoji={workspaceEmoji} color={workspaceColor} />
 
       <div className="flex-1 min-w-0 relative pt-0.5">
         {/* Bookmark */}
@@ -1146,7 +1145,7 @@ const MessageBubble = memo(function MessageBubble({
           <Bookmark className={cn("size-3", message.bookmarked && "fill-current")} aria-hidden />
         </button>
 
-        <p className="mb-1 text-[0.68rem] font-medium text-white/35">{ASSISTANT_LABEL}</p>
+        <p className="mb-1 text-[0.68rem] font-medium text-white/35">{workspaceName}</p>
         <div className="text-sm text-foreground/90">{body}</div>
 
         {/* Route badge — shows which mode + model handled this turn */}
@@ -1707,7 +1706,7 @@ function VoiceBar({
 export type AnalyticsViewId = "security" | "usage" | "cost";
 
 type AppShellProps = {
-  /** When set, center pane shows full analytics (same shell, Evidence rail hidden). */
+  /** When set, center pane shows full analytics (same shell, Insights rail hidden). */
   analyticsView?: AnalyticsViewId;
 };
 
@@ -3246,7 +3245,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
     }
   }, [handleDocumentUpload]);
 
-  /** Investigate attachments → same Knowledge library as the Knowledge tab. */
+  /** Chat attachments → same Knowledge library as the Knowledge tab. */
   const ingestChatAttachmentsToKnowledge = useCallback(async (files: File[]) => {
     if (!files.length || !activeWorkspaceId) return;
     let ok = 0;
@@ -3407,7 +3406,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
       const preview = t.length > 200 ? t.slice(0, 200) + "…" : t;
       setBookmarks(p => [...p, {
         messageId,
-        label:     msg.role === "assistant" ? ASSISTANT_LABEL : "You",
+        label:     msg.role === "assistant" ? workspaceName : "You",
         role:      msg.role,
         preview,
         heavy:     msg.content.includes("redacted]"),
@@ -3641,7 +3640,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
           <Sparkles className="size-4 text-indigo-400" aria-hidden />
         </div>
         <div>
-          <p className="text-[0.95rem] font-bold text-white/85 leading-none tracking-tight">Evidence</p>
+          <p className="text-[0.95rem] font-bold text-white/85 leading-none tracking-tight">Insights</p>
           <p className="text-[0.62rem] text-indigo-400/50 mt-0.5 font-medium">Security · Usage · Cost</p>
         </div>
       </div>
@@ -4656,7 +4655,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
             </SheetTrigger>
             <SheetContent side="right" className="w-full sm:max-w-sm flex flex-col p-0 bg-sidebar border-white/8">
               <SheetHeader className="px-5 pt-5 pb-4 border-b border-white/6 shrink-0">
-                <SheetTitle className="text-base font-bold tracking-tight">Evidence</SheetTitle>
+                <SheetTitle className="text-base font-bold tracking-tight">Insights</SheetTitle>
               </SheetHeader>
               <div className="flex-1 min-h-0 overflow-hidden px-4 py-4">
                 {IntelligencePanel}
@@ -4752,7 +4751,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                   <Bookmark className="size-8 text-amber-400/25 mx-auto" aria-hidden />
                   <p className="text-sm font-medium text-white/50">No saved conclusions yet</p>
                   <p className="text-xs text-white/30 leading-relaxed max-w-sm mx-auto">
-                    Open Investigate, hover any answer, and tap the bookmark icon to save it here.
+                    Open Chat, hover any answer, and tap the bookmark icon to save it here.
                   </p>
                 </div>
               ) : (
@@ -5271,7 +5270,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                   </p>
                   <ol className="text-[0.72rem] text-white/35 space-y-1 list-decimal list-inside leading-relaxed">
                     <li>Text is extracted from your file (PDFs included)</li>
-                    <li>PII is redacted using the same patterns as Investigate — only sanitized text is stored or embedded</li>
+                    <li>PII is redacted using the same patterns as Chat — only sanitized text is stored or embedded</li>
                     <li>Content is chunked and embedded with vector search (pgvector)</li>
                     <li>Relevant passages surface in investigations — scoped to this workspace only</li>
                   </ol>
