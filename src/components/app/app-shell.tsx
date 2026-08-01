@@ -123,7 +123,15 @@ type CitationRef = {
 };
 
 type CitationAuditRef = {
-  status: "n/a" | "declined" | "grounded" | "partial" | "uncited" | "invalid";
+  status:
+    | "not_applicable"
+    | "n/a"
+    | "declined"
+    | "grounded"
+    | "partial"
+    | "uncited"
+    | "invalid"
+    | "insufficient_evidence";
   citedIndices: number[];
   invalidIndices: number[];
   unusedIndices: number[];
@@ -768,7 +776,8 @@ function fmtUsd(d: number): string {
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
-const DEFAULT_NAME = "Sage";
+const DEFAULT_WORKSPACE_NAME = "Cloud Operations";
+const ASSISTANT_LABEL = "SecureMind";
 
 // Complexity tiers — ordered most capable → cheapest (mirrors router.ts COMPLEXITY_TIERS)
 const MODES = [
@@ -992,7 +1001,6 @@ function WorkspaceAvatar({
 
 const MessageBubble = memo(function MessageBubble({
   message,
-  workspaceName,
   workspaceEmoji,
   workspaceColor,
   onBookmark,
@@ -1001,6 +1009,7 @@ const MessageBubble = memo(function MessageBubble({
 }: {
   showTimestamp?: boolean;
   message: ChatMessage;
+  /** Workspace name is page context only — not the assistant speaker label. */
   workspaceName: string;
   workspaceEmoji?: string;
   workspaceColor?: string;
@@ -1120,7 +1129,7 @@ const MessageBubble = memo(function MessageBubble({
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <WorkspaceAvatar name={workspaceName} emoji={workspaceEmoji} color={workspaceColor} />
+      <WorkspaceAvatar name={ASSISTANT_LABEL} emoji={workspaceEmoji} color={workspaceColor} />
 
       <div className="flex-1 min-w-0 relative pt-0.5">
         {/* Bookmark */}
@@ -1137,7 +1146,7 @@ const MessageBubble = memo(function MessageBubble({
           <Bookmark className={cn("size-3", message.bookmarked && "fill-current")} aria-hidden />
         </button>
 
-        <p className="mb-1 text-[0.68rem] font-medium text-white/35">{workspaceName}</p>
+        <p className="mb-1 text-[0.68rem] font-medium text-white/35">{ASSISTANT_LABEL}</p>
         <div className="text-sm text-foreground/90">{body}</div>
 
         {/* Route badge — shows which mode + model handled this turn */}
@@ -1182,7 +1191,7 @@ const MessageBubble = memo(function MessageBubble({
                 No relevant workspace Knowledge for this question
               </p>
             )}
-            {message.showGroundingBadge !== false && message.citationAudit && message.citationAudit.status !== "n/a" && (
+            {message.showGroundingBadge !== false && message.citationAudit && message.citationAudit.status !== "n/a" && message.citationAudit.status !== "not_applicable" && (
               <p
                 className={cn(
                   "flex items-center gap-1.5 text-[0.65rem]",
@@ -1844,7 +1853,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
 
   const activeWorkspace  = workspaces.find(a => a.id === activeWorkspaceId) ?? null;
   const viewWorkspace    = workspaces.find(a => a.id === viewWorkspaceId) ?? null;
-  const workspaceName = activeWorkspace?.name ?? DEFAULT_NAME;
+  const workspaceName = activeWorkspace?.name ?? DEFAULT_WORKSPACE_NAME;
   const viewWorkspaceName = viewWorkspace?.name ?? workspaceName;
 
   // ── intel panel + model overrides ───────────────────────────────────────────
@@ -3398,7 +3407,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
       const preview = t.length > 200 ? t.slice(0, 200) + "…" : t;
       setBookmarks(p => [...p, {
         messageId,
-        label:     msg.role === "assistant" ? workspaceName : "You",
+        label:     msg.role === "assistant" ? ASSISTANT_LABEL : "You",
         role:      msg.role,
         preview,
         heavy:     msg.content.includes("redacted]"),
