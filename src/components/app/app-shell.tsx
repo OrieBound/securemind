@@ -833,6 +833,8 @@ type NavId = (typeof SUB_NAV_ITEMS)[number]["id"] | "workspace-settings" | "sett
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
 const ACTIVE_WORKSPACE_KEY = "sm_active_workspace";
+/** Stash workspace tab when leaving /analytics/* so remount can restore Chat/Knowledge/etc. */
+const PENDING_WORK_NAV_KEY = "sm_pending_work_nav";
 const messagesCacheKey = (workspaceId: string) => `sm_msgs_${workspaceId}`;
 
 function readCachedMessages(workspaceId: string): ChatMessage[] | null {
@@ -1798,6 +1800,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
     else if (analyticsView === "cost") setSettingsSectionState("insights-savings");
     else setSettingsSectionState("insights-security");
   }, [analyticsView]);
+
   const [groqByokDraft, setGroqByokDraft] = useState("");
   const [groqByokSaved, setGroqByokSaved] = useState(false);
   const [mode, setMode]           = useState<Mode>("Standard" as Mode);
@@ -3027,6 +3030,16 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
   }, [activeWorkspaceId]);
 
   const handleWorkspaceClick = useCallback((agent: Workspace) => {
+    if (analyticsView) {
+      try {
+        sessionStorage.setItem(
+          PENDING_WORK_NAV_KEY,
+          JSON.stringify({ nav: "thread" as NavId, workspaceId: agent.id }),
+        );
+      } catch { /* private browsing */ }
+      router.push("/");
+      return;
+    }
     if (agent.id === activeWorkspaceId) {
       // Toggle expand for the already-active agent
       setExpandedWorkspaceId(prev => prev === agent.id ? null : agent.id);
@@ -3036,7 +3049,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
       setExpandedWorkspaceId(agent.id);
       setActiveNav("thread");
     }
-  }, [activeWorkspaceId, switchWorkspace]);
+  }, [activeWorkspaceId, analyticsView, router, switchWorkspace]);
 
   const createWorkspace = useCallback(async (draft: Partial<Workspace>) => {
     const res  = await fetch("/api/workspaces", {
@@ -3170,6 +3183,69 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
       fetchDocuments(workspaceId);
     }
   }, [workspaces, activeNav, activeWorkspaceId, switchWorkspace, fetchDocuments]);
+
+  /**
+   * Workspace nav takes priority over Insights. On analytics routes we navigate
+   * home (AppShell remounts) and restore the requested tab via sessionStorage.
+   */
+  const goToWorkspaceNav = useCallback((nav: NavId, agent: { id: string }) => {
+    setOpenWorkspacePickerId(null);
+    setViewWorkspaceId(agent.id);
+    setExpandedWorkspaceId(agent.id);
+    lastWorkNavRef.current =
+      nav === "settings" || nav === "security-dashboard" ? "thread" : nav;
+
+    if (analyticsView) {
+      try {
+        sessionStorage.setItem(
+          PENDING_WORK_NAV_KEY,
+          JSON.stringify({ nav, workspaceId: agent.id }),
+        );
+      } catch { /* private browsing */ }
+      router.push("/");
+      return;
+    }
+
+    setActiveNav(nav);
+    if (nav === "thread") {
+      const full = workspaces.find(w => w.id === agent.id);
+      if (full && full.id !== activeWorkspaceId) switchWorkspace(full);
+    } else if (nav === "documents") {
+      fetchDocuments(agent.id);
+    }
+  }, [
+    analyticsView,
+    router,
+    workspaces,
+    activeWorkspaceId,
+    switchWorkspace,
+    fetchDocuments,
+  ]);
+
+  // Restore Chat/Knowledge/etc. after leaving an Insights dashboard.
+  useEffect(() => {
+    if (analyticsView || workspaces.length === 0) return;
+    let pending: { nav?: string; workspaceId?: string } | null = null;
+    try {
+      const raw = sessionStorage.getItem(PENDING_WORK_NAV_KEY);
+      if (!raw) return;
+      sessionStorage.removeItem(PENDING_WORK_NAV_KEY);
+      pending = JSON.parse(raw) as { nav?: string; workspaceId?: string };
+    } catch {
+      return;
+    }
+    if (!pending?.nav || !pending.workspaceId) return;
+    const agent = workspaces.find(w => w.id === pending!.workspaceId);
+    if (!agent) return;
+    const nav = pending.nav as NavId;
+    setViewWorkspaceId(agent.id);
+    setExpandedWorkspaceId(agent.id);
+    setActiveNav(nav);
+    lastWorkNavRef.current =
+      nav === "settings" || nav === "security-dashboard" ? "thread" : nav;
+    if (nav === "thread" && agent.id !== activeWorkspaceId) switchWorkspace(agent);
+    else if (nav === "documents") fetchDocuments(agent.id);
+  }, [analyticsView, workspaces, activeWorkspaceId, switchWorkspace, fetchDocuments]);
 
   // Poll a single document until it leaves "processing"
   const pollDocument = useCallback((id: string, ms = 3000) => {
@@ -4439,9 +4515,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                     type="button"
                     onClick={e => {
                       e.stopPropagation();
-                      setViewWorkspaceId(agent.id);
-                      setExpandedWorkspaceId(agent.id);
-                      setActiveNav("workspace-settings");
+                      goToWorkspaceNav("workspace-settings", agent);
                     }}
                     className="flex size-9 shrink-0 items-center justify-center rounded-xl text-base transition-all hover:ring-2 hover:ring-white/20 hover:scale-[1.06] active:scale-100 cursor-pointer"
                     style={{ backgroundColor: agent.color + "28", border: `1px solid ${agent.color}55` }}
@@ -4484,17 +4558,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                           <button
                             key={item.id}
                             type="button"
-                            onClick={() => {
-                              setOpenWorkspacePickerId(null);
-                              setViewWorkspaceId(agent.id);
-                              setExpandedWorkspaceId(agent.id);
-                              setActiveNav(item.id as NavId);
-                              if (item.id === "thread") {
-                                if (agent.id !== activeWorkspaceId) switchWorkspace(agent);
-                              } else if (item.id === "documents") {
-                                fetchDocuments(agent.id);
-                              }
-                            }}
+                            onClick={() => goToWorkspaceNav(item.id as NavId, agent)}
                             className={cn(
                               "group flex w-full items-center gap-2 rounded-lg px-1.5 py-2 text-left transition-all cursor-pointer",
                               isNavActive
@@ -4524,12 +4588,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                       <div className="my-1 border-t border-white/[0.06]" />
                       <button
                         type="button"
-                        onClick={() => {
-                          setOpenWorkspacePickerId(null);
-                          setViewWorkspaceId(agent.id);
-                          setExpandedWorkspaceId(agent.id);
-                          setActiveNav("workspace-settings");
-                        }}
+                        onClick={() => goToWorkspaceNav("workspace-settings", agent)}
                         className={cn(
                           "group flex w-full items-center gap-2 rounded-lg px-1.5 py-2 text-left transition-all cursor-pointer",
                           activeNav === "workspace-settings" && viewWorkspaceId === agent.id
