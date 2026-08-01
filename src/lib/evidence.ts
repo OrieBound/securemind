@@ -9,18 +9,16 @@
 
 import type { SemanticHit } from "@/lib/memory";
 import { EVIDENCE_PROMPT_LIMIT } from "@/lib/memory";
+import {
+  MAX_ATTACHMENT_PROMPT_CHARS,
+  type CurrentAttachmentDoc,
+} from "@/lib/attachments";
 import { isCiteableFragment } from "@/lib/provenance";
 import { fenceRetrievedChunk, untrustedEvidenceRules } from "@/lib/prompt-guard";
 import { decideTurn } from "@/lib/turn-policy/decide-turn";
 
-/** Cap per-attachment text injected into the chat prompt / history. */
-export const MAX_ATTACHMENT_PROMPT_CHARS = 24_000;
-
-export type CurrentAttachmentDoc = {
-  id: string;
-  name: string;
-  content: string;
-};
+export type { CurrentAttachmentDoc } from "@/lib/attachments";
+export { MAX_ATTACHMENT_PROMPT_CHARS, formatAttachmentsForHistory } from "@/lib/attachments";
 
 export type Citation = {
   /** 1-based index matching [n] markers in the prompt / answer. */
@@ -143,21 +141,6 @@ export function packageCurrentAttachments(docs: CurrentAttachmentDoc[]): string 
     `- Do not claim you received a file unless these blocks are present.\n` +
     `- If a block is empty or unreadable, say so and ask for a re-upload or paste.`
   );
-}
-
-/** Compact block for conversation history so follow-up turns still see the file. */
-export function formatAttachmentsForHistory(docs: CurrentAttachmentDoc[]): string {
-  if (docs.length === 0) return "";
-  return docs
-    .map(doc => {
-      const raw = doc.content.trim();
-      const body =
-        raw.length > MAX_ATTACHMENT_PROMPT_CHARS
-          ? `${raw.slice(0, MAX_ATTACHMENT_PROMPT_CHARS)}\n…[truncated]`
-          : raw;
-      return `[Attached document: ${doc.name}]\n${body || "(no extractable text)"}`;
-    })
-    .join("\n\n");
 }
 
 /**

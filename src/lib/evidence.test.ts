@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { formatAttachmentsForHistory } from "./attachments";
 import {
-  formatAttachmentsForHistory,
   insufficientEvidenceBlock,
   messageNeedsEvidence,
   packageCurrentAttachments,

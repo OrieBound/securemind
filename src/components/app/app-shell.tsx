@@ -105,7 +105,7 @@ import {
   MAX_FILE_MB,
   SUPPORTED_DOC_FORMATS_SHORT,
 } from "@/lib/documents/constants";
-import { formatAttachmentsForHistory } from "@/lib/evidence";
+import { formatAttachmentsForHistory } from "@/lib/attachments";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
