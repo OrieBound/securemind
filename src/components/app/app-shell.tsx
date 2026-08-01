@@ -1000,6 +1000,7 @@ function WorkspaceAvatar({
 
 const MessageBubble = memo(function MessageBubble({
   message,
+  workspaceName,
   workspaceEmoji,
   workspaceColor,
   onBookmark,
