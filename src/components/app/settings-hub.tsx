@@ -217,12 +217,20 @@ function NavItem({
 }
 
 /** Settings sub-nav — lives in the left sidebar when Settings mode is active. */
+export type InsightsDashboard = "usage" | "cost" | "security";
+
 export function SettingsSidebarNav({
   section,
   onSectionChange,
+  onOpenInsightsDashboard,
+  activeInsightsDashboard = null,
 }: {
   section: SettingsSection;
   onSectionChange: (s: SettingsSection) => void;
+  /** Opens the full Usage / Cost / Security analytics views. */
+  onOpenInsightsDashboard: (view: InsightsDashboard) => void;
+  /** Which full dashboard is currently showing (highlights the matching nav item). */
+  activeInsightsDashboard?: InsightsDashboard | null;
 }) {
   return (
     <nav
@@ -230,7 +238,7 @@ export function SettingsSidebarNav({
       className="shrink-0 border-t border-white/[0.06] px-2 pt-3 pb-2 space-y-0.5"
     >
       <NavItem
-        active={section === "overview"}
+        active={section === "overview" && !activeInsightsDashboard}
         onClick={() => onSectionChange("overview")}
         icon={LayoutGrid}
         label="Overview"
@@ -241,24 +249,24 @@ export function SettingsSidebarNav({
         Insights
       </p>
       <NavItem
-        active={section === "insights-context"}
-        onClick={() => onSectionChange("insights-context")}
+        active={activeInsightsDashboard === "usage" || (!activeInsightsDashboard && section === "insights-context")}
+        onClick={() => onOpenInsightsDashboard("usage")}
         icon={Sparkles}
         label="Usage"
         indent
         compact
       />
       <NavItem
-        active={section === "insights-savings"}
-        onClick={() => onSectionChange("insights-savings")}
+        active={activeInsightsDashboard === "cost" || (!activeInsightsDashboard && section === "insights-savings")}
+        onClick={() => onOpenInsightsDashboard("cost")}
         icon={BarChart2}
         label="Cost"
         indent
         compact
       />
       <NavItem
-        active={section === "insights-security"}
-        onClick={() => onSectionChange("insights-security")}
+        active={activeInsightsDashboard === "security" || (!activeInsightsDashboard && section === "insights-security")}
+        onClick={() => onOpenInsightsDashboard("security")}
         icon={Shield}
         label="Security"
         indent
@@ -332,7 +340,7 @@ function OverviewCard({
 export function SettingsHub({
   section,
   onSectionChange,
-  onOpenSecurityDashboard,
+  onOpenInsightsDashboard,
   safeTerms,
   onAddSafeTerm,
   onRemoveSafeTerm,
@@ -352,7 +360,7 @@ export function SettingsHub({
 }: {
   section: SettingsSection;
   onSectionChange: (s: SettingsSection) => void;
-  onOpenSecurityDashboard: () => void;
+  onOpenInsightsDashboard: (view: InsightsDashboard) => void;
   safeTerms: SafeTerm[];
   onAddSafeTerm: (kind: SafeTermKind, value: string, label?: string) =>
     { ok: true } | { ok: false; reason: string };
@@ -377,7 +385,13 @@ export function SettingsHub({
       <div className="md:hidden shrink-0 border-b border-white/[0.06] px-4 py-2">
         <select
           value={section}
-          onChange={e => onSectionChange(e.target.value as SettingsSection)}
+          onChange={e => {
+            const next = e.target.value as SettingsSection;
+            if (next === "insights-context") onOpenInsightsDashboard("usage");
+            else if (next === "insights-savings") onOpenInsightsDashboard("cost");
+            else if (next === "insights-security") onOpenInsightsDashboard("security");
+            else onSectionChange(next);
+          }}
           className="w-full rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white/75"
         >
           {(Object.keys(SETTINGS_SECTION_LABELS) as SettingsSection[]).map(id => (
@@ -409,7 +423,7 @@ export function SettingsHub({
                 description="Complexity routing, model tiers, and response counts."
                 stat={totalRouteCalls > 0 ? `${totalRouteCalls} responses tracked` : "No data yet"}
                 accent="indigo"
-                onClick={() => onSectionChange("insights-context")}
+                onClick={() => onOpenInsightsDashboard("usage")}
               />
               <OverviewCard
                 title="Cost"
@@ -418,14 +432,14 @@ export function SettingsHub({
                   ? `${fmtUsd(savingsStats.totalCost)} spent · ${fmtUsd(savingsStats.totalSaved)} saved`
                   : "No data yet"}
                 accent="emerald"
-                onClick={() => onSectionChange("insights-savings")}
+                onClick={() => onOpenInsightsDashboard("cost")}
               />
               <OverviewCard
                 title="Security"
                 description="Detection history, sensitivity, and safe terms."
                 stat={totalPiiActive > 0 ? `${totalPiiActive} active detections` : "No detections"}
                 accent="amber"
-                onClick={() => onSectionChange("insights-security")}
+                onClick={() => onOpenInsightsDashboard("security")}
               />
               <p className="text-[0.58rem] uppercase tracking-wider text-white/30 font-semibold pt-3">
                 App
@@ -456,19 +470,17 @@ export function SettingsHub({
                 )}
               </div>
               <p className="text-[0.62rem] text-white/35 leading-relaxed">
-                Use the <strong className="text-white/50 font-medium">Usage</strong> tab in the Insights panel for tier usage and model mapping.
-                Full charts will live here in the Insights portal.
+                The Insights rail shows a compact Usage summary. Open the full dashboard for charts,
+                workspace breakdown, and routing history.
               </p>
               <button
                 type="button"
-                disabled
-                className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] py-2.5 text-[0.72rem] font-medium text-white/30 cursor-not-allowed"
+                onClick={() => onOpenInsightsDashboard("usage")}
+                className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/12 py-2.5 text-[0.72rem] font-semibold text-indigo-200/95 hover:bg-indigo-500/18 transition-colors cursor-pointer"
               >
                 <Sparkles className="size-3.5 shrink-0" aria-hidden />
-                Open context insights
-                <span className="text-[0.5rem] uppercase tracking-wider text-white/20 bg-white/5 border border-white/8 px-1 py-0.5 rounded">
-                  soon
-                </span>
+                Open full usage view
+                <ChevronRight className="size-3.5 shrink-0 opacity-70" aria-hidden />
               </button>
             </div>
           )}
@@ -490,18 +502,17 @@ export function SettingsHub({
                 </div>
               </div>
               <p className="text-[0.62rem] text-white/35 leading-relaxed">
-                Use the <strong className="text-white/50 font-medium">Cost</strong> tab in the Insights panel for live breakdowns.
+                The Insights rail shows a compact Cost summary. Open the full dashboard for spend
+                charts and model-level breakdowns.
               </p>
               <button
                 type="button"
-                disabled
-                className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] py-2.5 text-[0.72rem] font-medium text-white/30 cursor-not-allowed"
+                onClick={() => onOpenInsightsDashboard("cost")}
+                className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/12 py-2.5 text-[0.72rem] font-semibold text-indigo-200/95 hover:bg-indigo-500/18 transition-colors cursor-pointer"
               >
                 <BarChart2 className="size-3.5 shrink-0" aria-hidden />
-                Open savings insights
-                <span className="text-[0.5rem] uppercase tracking-wider text-white/20 bg-white/5 border border-white/8 px-1 py-0.5 rounded">
-                  soon
-                </span>
+                Open full cost view
+                <ChevronRight className="size-3.5 shrink-0 opacity-70" aria-hidden />
               </button>
             </div>
           )}
@@ -514,12 +525,12 @@ export function SettingsHub({
                 <p className="text-[0.62rem] text-white/35 mt-1">in current time range (excludes dismissed)</p>
               </div>
               <p className="text-[0.62rem] text-white/35 leading-relaxed">
-                The Insights panel <strong className="text-white/50 font-medium">Security</strong> tab is the glance.
-                Open the full view for history by workspace and date.
+                The Insights rail shows a compact Security glance. Open the full dashboard for
+                history by workspace and date. Detection policy lives under Workspace.
               </p>
               <button
                 type="button"
-                onClick={onOpenSecurityDashboard}
+                onClick={() => onOpenInsightsDashboard("security")}
                 className="w-full flex items-center justify-center gap-1.5 rounded-lg border border-indigo-500/30 bg-indigo-500/12 py-2.5 text-[0.72rem] font-semibold text-indigo-200/95 hover:bg-indigo-500/18 transition-colors cursor-pointer"
               >
                 <Shield className="size-3.5 shrink-0" aria-hidden />

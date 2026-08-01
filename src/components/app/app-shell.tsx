@@ -45,7 +45,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { ComposerInput, type ComposerInputHandle, type ComposerVoiceInsert } from "@/components/app/composer-input";
-import { SettingsHub, SettingsSidebarNav, SETTINGS_SECTION_LABELS, SETTINGS_SECTION_KEY, isSettingsSection, type SettingsSection } from "@/components/app/settings-hub";
+import {
+  SettingsHub,
+  SettingsSidebarNav,
+  SETTINGS_SECTION_LABELS,
+  SETTINGS_SECTION_KEY,
+  isSettingsSection,
+  type InsightsDashboard,
+  type SettingsSection,
+} from "@/components/app/settings-hub";
 import { MemoryDashboard } from "@/components/app/memory-dashboard";
 import { WorkspaceEditor } from "@/components/app/workspace-editor";
 import { SecurityAnalyticsView } from "@/components/analytics/security-view";
@@ -1743,19 +1751,27 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
   }, []);
 
   const toggleSettings = useCallback(() => {
-    if (activeNav === "settings") {
+    if (activeNav === "settings" || analyticsView) {
       setSettingsAnimatingOut(true);
       window.setTimeout(() => {
+        if (analyticsView) router.push("/");
         closeSettings();
         setSettingsAnimatingOut(false);
       }, SETTINGS_TRANSITION_MS);
     } else {
       openSettings();
     }
-  }, [activeNav, closeSettings, openSettings]);
+  }, [activeNav, analyticsView, closeSettings, openSettings, router]);
+
+  /** Non-dashboard Settings sections (Overview / Workspace / Inference). */
+  const handleSettingsSectionChange = useCallback((section: SettingsSection) => {
+    setSettingsSection(section);
+    if (analyticsView) router.push("/");
+    setActiveNav("settings");
+  }, [analyticsView, router, setSettingsSection]);
 
   useEffect(() => {
-    if (activeNav === "settings" && !settingsAnimatingOut) {
+    if ((activeNav === "settings" || analyticsView) && !settingsAnimatingOut) {
       setSettingsEntering(true);
       const id = requestAnimationFrame(() => {
         requestAnimationFrame(() => setSettingsEntering(false));
@@ -1763,15 +1779,25 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
       return () => cancelAnimationFrame(id);
     }
     setSettingsEntering(false);
-  }, [activeNav, settingsAnimatingOut]);
+  }, [activeNav, analyticsView, settingsAnimatingOut]);
 
-  const openSecurityDashboard = useCallback((_fromSettingsSection?: SettingsSection) => {
-    router.push("/analytics/security");
+  const openInsightsDashboard = useCallback((view: InsightsDashboard) => {
+    router.push(`/analytics/${view}`);
   }, [router]);
 
   const exitSecurityDashboard = useCallback(() => {
     router.push("/");
   }, [router]);
+
+  // Full Insights dashboards live under Settings — keep that menu open and
+  // highlight Usage / Cost / Security while those routes are active.
+  useEffect(() => {
+    if (!analyticsView) return;
+    setActiveNav("settings");
+    if (analyticsView === "usage") setSettingsSectionState("insights-context");
+    else if (analyticsView === "cost") setSettingsSectionState("insights-savings");
+    else setSettingsSectionState("insights-security");
+  }, [analyticsView]);
   const [groqByokDraft, setGroqByokDraft] = useState("");
   const [groqByokSaved, setGroqByokSaved] = useState(false);
   const [mode, setMode]           = useState<Mode>("Standard" as Mode);
@@ -4229,11 +4255,15 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
 
   // ── render ───────────────────────────────────────────────────────────────────
 
-  const settingsVisible = activeNav === "settings" || settingsAnimatingOut;
-  const settingsExpanded = activeNav === "settings" && !settingsAnimatingOut;
+  // On full Insights routes, keep the Settings → Insights sidebar open while the
+  // center pane shows the dashboard (not the Settings hub overlay).
+  const onAnalytics = Boolean(analyticsView);
+  const settingsVisible = activeNav === "settings" || settingsAnimatingOut || onAnalytics;
+  const settingsExpanded = (activeNav === "settings" || onAnalytics) && !settingsAnimatingOut;
   const settingsNavExpanded = settingsExpanded && !settingsEntering;
-  const settingsContentShown = settingsVisible && !settingsAnimatingOut && !settingsEntering;
-  const workContentShown = !settingsVisible || settingsAnimatingOut;
+  const settingsContentShown =
+    activeNav === "settings" && !settingsAnimatingOut && !settingsEntering && !onAnalytics;
+  const workContentShown = onAnalytics || !settingsVisible || settingsAnimatingOut;
   const workNav: NavId = activeNav === "settings" ? lastWorkNavRef.current : activeNav;
   const headerWorkNav: NavId = workNav;
 
@@ -4539,7 +4569,9 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
               <div className="overflow-hidden min-h-0">
                 <SettingsSidebarNav
                   section={settingsSection}
-                  onSectionChange={setSettingsSection}
+                  onSectionChange={handleSettingsSectionChange}
+                  onOpenInsightsDashboard={openInsightsDashboard}
+                  activeInsightsDashboard={analyticsView ?? null}
                 />
               </div>
             </div>
@@ -4551,12 +4583,12 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
           <button
             type="button"
             onClick={toggleSettings}
-            title={activeNav === "settings" ? "Close settings" : "Open settings"}
-            aria-expanded={activeNav === "settings"}
+            title={activeNav === "settings" || onAnalytics ? "Close settings" : "Open settings"}
+            aria-expanded={activeNav === "settings" || onAnalytics}
             className={cn(
               "w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-left cursor-pointer",
               viewTransition,
-              activeNav === "settings"
+              activeNav === "settings" || onAnalytics
                 ? "bg-white/8"
                 : "hover:bg-white/5",
             )}
@@ -4564,12 +4596,12 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
             <Settings className={cn(
               "size-4 shrink-0",
               viewTransition,
-              activeNav === "settings" ? "text-white/70" : "text-white/30",
+              activeNav === "settings" || onAnalytics ? "text-white/70" : "text-white/30",
             )} aria-hidden />
             <span className={cn(
               "text-sm font-medium flex-1",
               viewTransition,
-              activeNav === "settings" ? "text-white/80" : "text-white/45",
+              activeNav === "settings" || onAnalytics ? "text-white/80" : "text-white/45",
             )}>Settings</span>
             <ChevronDown className={cn(
               "size-3.5 shrink-0 ease-in-out",
@@ -5603,8 +5635,8 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
             {settingsVisible && (
               <SettingsHub
                 section={settingsSection}
-                onSectionChange={setSettingsSection}
-                onOpenSecurityDashboard={() => openSecurityDashboard("insights-security")}
+                onSectionChange={handleSettingsSectionChange}
+                onOpenInsightsDashboard={openInsightsDashboard}
                 safeTerms={safeTerms}
                 onAddSafeTerm={addSafeTerm}
                 onRemoveSafeTerm={removeSafeTerm}
