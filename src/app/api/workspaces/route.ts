@@ -45,10 +45,10 @@ export async function GET(req: NextRequest) {
     const initial = await db.workspace.create({
       data: {
         userId,
-        name:        "General",
-        emoji:       "🗂️",
+        name:        "Cloud Operations",
+        emoji:       "☁️",
         color:       "#6366f1",
-        description: "Default workspace",
+        description: "Runbooks, incidents, architecture, and operational knowledge.",
         isDefault:   true,
       },
       include: {

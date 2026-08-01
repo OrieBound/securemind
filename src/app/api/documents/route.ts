@@ -17,6 +17,8 @@ import {
 } from "@/lib/documents";
 import { MAX_FILE_BYTES, MAX_FILE_MB } from "@/lib/documents/constants";
 import { getIdentity } from "@/lib/identity";
+import { recordSecurityEvents } from "@/lib/analytics/write";
+import type { SecuritySource } from "@/lib/analytics/types";
 
 // ── GET ────────────────────────────────────────────────────────────────────────
 
@@ -152,6 +154,26 @@ export async function POST(req: NextRequest) {
   processDocument(doc.id).catch(err =>
     console.error("[documents] background processDocument failed:", err),
   );
+
+  if (scrubbed.hadRedactions && scrubbed.scrubEvents.length > 0) {
+    const source: SecuritySource = mimeType.startsWith("image/")
+      ? "image_ocr"
+      : "knowledge_document";
+    recordSecurityEvents(
+      scrubbed.scrubEvents.map(ev => ({
+        userId,
+        workspaceId,
+        source,
+        category: ev.category,
+        outcome: "redacted" as const,
+        count: ev.count,
+        resourceKind: "document" as const,
+        resourceId: doc.id,
+      })),
+    ).catch(err =>
+      console.warn("[documents] security telemetry failed (non-critical):", String(err)),
+    );
+  }
 
   const { content: docContent, ...rest } = doc;
   return NextResponse.json(

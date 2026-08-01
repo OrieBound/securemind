@@ -17,8 +17,8 @@ datasource db {
 model Workspace {
   id            String    @id @default(cuid())
   userId        String    @default("local")
-  name          String    @default("General")
-  emoji         String    @default("🗂️")       // visual identification in the sidebar
+  name          String    @default("Cloud Operations")
+  emoji         String    @default("☁️")       // visual identification in the sidebar
   color         String    @default("#6366f1")
   context       String?                          // what this workspace covers → system prompt
   description   String?                          // short UI subtitle
@@ -31,6 +31,8 @@ model Workspace {
   facts         WorkspaceFact[]
   fragments     MemoryFragment[]
   documents     Document[]
+  securityEvents  SecurityEvent[]
+  inferenceEvents InferenceEvent[]
 
   @@index([userId, updatedAt])
 }
@@ -164,4 +166,58 @@ model MemoryFragment {
 
   @@index([userId, workspaceId])
   @@index([userId, category])
+}
+
+// ─── Analytics telemetry (sanitized metadata only) ───────────────────────────
+// Never store raw detected values, prompts, or document bodies here.
+
+model SecurityEvent {
+  id           String   @id @default(cuid())
+  userId       String
+  workspaceId  String?
+  at           DateTime @default(now())
+  source       String   // investigate | knowledge_document | image_ocr
+  category     String
+  riskLevel    String   // low | medium | high | critical
+  outcome      String   // redacted | blocked | safe_listed | dismissed | reviewed
+  count        Int      @default(1)
+  sensitivity  String?  // low | balanced | high | extreme
+  resourceKind String?  // message | document
+  resourceId   String?
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([userId, at])
+  @@index([userId, workspaceId, at])
+  @@index([userId, category])
+  @@index([userId, outcome])
+  @@index([userId, source])
+}
+
+model InferenceEvent {
+  id                String   @id @default(cuid())
+  userId            String
+  workspaceId       String?
+  sessionId         String?
+  messageId         String?
+  at                DateTime @default(now())
+  provider          String
+  model             String
+  tier              String
+  promptTokens      Int?
+  completionTokens  Int?
+  latencyMs         Int?
+  status            String   // ok | error | aborted
+  retrievalHitCount Int      @default(0)
+  citationCount     Int      @default(0)
+  groundingStatus   String?  // grounded | partial | uncited | invalid | declined | n/a
+  estimatedCostUsd  Float?
+  pricingVersion    String?
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([userId, at])
+  @@index([userId, workspaceId, at])
+  @@index([userId, model])
+  @@index([userId, groundingStatus])
 }

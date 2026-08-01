@@ -29,6 +29,8 @@ import {
 import { auditCitations } from "@/lib/citation-audit";
 import { db } from "@/lib/db";
 import { getIdentity, IdentityError } from "@/lib/identity";
+import { recordInferenceEvent } from "@/lib/analytics/write";
+import type { GroundingStatus } from "@/lib/analytics/types";
 import type { ChatMessage } from "@/lib/models/types";
 
 // Must be nodejs — edge runtime cannot reach localhost (Ollama)
@@ -204,10 +206,17 @@ export async function POST(req: NextRequest) {
 
   const stream = new ReadableStream({
     async start(controller) {
+      const startedAt = Date.now();
+      const actualProvider = useBedrock ? "bedrock" : useGroq ? "groq" : "ollama";
+      const usageHold: { current: { promptTokens: number; completionTokens: number } | null } = {
+        current: null,
+      };
+      let groundingStatus: GroundingStatus | null = null;
+      let status: "ok" | "error" | "aborted" = "ok";
+
       try {
         // Emit routing metadata first so the client knows provider + model
         // before the first token arrives.
-        const actualProvider = useBedrock ? "bedrock" : useGroq ? "groq" : "ollama";
         const routeMeta = {
           route: {
             provider: actualProvider,
@@ -225,6 +234,7 @@ export async function POST(req: NextRequest) {
             encoder.encode(`data: ${JSON.stringify({ citations })}\n\n`),
           );
         } else if (messageNeedsEvidence(message, { isTrivial })) {
+          groundingStatus = "declined";
           controller.enqueue(
             encoder.encode(
               `data: ${JSON.stringify({ evidence: { status: "insufficient" as const } })}\n\n`,
@@ -238,8 +248,6 @@ export async function POST(req: NextRequest) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta })}\n\n`));
         };
 
-        let usageData: { promptTokens: number; completionTokens: number } | null = null;
-
         const streamProvider = useBedrock
           ? "bedrock" as const
           : useGroq
@@ -250,7 +258,7 @@ export async function POST(req: NextRequest) {
           model,
           provider: streamProvider,
           tier: activeMode,
-          onUsage: (u) => { usageData = u; },
+          onUsage: (u) => { usageHold.current = u; },
         })) {
           emit(delta);
         }
@@ -261,17 +269,21 @@ export async function POST(req: NextRequest) {
             fullAnswer,
             citations.map(c => c.index),
           );
+          groundingStatus = citationAudit.status as GroundingStatus;
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify({ citationAudit })}\n\n`),
           );
+        } else if (!groundingStatus) {
+          groundingStatus = citations.length > 0 ? "uncited" : "n/a";
         }
 
         // Emit exact token usage before DONE so the client can compute real costs
-        if (usageData) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ usage: usageData })}\n\n`));
+        if (usageHold.current) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ usage: usageHold.current })}\n\n`));
         }
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       } catch (err) {
+        status = "error";
         const raw = err instanceof Error ? err.message : String(err);
         // Strip HTTP status codes and raw JSON from user-visible messages
         const clean = raw.startsWith("40") || raw.startsWith("50")
@@ -281,6 +293,23 @@ export async function POST(req: NextRequest) {
           encoder.encode(`data: ${JSON.stringify({ error: clean })}\n\n`),
         );
       } finally {
+        recordInferenceEvent({
+          userId,
+          workspaceId: workspaceId ?? null,
+          sessionId: body.sessionId ?? null,
+          provider: actualProvider,
+          model,
+          tier: activeMode,
+          promptTokens: usageHold.current?.promptTokens ?? null,
+          completionTokens: usageHold.current?.completionTokens ?? null,
+          latencyMs: Date.now() - startedAt,
+          status,
+          retrievalHitCount: citations.length,
+          citationCount: citations.length,
+          groundingStatus,
+        }).catch(err =>
+          console.warn("[chat] inference telemetry failed (non-critical):", String(err)),
+        );
         controller.close();
       }
     },
