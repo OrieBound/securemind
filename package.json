@@ -27,7 +27,6 @@
     "emoji-picker-react": "^4.19.1",
     "groq-sdk": "^1.2.0",
     "jose": "^6.2.7",
-    "lightningcss-win32-x64-msvc": "^1.32.0",
     "lucide-react": "^1.14.0",
     "next": "16.2.6",
     "pdf-parse": "^1.1.1",
