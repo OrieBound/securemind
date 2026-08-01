@@ -8,15 +8,16 @@
  *
  * Modes (AUTH_MODE):
  *   local       — fixed single-user identity (default; current personal project)
- *   cognito     — verify Bearer JWT against Cognito JWKS; sub → userId
- *   jwt-hs256   — verify Bearer JWT with AUTH_DEV_JWT_SECRET (local/Floci demos)
+ *   cognito     — verify Bearer/cookie JWT against Cognito JWKS; sub → userId
+ *   jwt-hs256   — verify Bearer/cookie JWT with AUTH_DEV_JWT_SECRET (local demos)
  *
  * When Cognito/JWT verification fails or no token is present, behaviour depends
  * on AUTH_ALLOW_LOCAL_FALLBACK (default true for local DX). Set it to "false"
- * once a login UI exists and unauthenticated API access should be rejected.
+ * for the Floci Cognito experiment so unauthenticated API calls return 401.
  */
 
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import { readAccessTokenFromRequest } from "@/lib/auth-cookies";
 
 /** The only identity that exists before authentication is wired up. */
 export const LOCAL_USER_ID = "local";
@@ -25,6 +26,7 @@ export type Identity = {
   userId: string;
   /** True when the userId came from a verified token. */
   authenticated: boolean;
+  email?: string;
 };
 
 export class IdentityError extends Error {
@@ -50,13 +52,6 @@ function allowLocalFallback(): boolean {
   return v === "true" || v === "1";
 }
 
-function bearerToken(req: Request): string | null {
-  const header = req.headers.get("authorization") ?? req.headers.get("Authorization");
-  if (!header) return null;
-  const m = /^Bearer\s+(\S+)/i.exec(header);
-  return m?.[1] ?? null;
-}
-
 function cognitoIssuer(): string | null {
   if (process.env.COGNITO_ISSUER) return process.env.COGNITO_ISSUER;
   const region = process.env.COGNITO_REGION || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION;
@@ -66,7 +61,9 @@ function cognitoIssuer(): string | null {
 }
 
 function cognitoJwksUrl(issuer: string): string {
-  return process.env.COGNITO_JWKS_URL ?? `${issuer}/.well-known/jwks.json`;
+  // Floci: http://localhost:4566/<poolId>/.well-known/jwks.json
+  // AWS:   https://cognito-idp.<region>.amazonaws.com/<poolId>/.well-known/jwks.json
+  return process.env.COGNITO_JWKS_URL ?? `${issuer.replace(/\/$/, "")}/.well-known/jwks.json`;
 }
 
 let _jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
@@ -80,24 +77,27 @@ function jwksFor(url: string) {
   return _jwks;
 }
 
-async function verifyCognito(token: string): Promise<string> {
+async function verifyCognito(token: string): Promise<{ userId: string; email?: string }> {
   const issuer = cognitoIssuer();
   if (!issuer) {
     throw new IdentityError("Cognito is not configured (COGNITO_USER_POOL_ID / COGNITO_ISSUER).");
   }
+  // Access tokens from Cognito/Floci often omit standard `aud`; they carry `client_id`.
   const { payload } = await jwtVerify(token, jwksFor(cognitoJwksUrl(issuer)), {
     issuer,
-    ...(process.env.COGNITO_CLIENT_ID
-      ? { audience: process.env.COGNITO_CLIENT_ID }
-      : {}),
   });
   if (typeof payload.sub !== "string" || !payload.sub) {
     throw new IdentityError("Token missing subject.");
   }
-  return payload.sub;
+  const clientId = process.env.COGNITO_CLIENT_ID;
+  if (clientId && typeof payload.client_id === "string" && payload.client_id !== clientId) {
+    throw new IdentityError("Token client_id mismatch.");
+  }
+  const email = typeof payload.email === "string" ? payload.email : undefined;
+  return { userId: payload.sub, email };
 }
 
-async function verifyHs256(token: string): Promise<string> {
+async function verifyHs256(token: string): Promise<{ userId: string; email?: string }> {
   const secret = process.env.AUTH_DEV_JWT_SECRET;
   if (!secret) {
     throw new IdentityError("AUTH_DEV_JWT_SECRET is not set.");
@@ -106,7 +106,8 @@ async function verifyHs256(token: string): Promise<string> {
   if (typeof payload.sub !== "string" || !payload.sub) {
     throw new IdentityError("Token missing subject.");
   }
-  return payload.sub;
+  const email = typeof payload.email === "string" ? payload.email : undefined;
+  return { userId: payload.sub, email };
 }
 
 /**
@@ -122,7 +123,7 @@ export async function getIdentity(req: Request): Promise<Identity> {
     return { userId: LOCAL_USER_ID, authenticated: false };
   }
 
-  const token = bearerToken(req);
+  const token = readAccessTokenFromRequest(req);
   if (!token) {
     if (allowLocalFallback()) {
       return { userId: LOCAL_USER_ID, authenticated: false };
@@ -131,10 +132,10 @@ export async function getIdentity(req: Request): Promise<Identity> {
   }
 
   try {
-    const userId = mode === "cognito"
+    const verified = mode === "cognito"
       ? await verifyCognito(token)
       : await verifyHs256(token);
-    return { userId, authenticated: true };
+    return { userId: verified.userId, authenticated: true, email: verified.email };
   } catch (err) {
     if (err instanceof IdentityError) {
       if (allowLocalFallback()) {
@@ -147,4 +148,12 @@ export async function getIdentity(req: Request): Promise<Identity> {
     }
     throw new IdentityError("Invalid or expired token.");
   }
+}
+
+/** Map IdentityError to a JSON Response, or null if unrelated. */
+export function identityErrorResponse(err: unknown): Response | null {
+  if (err instanceof IdentityError) {
+    return Response.json({ error: err.message }, { status: err.status });
+  }
+  return null;
 }

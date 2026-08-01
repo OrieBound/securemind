@@ -53,6 +53,15 @@ describe("getIdentity — local mode (default)", () => {
     expect(id.authenticated).toBe(false);
   });
 
+  it("ignores sm_access_token cookie in local mode", async () => {
+    setEnv("AUTH_MODE", "local");
+    const id = await getIdentity(new Request("http://localhost/api/x", {
+      headers: { cookie: "sm_access_token=forged" },
+    }));
+    expect(id.userId).toBe(LOCAL_USER_ID);
+    expect(id.authenticated).toBe(false);
+  });
+
   it("ignores a userId in the request body", async () => {
     setEnv("AUTH_MODE", "local");
     const id = await getIdentity(new Request("http://localhost/api/x", {

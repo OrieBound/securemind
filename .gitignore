@@ -41,6 +41,9 @@ yarn-error.log*
 # Local database dumps — contain conversation content
 /backups/
 
+# Floci Cognito provisioning output (pool/client ids for local emulator)
+scripts/.floci-cognito.env
+
 # Secrets / credentials — never commit these.
 # .env.example is the one exception: it documents required variables with no values.
 .env*

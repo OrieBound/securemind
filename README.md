@@ -76,6 +76,16 @@ DIRECT_URL="postgresql://securemind:securemind@localhost:5432/securemind"
 
 Floci (local AWS emulator) listens on `http://localhost:4566`. See `.env.example` for optional `AWS_*` and Cognito variables. Bedrock Runtime on Floci is stubbed — use real AWS credentials if you set `MODEL_PROVIDER=bedrock`.
 
+#### Floci Cognito login ($0)
+
+```bash
+docker compose up -d floci
+npm run floci:cognito          # creates pool + client + demo user; prints env lines
+# paste those lines into .env.local (Neon/Groq stay unchanged), restart npm run dev
+```
+
+Sign in with `demo@securemind.local` / `<demo-password>!` (or create an account in the UI). Same pool/client/issuer concepts map 1:1 to real AWS Cognito later — only the hostname changes.
+
 ### Without Ollama
 
 The app runs, and documents upload and store correctly, but semantic retrieval is unavailable — embeddings need `nomic-embed-text`. Chat still works if `GROQ_API_KEY` is set.
