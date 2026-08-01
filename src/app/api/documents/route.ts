@@ -178,7 +178,8 @@ export async function POST(req: NextRequest) {
   const { content: docContent, ...rest } = doc;
   // Include scrubbed content so chat can use the file on the same turn
   // (embeddings may still be processing). Cap keeps the response bounded.
-  const CHAT_CONTENT_CAP = 32_000;
+  // Keep chat payloads under provider request limits (Groq 413 on oversized prompts).
+  const CHAT_CONTENT_CAP = 12_000;
   return NextResponse.json(
     {
       ...rest,

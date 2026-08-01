@@ -5716,7 +5716,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                 </div>
 
                 <p className="mt-2.5 text-center text-[0.65rem] leading-relaxed text-white/20 select-none px-2">
-                  Drop files here or use the paperclip — attachments go to Knowledge. PII is scrubbed before storage or the model.
+                  Drop files here or use the paperclip — files are read in this chat and saved to Knowledge. PII is scrubbed first.
                 </p>
 
               </form>

@@ -2,7 +2,7 @@
  * SecureMind document processing pipeline (Phase B).
  *
  * Workflow after a file is uploaded:
- *   1. Extract plain text (PDF → pdf-parse, images → Groq vision / stub, else UTF-8)
+ *   1. Extract plain text (PDF → pdf-parse, DOCX → mammoth, images → Groq vision / stub, else UTF-8)
  *   2. Scrub PII (same patterns as chat) — only sanitized text is persisted
  *   3. Split the text into overlapping 1500-char chunks
  *   4. Embed each chunk via nomic-embed-text (Ollama, zero cost, 768 dims)
@@ -33,11 +33,15 @@ export const ACCEPTED_MIME_TYPES = [
   "text/x-typescript",
   "application/json",
   "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "image/png",
   "image/jpeg",
   "image/webp",
   "image/gif",
 ];
+
+const DOCX_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 // Extension → MIME fallback (browsers sometimes send "application/octet-stream")
 export const EXT_TO_MIME: Record<string, string> = {
@@ -46,6 +50,7 @@ export const EXT_TO_MIME: Record<string, string> = {
   csv:  "text/csv",
   json: "application/json",
   pdf:  "application/pdf",
+  docx: DOCX_MIME,
   py:   "text/x-python",
   js:   "text/javascript",
   ts:   "text/x-typescript",
@@ -103,8 +108,7 @@ export function scrubDocumentText(raw: string): {
 /**
  * Extracts plain text from a file buffer.
  * Images use Groq vision when available (then scrubbed at ingest).
- * PDFs use pdf-parse (dynamically imported to avoid Next.js bundling issues).
- * Everything else is decoded as UTF-8.
+ * PDFs use pdf-parse; DOCX uses mammoth. Everything else is decoded as UTF-8.
  */
 export async function extractText(
   buffer: Buffer,
@@ -122,6 +126,21 @@ export async function extractText(
     const pdfParse = require("pdf-parse") as (b: Buffer) => Promise<{ text: string }>;
     const data = await pdfParse(buffer);
     raw = data.text;
+  } else if (
+    mimeType === DOCX_MIME ||
+    filename.toLowerCase().endsWith(".docx")
+  ) {
+    // DOCX is a zip/XML package — never decode as UTF-8 (produces binary junk
+    // that blows chat context limits and confuses the model).
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mammoth = require("mammoth") as {
+      extractRawText: (input: { buffer: Buffer }) => Promise<{ value: string }>;
+    };
+    const result = await mammoth.extractRawText({ buffer });
+    raw = result.value ?? "";
+    if (!raw.trim()) {
+      throw new Error("No readable text found in this Word document");
+    }
   } else {
     raw = buffer.toString("utf-8");
   }

@@ -20,7 +20,7 @@ const nextConfig: NextConfig = {
   // pdf-parse uses require() + fs.readdirSync internally to load test fixtures.
   // If webpack bundles it, those fs calls fail. Marking it external means Node.js
   // loads it directly from node_modules at runtime instead — correct behaviour.
-  serverExternalPackages: ["pdf-parse"],
+  serverExternalPackages: ["pdf-parse", "mammoth"],
 
   experimental: {
     turbopackFileSystemCacheForDev: false,

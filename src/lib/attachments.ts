@@ -2,8 +2,8 @@
  * Client-safe helpers for chat attachment text (no DB / Node-only imports).
  */
 
-/** Cap per-attachment text injected into the chat prompt / history. */
-export const MAX_ATTACHMENT_PROMPT_CHARS = 24_000;
+/** Cap per-attachment text injected into the chat prompt / history (keeps Groq under request limits). */
+export const MAX_ATTACHMENT_PROMPT_CHARS = 12_000;
 
 export type CurrentAttachmentDoc = {
   id: string;
