@@ -740,22 +740,6 @@ const MODES = [
 ] as const;
 type Mode = (typeof MODES)[number];
 
-// Curated emojis suitable for AI companion avatars
-const COMPANION_EMOJIS = [
-  // AI / tech
-  "🤖", "🧠", "⚡", "🔮", "🎯", "📡", "🔬", "🧬",
-  // Cosmic / elemental
-  "🌙", "✨", "💫", "🌟", "☄️", "🌌", "🌊", "🔥",
-  // Creatures
-  "🦊", "🐉", "🦁", "🦅", "🦚", "🐺", "🦋", "🦄",
-  // Nature
-  "🌿", "🌺", "🌸", "🌈", "🍃", "🌋", "🏔️", "🌀",
-  // Abstract / art
-  "💎", "🎭", "🎨", "🎵", "🎩", "🎪", "🎲", "🧿",
-  // Achievement / character
-  "👑", "🎓", "🛡️", "⚔️", "🔭", "🧩", "💡", "🗝️",
-] as const;
-
 const SUB_NAV_ITEMS = [
   {
     id: "thread" as const,
@@ -4696,7 +4680,7 @@ export function AppShell() {
                 subtitle={
                   viewWorkspace ? (
                     <p className="text-[0.7rem] text-white/30 mt-0.5 px-1.5">
-                      Name, description, and operational context for this workspace
+                      Icon, color, description, and operational context for this workspace
                     </p>
                   ) : undefined
                 }
@@ -4704,6 +4688,7 @@ export function AppShell() {
 
               {viewWorkspace && (
                 <WorkspaceEditor
+                  key={viewWorkspace.id}
                   workspace={viewWorkspace}
                   onSave={async patch => { await saveWorkspace(viewWorkspace.id, patch); }}
                   onDelete={

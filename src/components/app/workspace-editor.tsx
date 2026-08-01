@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import EmojiPicker, { Theme, type EmojiClickData } from "emoji-picker-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -27,14 +28,45 @@ type Props = {
 
 const COLORS = ["#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
 
+/** Curated icons for ops / security workspaces */
+const WORKSPACE_ICONS = [
+  "🗂️", "🔐", "🛡️", "🔑", "💳", "🌐", "☁️", "📡",
+  "🧠", "⚡", "🔍", "📋", "🧾", "🗄️", "⚙️", "🚨",
+  "🧪", "📊", "🔗", "🧬", "🛰️", "💡", "🎯", "🔒",
+] as const;
+
 export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
   const [name, setName] = useState(workspace.name);
-  const [emoji, setEmoji] = useState(workspace.emoji);
+  const [emoji, setEmoji] = useState(workspace.emoji || "🗂️");
   const [color, setColor] = useState(workspace.color);
   const [description, setDescription] = useState(workspace.description ?? "");
   const [context, setContext] = useState(workspace.context ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const moreBtnRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    setName(workspace.name);
+    setEmoji(workspace.emoji || "🗂️");
+    setColor(workspace.color);
+    setDescription(workspace.description ?? "");
+    setContext(workspace.context ?? "");
+    setError(null);
+    setPickerOpen(false);
+  }, [workspace.id, workspace.name, workspace.emoji, workspace.color, workspace.description, workspace.context]);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    function onPointerDown(e: MouseEvent) {
+      const t = e.target as Node;
+      if (pickerRef.current?.contains(t) || moreBtnRef.current?.contains(t)) return;
+      setPickerOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [pickerOpen]);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -60,15 +92,21 @@ export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
     }
   }
 
+  function pickIcon(next: string) {
+    setEmoji(next);
+    setPickerOpen(false);
+  }
+
   return (
     <form onSubmit={handleSave} className="space-y-5 max-w-xl">
       <div className="flex items-start gap-3">
-        <input
-          value={emoji}
-          onChange={e => setEmoji(e.target.value)}
-          aria-label="Emoji"
-          className="size-12 shrink-0 rounded-xl border border-white/10 bg-white/[0.04] text-center text-xl focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
-        />
+        <div
+          className="size-12 shrink-0 rounded-xl flex items-center justify-center text-xl select-none"
+          style={{ backgroundColor: color + "33", border: `1px solid ${color}55` }}
+          aria-hidden
+        >
+          {emoji || "🗂️"}
+        </div>
         <div className="flex-1 min-w-0 space-y-2">
           <input
             value={name}
@@ -80,10 +118,67 @@ export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
           <input
             value={description}
             onChange={e => setDescription(e.target.value)}
-            placeholder="Short description"
+            placeholder="Short description — e.g. AuthN, sessions, MFA"
             maxLength={140}
             className="w-full h-9 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs text-white/70 placeholder:text-white/25 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
           />
+        </div>
+      </div>
+
+      <div>
+        <p className="text-[0.65rem] uppercase tracking-wider text-white/30 font-semibold mb-2">Icon</p>
+        <div className="flex flex-wrap gap-1.5">
+          {WORKSPACE_ICONS.map(icon => (
+            <button
+              key={icon}
+              type="button"
+              onClick={() => pickIcon(icon)}
+              aria-label={`Icon ${icon}`}
+              aria-pressed={emoji === icon}
+              className={cn(
+                "size-9 rounded-lg text-base flex items-center justify-center transition-all cursor-pointer",
+                "border bg-white/[0.03] hover:bg-white/[0.08]",
+                emoji === icon
+                  ? "border-indigo-400/50 bg-indigo-500/15 ring-1 ring-indigo-400/30"
+                  : "border-white/8",
+              )}
+            >
+              {icon}
+            </button>
+          ))}
+          <div className="relative">
+            <button
+              ref={moreBtnRef}
+              type="button"
+              onClick={() => setPickerOpen(o => !o)}
+              aria-expanded={pickerOpen}
+              aria-label="Browse more icons"
+              className={cn(
+                "size-9 rounded-lg text-[0.65rem] font-medium flex items-center justify-center transition-all cursor-pointer",
+                "border bg-white/[0.03] hover:bg-white/[0.08] text-white/45",
+                pickerOpen
+                  ? "border-indigo-400/50 bg-indigo-500/15 text-indigo-200"
+                  : "border-white/8",
+              )}
+            >
+              More
+            </button>
+            {pickerOpen && (
+              <div
+                ref={pickerRef}
+                className="absolute left-0 top-11 z-50 shadow-2xl rounded-2xl overflow-hidden border border-white/10"
+              >
+                <EmojiPicker
+                  theme={Theme.DARK}
+                  onEmojiClick={(data: EmojiClickData) => pickIcon(data.emoji)}
+                  width={320}
+                  height={380}
+                  searchPlaceholder="Search emoji…"
+                  previewConfig={{ showPreview: false }}
+                />
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
