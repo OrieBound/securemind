@@ -8,6 +8,9 @@
 # Then copy `backend_hcl` output into ../backend.hcl and create the
 # GitHub Environment `aws-sandbox` with AWS_ROLE_ARN = gha_role_arn.
 # Do not commit terraform.tfstate.
+#
+# Re-apply this directory (not infra:up) after changing OIDC trust or
+# the GHA deploy policy. The app stack does not own these resources.
 
 terraform {
   required_version = ">= 1.6.0"
