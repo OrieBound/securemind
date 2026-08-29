@@ -1,13 +1,20 @@
 /**
- * Groq list pricing used for estimated inference cost.
- * Update GROQ_PRICING_VERSION when rates change.
+ * Groq published list rates for estimated inference cost.
+ * Update GROQ_PRICING_VERSION + table when console.groq.com/docs/models rates change.
+ * There is no official Groq pricing API — refresh manually (or via scripts/check-pricing.mjs notes).
  */
+
+import { costFromRates, type TokenRate } from "./types";
 
 export const GROQ_PRICING_VERSION = "groq-list-2026-08";
 export const GROQ_PRICING_EFFECTIVE = "2026-08-01";
 
-/** USD per million tokens (input / output). */
-export const GROQ_MODEL_PRICING: Record<string, { inputPerM: number; outputPerM: number }> = {
+/**
+ * USD per million tokens (input / output).
+ * Production rates from console.groq.com/docs/models; Plus/Light keep router-documented
+ * rates when those ids are preview/rotated (re-check with `npm run pricing:check`).
+ */
+export const GROQ_MODEL_PRICING: Record<string, TokenRate> = {
   "llama-3.3-70b-versatile":                   { inputPerM: 0.59,  outputPerM: 0.79 },
   "qwen/qwen3-32b":                            { inputPerM: 0.29,  outputPerM: 0.59 },
   "openai/gpt-oss-120b":                       { inputPerM: 0.15,  outputPerM: 0.60 },
@@ -16,17 +23,26 @@ export const GROQ_MODEL_PRICING: Record<string, { inputPerM: number; outputPerM:
   "llama-3.1-8b-instant":                      { inputPerM: 0.05,  outputPerM: 0.08 },
 };
 
-/** Documented premium baseline for “routing estimate vs baseline” charts — not AWS savings. */
+/** Documented premium baseline for routing-savings charts — not AWS savings. */
 export const DEFAULT_COST_BASELINE_MODEL = "llama-3.3-70b-versatile";
 
-export function estimateTurnCostUsd(
+export function estimateGroqTurnCostUsd(
   model: string,
   promptTokens: number,
   completionTokens: number,
 ): number | null {
   const p = GROQ_MODEL_PRICING[model];
   if (!p) return null;
-  return (promptTokens * p.inputPerM + completionTokens * p.outputPerM) / 1_000_000;
+  return costFromRates(p, promptTokens, completionTokens);
+}
+
+/** @deprecated Prefer estimateInferenceCost from `@/lib/pricing` — kept for call sites. */
+export function estimateTurnCostUsd(
+  model: string,
+  promptTokens: number,
+  completionTokens: number,
+): number | null {
+  return estimateGroqTurnCostUsd(model, promptTokens, completionTokens);
 }
 
 export function estimateBaselineCostUsd(
@@ -34,7 +50,7 @@ export function estimateBaselineCostUsd(
   completionTokens: number,
   baselineModel = DEFAULT_COST_BASELINE_MODEL,
 ): number | null {
-  return estimateTurnCostUsd(baselineModel, promptTokens, completionTokens);
+  return estimateGroqTurnCostUsd(baselineModel, promptTokens, completionTokens);
 }
 
 export function estimateRoutingSavingsUsd(
@@ -43,7 +59,7 @@ export function estimateRoutingSavingsUsd(
   completionTokens: number,
   baselineModel = DEFAULT_COST_BASELINE_MODEL,
 ): number | null {
-  const actual = estimateTurnCostUsd(model, promptTokens, completionTokens);
+  const actual = estimateGroqTurnCostUsd(model, promptTokens, completionTokens);
   const baseline = estimateBaselineCostUsd(promptTokens, completionTokens, baselineModel);
   if (actual == null || baseline == null) return null;
   return Math.max(0, baseline - actual);

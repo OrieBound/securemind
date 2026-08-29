@@ -1,18 +1,18 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@/lib/models/groq", () => ({
-  isGroqAvailable: vi.fn(),
+  hasGroqRuntime: vi.fn(),
 }));
 
-import { isGroqAvailable } from "@/lib/models/groq";
-import { extractTextFromImage } from "./image-extract";
+import { hasGroqRuntime } from "@/lib/models/groq";
+import { extractTextFromImage, ImageExtractError, isFailedExtractContent } from "./image-extract";
 import { scrubPII } from "./pii";
 
 describe("extractTextFromImage", () => {
   const prevKey = process.env.GROQ_API_KEY;
 
   beforeEach(() => {
-    vi.mocked(isGroqAvailable).mockReturnValue(false);
+    vi.mocked(hasGroqRuntime).mockResolvedValue(false);
     delete process.env.GROQ_API_KEY;
   });
 
@@ -22,15 +22,19 @@ describe("extractTextFromImage", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns a searchable stub when Groq is unavailable", async () => {
-    const text = await extractTextFromImage(
-      Buffer.from("fake-image-bytes"),
-      "image/png",
-      "console.png",
-    );
-    expect(text).toContain("Image: console.png");
-    expect(text).toContain("no GROQ_API_KEY");
-    expect(text).toContain("Knowledge library");
+  it("throws when Groq is unavailable so stubs are not indexed", async () => {
+    await expect(
+      extractTextFromImage(Buffer.from("fake-image-bytes"), "image/png", "console.png"),
+    ).rejects.toBeInstanceOf(ImageExtractError);
+  });
+
+  it("detects legacy stub text as failed extract content", () => {
+    expect(
+      isFailedExtractContent(
+        "Image: x.png\nExtraction: skipped (no GROQ_API_KEY)\nThe file is registered",
+      ),
+    ).toBe(true);
+    expect(isFailedExtractContent("Image: shot.png\n\nActual transcript")).toBe(false);
   });
 
   it("scrubs PII from vision-extracted text before it would be persisted", () => {

@@ -71,19 +71,21 @@ export function ChartFrame({
 
   return (
     <section
-      className="rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-5"
+      className="rounded-xl border border-border bg-card p-4 sm:p-5 shadow-[var(--shadow-sm)]"
       aria-labelledby={`chart-${title.replace(/\s+/g, "-").toLowerCase()}`}
     >
       <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
         <div className="min-w-0">
           <h3
             id={`chart-${title.replace(/\s+/g, "-").toLowerCase()}`}
-            className="text-sm font-semibold text-white/90"
+            className="text-section"
           >
             {title}
           </h3>
-          <p className="text-xs text-white/45 mt-1 max-w-prose">{interpretation}</p>
-          <p className="text-[0.65rem] text-white/30 mt-1">
+          <p className="text-ui text-[var(--text-muted)] mt-1.5 max-w-prose leading-[var(--leading-body)]">
+            {interpretation}
+          </p>
+          <p className="text-meta mt-1.5">
             {rangeLabel} · {workspaceLabel}
           </p>
         </div>
@@ -139,24 +141,24 @@ export function ChartFrame({
       </div>
 
       {exportNote && (
-        <p className="text-[0.65rem] text-emerald-400/80 mb-2" role="status">
+        <p className="text-[0.65rem] text-success mb-2" role="status">
           {exportNote}
         </p>
       )}
 
       <div ref={frameRef} className="min-h-[220px]">
         {loading && (
-          <div className="flex h-[220px] items-center justify-center text-sm text-white/40">
+          <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground">
             Loading…
           </div>
         )}
         {!loading && error && (
-          <div className="flex h-[220px] items-center justify-center text-sm text-rose-300/80 px-4 text-center">
+          <div className="flex h-[220px] items-center justify-center text-sm text-destructive px-4 text-center">
             {error}
           </div>
         )}
         {!loading && !error && empty && (
-          <div className="flex h-[220px] items-center justify-center text-sm text-white/35 px-4 text-center">
+          <div className="flex h-[220px] items-center justify-center text-sm text-muted-foreground px-4 text-center">
             {emptyMessage}
           </div>
         )}
@@ -165,14 +167,14 @@ export function ChartFrame({
 
       {tableHeaders && tableRows && tableRows.length > 0 && !loading && !error && !empty && (
         <details className="mt-3">
-          <summary className="text-xs text-white/40 cursor-pointer hover:text-white/60">
+          <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground">
             Data table
           </summary>
           <div className="mt-2 overflow-x-auto">
-            <table className="w-full text-xs text-left text-white/70">
+            <table className="w-full text-xs text-left text-foreground">
               <caption className="sr-only">{title} data</caption>
               <thead>
-                <tr className="border-b border-white/10 text-white/40">
+                <tr className="border-b border-border text-muted-foreground">
                   {tableHeaders.map(h => (
                     <th key={h} className="py-1.5 pr-3 font-medium">
                       {h}
@@ -182,9 +184,9 @@ export function ChartFrame({
               </thead>
               <tbody>
                 {tableRows.map((row, i) => (
-                  <tr key={i} className="border-b border-white/5">
+                  <tr key={i} className="border-b border-border">
                     {row.map((cell, j) => (
-                      <td key={j} className="py-1.5 pr-3">
+                      <td key={j} className="py-1.5 pr-3 text-[var(--text-secondary)]">
                         {cell ?? "—"}
                       </td>
                     ))}
@@ -212,7 +214,7 @@ function ExportBtn({
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/[0.04] px-2 py-1 text-[0.65rem] text-white/55 hover:text-white/85 hover:bg-white/[0.07]"
+      className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-2 py-1 text-[0.65rem] font-medium text-foreground hover:bg-[var(--surface-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       {icon}
       {label}

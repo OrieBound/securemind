@@ -5,7 +5,7 @@
  *   - chat composer, client-side, before the message leaves the browser
  *   - document ingest, server-side, before text is persisted or embedded
  *
- * Policy (see docs/PRODUCT_THESIS.md):
+ * Policy (see AGENTS.md — Sensitive data):
  *   Raw detected values are never persisted, transmitted, or logged. They exist
  *   only in volatile memory during composition. There is no restore path — a
  *   value that was caught is gone, and the user retypes or rephrases if the
@@ -194,6 +194,27 @@ export function passesLuhn(value: string): boolean {
   return sum % 10 === 0;
 }
 
+/**
+ * Canadian SIN check digit (mod-10 / Luhn-style from the left).
+ * Rejects all-zero / all-identical runs to cut obvious false positives.
+ */
+export function passesCanadianSin(value: string): boolean {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length !== 9) return false;
+  if (/^0{9}$/.test(digits) || /^(\d)\1{8}$/.test(digits)) return false;
+
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    let d = digits.charCodeAt(i) - 48;
+    if (i % 2 === 1) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+  }
+  return sum % 10 === 0;
+}
+
 const PATTERNS: PatternDef[] = [
   {
     category: "email",
@@ -207,7 +228,18 @@ const PATTERNS: PatternDef[] = [
     label: "Social Security numbers",
     minTier: "low",
     exemptible: false,
+    // US AAA-GG-SSSS — middle group is exactly 2 digits (not Canadian 3-3-3).
     pattern: /\b\d{3}[- ]\d{2}[- ]\d{4}\b/g,
+  },
+  {
+    category: "SIN",
+    label: "Social Insurance numbers",
+    minTier: "low",
+    exemptible: false,
+    // Canadian 3-3-3 with hyphen/space, or a bare 9-digit run. Checksum required.
+    // Does not match US SSN (3-2-4) because the middle group here is 3 digits.
+    pattern: /\b\d{3}[- ]\d{3}[- ]\d{3}\b|(?<!\d)\d{9}(?!\d)/g,
+    validate: passesCanadianSin,
   },
   {
     category: "card number",
@@ -257,9 +289,10 @@ const PATTERNS: PatternDef[] = [
     label: "API keys & secrets",
     minTier: "low",
     exemptible: false,
-    // High-signal credential shapes — prefer known prefixes over generic entropy.
+    // High-signal credential shapes — prefer known prefixes / named assignments
+    // over generic entropy (a bare 40-char string is too noisy alone).
     pattern:
-      /(?:-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----[\s\S]+?-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----)|(?:\b(?:sk_live_|sk_test_|rk_live_|rk_test_)[A-Za-z0-9]{16,}\b)|(?:\b(?:ghp_|gho_|ghu_|ghs_|ghr_)[A-Za-z0-9_]{20,}\b)|(?:\bgithub_pat_[A-Za-z0-9_]{20,}\b)|(?:\bxox[baprs]-[A-Za-z0-9-]{10,}\b)|(?:\bAKIA[0-9A-Z]{16}\b)|(?:\b(?:sk-|sk-proj-)[A-Za-z0-9_-]{20,}\b)|(?:\bAIza[0-9A-Za-z_-]{35}\b)/g,
+      /(?:-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----[\s\S]+?-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----)|(?:\b(?:sk_live_|sk_test_|rk_live_|rk_test_)[A-Za-z0-9]{16,}\b)|(?:\b(?:ghp_|gho_|ghu_|ghs_|ghr_)[A-Za-z0-9_]{20,}\b)|(?:\bgithub_pat_[A-Za-z0-9_]{20,}\b)|(?:\bxox[baprs]-[A-Za-z0-9-]{10,}\b)|(?:\b(?:AKIA|ASIA)[0-9A-Z]{16}\b)|(?:"?aws_secret_access_key"?|"?AWS_SECRET_ACCESS_KEY"?|"?SecretAccessKey"?)\s*[=:]\s*"?[A-Za-z0-9/+=]{40}\b|(?:"?aws_session_token"?|"?AWS_SESSION_TOKEN"?|"?SessionToken"?)\s*[=:]\s*"?[A-Za-z0-9/+=]{100,}|(?:\b(?:sk-|sk-proj-)[A-Za-z0-9_-]{20,}\b)|(?:\bAIza[0-9A-Za-z_-]{35}\b)/g,
   },
 ];
 

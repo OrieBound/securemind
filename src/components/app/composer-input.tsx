@@ -55,12 +55,16 @@ type ComposerInputProps = {
   sessionLoading: boolean;
   sessionReady: boolean;
   isStreaming: boolean;
+  /** When false, chat is intentionally disabled (no model provider). */
+  inferenceReady?: boolean;
   onSend: () => void;
   onCancelStream: () => void;
   onStartVoice: () => void;
   /** After voice: merge transcribed text at saved cursor, or restore base when text is empty */
   voiceInsert?: ComposerVoiceInsert | null;
   onVoiceInsertApplied?: () => void;
+  /** Optional: pre-wake API when the user focuses the composer */
+  onComposerFocus?: () => void;
 };
 
 export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputProps>(
@@ -70,16 +74,25 @@ export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputP
       sessionLoading,
       sessionReady,
       isStreaming,
+      inferenceReady = true,
       onSend,
       onCancelStream,
       onStartVoice,
       voiceInsert,
       onVoiceInsertApplied,
+      onComposerFocus,
     },
     ref,
   ) {
     const [draft, setDraft] = useState("");
-    const inputRef = useRef<HTMLInputElement>(null);
+    const inputRef = useRef<HTMLTextAreaElement>(null);
+
+    useEffect(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.style.height = "auto";
+      el.style.height = `${Math.min(el.scrollHeight, 144)}px`;
+    }, [draft]);
 
     useEffect(() => {
       if (!voiceInsert) return;
@@ -113,36 +126,45 @@ export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputP
       },
     }), [draft]);
 
-    const canSend = draft.trim().length > 0 && sessionReady && !sessionLoading;
+    const canSend =
+      draft.trim().length > 0 && sessionReady && !sessionLoading && inferenceReady;
 
     return (
-      <div className="flex items-center gap-2 px-4 pt-3 pb-2">
+      <div className="flex items-end gap-2 px-4 py-3.5">
         <label className="sr-only" htmlFor="composer">Ask about {workspaceName}</label>
-        <input
+        <textarea
           id="composer"
           ref={inputRef}
+          rows={2}
           value={draft}
           onChange={e => setDraft(e.target.value)}
           onKeyDown={e => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              onSend();
+              if (canSend) onSend();
             }
           }}
-          placeholder={sessionLoading ? "Loading conversation…" : `Ask about ${workspaceName}…`}
-          disabled={isStreaming || sessionLoading || !sessionReady}
+          placeholder={
+            sessionLoading
+              ? "Loading conversation…"
+              : !inferenceReady
+                ? "Model provider required — detection and documents still work"
+                : `Ask about ${workspaceName}…`
+          }
+          disabled={isStreaming || sessionLoading || !sessionReady || !inferenceReady}
           autoComplete="off"
-          className="flex-1 bg-transparent text-sm text-white/90 placeholder:text-white/25 outline-none border-none"
+          onFocus={() => onComposerFocus?.()}
+          className="flex-1 min-h-[3.75rem] max-h-36 resize-none bg-transparent text-[length:var(--font-size-body)] leading-[var(--leading-body)] font-normal tracking-[var(--tracking-body)] text-[var(--text-body)] placeholder:text-[var(--text-subtle)] outline-none border-none"
         />
         <button
           type="button"
           onClick={onStartVoice}
           aria-label="Voice input"
-          disabled={isStreaming}
+          disabled={isStreaming || !inferenceReady}
           className={cn(
             "shrink-0 p-1.5 rounded-lg transition-colors",
-            "text-white/25 hover:text-white/60 hover:bg-white/6",
-            isStreaming && "opacity-30 pointer-events-none",
+            "text-foreground/25 hover:text-foreground/60 hover:bg-foreground/6",
+            (isStreaming || !inferenceReady) && "opacity-30 pointer-events-none",
           )}
         >
           <Mic className="size-4" aria-hidden />
@@ -152,7 +174,7 @@ export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputP
             type="button"
             onClick={onCancelStream}
             aria-label="Stop response"
-            className="shrink-0 size-8 rounded-xl flex items-center justify-center bg-red-500/20 text-red-400 hover:bg-red-500/30 hover:text-red-300 transition-all"
+            className="shrink-0 size-8 rounded-xl flex items-center justify-center bg-muted text-muted-foreground hover:bg-foreground/10 hover:text-foreground transition-all"
           >
             <Square className="size-3.5 fill-current" aria-hidden />
           </button>
@@ -165,7 +187,7 @@ export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputP
               "shrink-0 size-8 rounded-xl flex items-center justify-center transition-all",
               canSend
                 ? "bg-primary text-primary-foreground hover:brightness-110 shadow-lg shadow-indigo-900/40"
-                : "bg-white/6 text-white/20 cursor-not-allowed",
+                : "bg-foreground/6 text-foreground/20 cursor-not-allowed",
             )}
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="size-4">

@@ -1,0 +1,225 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Optional Aurora PostgreSQL (Serverless v2) for SecureMind.
+  Default product path is external Neon — deploy this stack only when DatabaseMode=aurora.
+  Cluster + secret use DeletionPolicy Retain so teardown does not wipe data by accident.
+
+Parameters:
+  EnvName:
+    Type: String
+    Default: lab
+  DbName:
+    Type: String
+    Default: securemind
+    AllowedPattern: "[a-zA-Z][a-zA-Z0-9]*"
+  MasterUsername:
+    Type: String
+    Default: securemind
+    NoEcho: true
+  MasterUserPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 16
+    Description: Master password (store in a password manager; also written to Secrets Manager).
+  MinCapacity:
+    Type: Number
+    Default: 0.5
+    Description: Aurora Serverless v2 minimum ACUs.
+  MaxCapacity:
+    Type: Number
+    Default: 2
+    Description: Aurora Serverless v2 maximum ACUs (keep low for lab cost).
+  LabPublicAccess:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >
+      true = public subnets + publicly accessible (cheaper lab / teardown practice).
+      false = private subnets only (requires NAT or Lambda-in-VPC — not wired in api stack yet).
+  AllowedCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: CIDR allowed to reach Postgres when LabPublicAccess=true. Restrict to your IP in real use.
+
+Conditions:
+  UsePublicAccess: !Equals [!Ref LabPublicAccess, "true"]
+
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.42.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub "securemind-${EnvName}-vpc"
+
+  Igw:
+    Type: AWS::EC2::InternetGateway
+    Condition: UsePublicAccess
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "securemind-${EnvName}-igw"
+
+  IgwAttach:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Condition: UsePublicAccess
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref Igw
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: 10.42.0.0/24
+      MapPublicIpOnLaunch: !If [UsePublicAccess, true, false]
+      Tags:
+        - Key: Name
+          Value: !Sub "securemind-${EnvName}-subnet-a"
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      CidrBlock: 10.42.1.0/24
+      MapPublicIpOnLaunch: !If [UsePublicAccess, true, false]
+      Tags:
+        - Key: Name
+          Value: !Sub "securemind-${EnvName}-subnet-b"
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: UsePublicAccess
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub "securemind-${EnvName}-rt"
+
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    Condition: UsePublicAccess
+    DependsOn: IgwAttach
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref Igw
+
+  SubnetAAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: UsePublicAccess
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicRouteTable
+
+  SubnetBAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: UsePublicAccess
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicRouteTable
+
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: SecureMind Aurora Postgres
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: !If [UsePublicAccess, !Ref AllowedCidr, 10.42.0.0/16]
+      Tags:
+        - Key: Name
+          Value: !Sub "securemind-${EnvName}-db-sg"
+
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: SecureMind Aurora subnets
+      SubnetIds:
+        - !Ref PublicSubnetA
+        - !Ref PublicSubnetB
+
+  DbSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub "securemind/${EnvName}/aurora"
+      Description: Aurora master credentials + connection URL for SecureMind
+      SecretString: !Sub |
+        {
+          "username": "${MasterUsername}",
+          "password": "${MasterUserPassword}",
+          "dbname": "${DbName}",
+          "engine": "postgres",
+          "port": 5432
+        }
+
+  DbCluster:
+    Type: AWS::RDS::DBCluster
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Engine: aurora-postgresql
+      EngineVersion: "15.4"
+      DatabaseName: !Ref DbName
+      MasterUsername: !Ref MasterUsername
+      MasterUserPassword: !Ref MasterUserPassword
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref DbSecurityGroup
+      ServerlessV2ScalingConfiguration:
+        MinCapacity: !Ref MinCapacity
+        MaxCapacity: !Ref MaxCapacity
+      StorageEncrypted: true
+      BackupRetentionPeriod: 7
+      DeletionProtection: true
+      Tags:
+        - Key: Name
+          Value: !Sub "securemind-${EnvName}-aurora"
+
+  DbInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Engine: aurora-postgresql
+      DBClusterIdentifier: !Ref DbCluster
+      DBInstanceClass: db.serverless
+      PubliclyAccessible: !If [UsePublicAccess, true, false]
+
+  # Append host into the secret after the cluster exists (URL for Prisma).
+  DbSecretHostAttachment:
+    Type: AWS::SecretsManager::SecretTargetAttachment
+    Properties:
+      SecretId: !Ref DbSecret
+      TargetId: !Ref DbCluster
+      TargetType: AWS::RDS::DBCluster
+
+Outputs:
+  ClusterEndpoint:
+    Description: Aurora writer endpoint (host only)
+    Value: !GetAtt DbCluster.Endpoint.Address
+    Export:
+      Name: !Sub "${AWS::StackName}-ClusterEndpoint"
+  DatabaseName:
+    Value: !Ref DbName
+  SecretArn:
+    Description: Secrets Manager ARN (username/password/host after attachment)
+    Value: !Ref DbSecret
+    Export:
+      Name: !Sub "${AWS::StackName}-SecretArn"
+  DatabaseUrlHint:
+    Description: Build DATABASE_URL as postgresql://USER:PASS@HOST:5432/DBNAME?sslmode=require
+    Value: !Sub "postgresql://${MasterUsername}:****@${DbCluster.Endpoint.Address}:5432/${DbName}?sslmode=require"
+  DeletionNote:
+    Value: "Cluster, instance, and secret Retention=Retain. Disable DeletionProtection then delete resources manually if you truly want wipe."
+  StackMode:
+    Value: aurora-optional

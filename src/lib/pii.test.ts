@@ -5,6 +5,7 @@ import {
   categoriesForTier,
   cidrContains,
   isSafeTerm,
+  passesCanadianSin,
   passesLuhn,
   scrubPII,
   sensitivityTier,
@@ -30,6 +31,23 @@ describe("detection — true positives", () => {
 
   it("detects a space-separated SSN", () => {
     expect(categories("ssn 123 45 6789")).toContain("SSN");
+  });
+
+  it("detects a hyphenated Canadian SIN", () => {
+    // Synthetic checksum-valid SIN (not a real person).
+    expect(categories("sin 046-454-286")).toContain("SIN");
+  });
+
+  it("detects a space-separated Canadian SIN", () => {
+    expect(categories("sin 046 454 286")).toContain("SIN");
+  });
+
+  it("detects a bare 9-digit Canadian SIN", () => {
+    expect(categories("sin 046454286")).toContain("SIN");
+  });
+
+  it("does not classify a US SSN shape as a Canadian SIN", () => {
+    expect(categories("ssn 123-45-6789")).not.toContain("SIN");
   });
 
   it("detects a Luhn-valid card number", () => {
@@ -70,6 +88,29 @@ describe("detection — true positives", () => {
 
   it("detects an AWS access key id", () => {
     expect(categories("key AKIAIOSFODNN7EXAMPLE used")).toContain("secret");
+  });
+
+  it("detects an AWS temporary access key id (ASIA)", () => {
+    expect(categories("key ASIAIOSFODNN7EXAMPLE used")).toContain("secret");
+  });
+
+  it("detects an AWS secret access key assignment", () => {
+    // Exactly 40 chars — AWS secret access key length.
+    const key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".slice(0, 40);
+    const line = `AWS_SECRET_ACCESS_KEY=${key}`;
+    expect(key).toHaveLength(40);
+    expect(categories(line)).toContain("secret");
+  });
+
+  it("detects a JSON-style SecretAccessKey assignment", () => {
+    const key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".slice(0, 40);
+    const line = `"SecretAccessKey": "${key}"`;
+    expect(categories(line)).toContain("secret");
+  });
+
+  it("detects an AWS session token assignment", () => {
+    const token = "A".repeat(100) + "exampleSessionTokenSuffix==";
+    expect(categories(`AWS_SESSION_TOKEN=${token}`)).toContain("secret");
   });
 
   it("detects a GitHub personal access token", () => {
@@ -128,6 +169,19 @@ describe("detection — false positives", () => {
 
   it("does not flag an incomplete AKIA prefix", () => {
     expect(categories("look for AKIA-prefixed access keys")).not.toContain("secret");
+  });
+
+  it("does not flag a bare 40-char string without an AWS secret key name", () => {
+    const key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY".slice(0, 40);
+    expect(categories(`token ${key} alone`)).not.toContain("secret");
+  });
+
+  it("does not flag a 9-digit run that fails the SIN checksum", () => {
+    expect(categories("ref 123456789")).not.toContain("SIN");
+  });
+
+  it("does not flag all-identical digits as a SIN", () => {
+    expect(categories("code 111111111")).not.toContain("SIN");
   });
 });
 
@@ -243,6 +297,20 @@ describe("cidrContains", () => {
   });
 });
 
+describe("passesCanadianSin", () => {
+  it("accepts a checksum-valid SIN", () => {
+    expect(passesCanadianSin("046-454-286")).toBe(true);
+  });
+
+  it("rejects a checksum-invalid 9-digit run", () => {
+    expect(passesCanadianSin("123456789")).toBe(false);
+  });
+
+  it("rejects all zeros", () => {
+    expect(passesCanadianSin("000000000")).toBe(false);
+  });
+});
+
 describe("passesLuhn", () => {
   it("accepts a valid card number", () => {
     expect(passesLuhn("4242424242424242")).toBe(true);
@@ -286,8 +354,13 @@ describe("validateSafeTerm", () => {
 
   it("exposes the non-exemptible category list", () => {
     expect(NON_EXEMPTIBLE_CATEGORIES).toEqual(
-      expect.arrayContaining(["SSN", "card number", "secret"]),
+      expect.arrayContaining(["SSN", "SIN", "card number", "secret"]),
     );
+  });
+
+  it("rejects a Canadian SIN as a literal safe term", () => {
+    const result = validateSafeTerm("046-454-286", "literal");
+    expect(result.ok).toBe(false);
   });
 
   it("rejects an AWS access key as a literal safe term", () => {
@@ -301,10 +374,12 @@ describe("no raw value escapes the scrubber", () => {
   const SECRETS = [
     { text: "email me at victim@private.io", raw: "victim@private.io" },
     { text: "ssn 123-45-6789",               raw: "123-45-6789" },
+    { text: "sin 046-454-286",               raw: "046-454-286" },
     { text: "card 4242424242424242",         raw: "4242424242424242" },
     { text: "call (415) 555-0142",           raw: "(415) 555-0142" },
     { text: "origin 8.8.8.8",                raw: "8.8.8.8" },
     { text: "key AKIAIOSFODNN7EXAMPLE",      raw: "AKIAIOSFODNN7EXAMPLE" },
+    { text: "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY", raw: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY" },
   ];
 
   for (const { text, raw } of SECRETS) {

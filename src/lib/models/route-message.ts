@@ -10,7 +10,7 @@
  */
 
 import { classifyComplexityLlm } from "./groq";
-import { DEFAULT_TIER, TIER_NAMES } from "./router";
+import { DEFAULT_TIER, TIER_NAMES, normalizeStoredTier } from "./router";
 
 export type RouteHistoryMessage = { role: "user" | "assistant"; content: string };
 
@@ -34,7 +34,7 @@ export type RouteResult = {
 
 const VALID_TIERS = new Set<string>(TIER_NAMES);
 
-const TIER_ORDER = ["Micro", "Fast", "Light", "Standard", "Plus", "High", "Max"] as const;
+const TIER_ORDER = ["Micro", "Light", "Standard", "Plus", "Max"] as const;
 
 function tierRank(tier: string): number {
   const i = TIER_ORDER.indexOf(tier as (typeof TIER_ORDER)[number]);
@@ -173,12 +173,10 @@ export function scoreMessageComplexity(
 
 /** Map 0–100 score → tier. Thresholds tuned via scripts/route-eval.mjs */
 export function tierFromScore(score: number): string {
-  if (score >= 80) return "Max";
-  if (score >= 66) return "High";
+  if (score >= 66) return "Max";
   if (score >= 52) return "Plus";
   if (score >= 36) return "Standard";
-  if (score >= 24) return "Light";
-  if (score >= 12) return "Fast";
+  if (score >= 12) return "Light";
   return "Micro";
 }
 
@@ -203,16 +201,18 @@ export function applyThreadStickiness(
     .join(" ")
     .toLowerCase();
 
-  const threadTier = lastTier && VALID_TIERS.has(lastTier) ? lastTier : null;
+  const threadTier = lastTier
+    ? (VALID_TIERS.has(lastTier) ? lastTier : normalizeStoredTier(lastTier))
+    : null;
   const deepThread = /\b(debug|code|implement|architect|refactor|async|api|error|function)\b/.test(userRecent);
   const planThread = /\b(plan|strategy|decide|options|approach)\b/.test(userRecent);
 
   if (len < 160) {
     if (threadTier && tierRank(threadTier) >= tierRank("Plus")) {
-      return { tier: maxTier(tier, minTier(threadTier, "High")), reason: `stickiness:last=${threadTier}` };
+      return { tier: maxTier(tier, minTier(threadTier, "Max")), reason: `stickiness:last=${threadTier}` };
     }
-    if (deepThread && tierRank(tier) < tierRank("High")) {
-      return { tier: "High", reason: "stickiness:deep-thread" };
+    if (deepThread && tierRank(tier) < tierRank("Max")) {
+      return { tier: "Max", reason: "stickiness:deep-thread" };
     }
     if (planThread && tierRank(tier) < tierRank("Plus")) {
       return { tier: "Plus", reason: "stickiness:planning-thread" };
@@ -244,10 +244,9 @@ export function routeMessageSync(input: RouteInput): RouteResult {
     reason += `; ${sticky.reason}`;
   }
 
-  // Quality floor — real conversation never uses Micro (preserve Fast/Light for facts/how-to)
+  // Quality floor — real conversation never uses Micro (facts/how-to stay on Light)
   if (tier === "Micro") {
-    if (reasons.includes("quick-fact")) tier = "Fast";
-    else if (reasons.includes("how-to-explain")) tier = "Light";
+    if (reasons.includes("quick-fact") || reasons.includes("how-to-explain")) tier = "Light";
     else tier = "Standard";
     reason += `; floor→${tier}`;
   }

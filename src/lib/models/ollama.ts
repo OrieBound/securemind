@@ -16,8 +16,85 @@
  */
 
 import type { ChatMessage } from "./types";
+import { ollamaFallbackForMode } from "./router";
+import { pickInstalledChatModel, probeHardware } from "./local-recommendations";
+
+/** True when the model id is an embedding / non-chat Ollama tag. */
+export function isOllamaEmbedModel(model: string): boolean {
+  return /embed/i.test(model);
+}
+
+/** Map a routed cloud model id to a local Ollama tag when Ollama is the intended provider. */
+export function resolveOllamaChatModel(model: string, tier: string): string {
+  const chatDefault = process.env.OLLAMA_CHAT_MODEL ?? "llama3.2";
+  if (isOllamaEmbedModel(model)) return chatDefault;
+  if (!model || model === chatDefault) return chatDefault;
+  if (
+    model.includes("/") ||
+    model.includes("-instant") ||
+    /^amazon\./.test(model) ||
+    /^anthropic\./.test(model) ||
+    /^meta\./.test(model) ||
+    /^us\./.test(model)
+  ) {
+    return ollamaFallbackForMode(tier);
+  }
+  return model;
+}
 
 const OLLAMA_BASE = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
+
+export function ollamaBaseUrl(): string {
+  return OLLAMA_BASE;
+}
+
+export type OllamaProbe = {
+  reachable: boolean;
+  tags: string[];
+};
+
+/** Tags only — short timeout. Never pulls and never lists cloud catalogs. */
+export async function probeOllama(timeoutMs = 2500): Promise<OllamaProbe> {
+  try {
+    const resp = await fetch(`${OLLAMA_BASE}/api/tags`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!resp.ok) return { reachable: false, tags: [] };
+    const body = (await resp.json()) as { models?: Array<{ name: string }> };
+    return {
+      reachable: true,
+      tags: (body.models ?? []).map(m => m.name).filter(Boolean),
+    };
+  } catch {
+    return { reachable: false, tags: [] };
+  }
+}
+
+/**
+ * Load weights into Ollama so the next chat turn is less likely to wait on a cold model.
+ * Never pulls. Safe to fire-and-forget from /api/warm.
+ */
+export async function preloadOllamaChatModel(): Promise<void> {
+  const probe = await probeOllama(2000);
+  if (!probe.reachable) return;
+  const model = pickInstalledChatModel(
+    probe.tags.filter(t => !isOllamaEmbedModel(t)),
+    probeHardware(),
+  );
+  if (!model) return;
+  await fetch(`${OLLAMA_BASE}/api/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      prompt: " ",
+      stream: false,
+      keep_alive: "30m",
+      options: { num_predict: 0, num_ctx: 512 },
+    }),
+    signal: AbortSignal.timeout(90_000),
+  }).catch(() => { /* preload is best-effort */ });
+}
 
 type OllamaChatLine = {
   model: string;
@@ -40,7 +117,16 @@ export async function* streamOllamaChat(
     resp = await fetch(`${OLLAMA_BASE}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages, stream: true }),
+      body: JSON.stringify({
+        model,
+        messages,
+        stream: true,
+        keep_alive: "30m",
+        options: {
+          num_ctx: 2048,
+          num_predict: 1024,
+        },
+      }),
     });
   } catch (err) {
     throw new Error(

@@ -8,6 +8,7 @@
  */
 
 import type { SemanticHit } from "@/lib/memory";
+import type { ChunkProvenance } from "@/lib/spreadsheet/types";
 import { EVIDENCE_PROMPT_LIMIT } from "@/lib/memory";
 import {
   MAX_ATTACHMENT_PROMPT_CHARS,
@@ -18,7 +19,10 @@ import { fenceRetrievedChunk, untrustedEvidenceRules } from "@/lib/prompt-guard"
 import { decideTurn } from "@/lib/turn-policy/decide-turn";
 
 export type { CurrentAttachmentDoc } from "@/lib/attachments";
-export { MAX_ATTACHMENT_PROMPT_CHARS, formatAttachmentsForHistory } from "@/lib/attachments";
+export {
+  MAX_ATTACHMENT_PROMPT_CHARS,
+  formatAttachmentsForHistory,
+} from "@/lib/attachments";
 
 export type Citation = {
   /** 1-based index matching [n] markers in the prompt / answer. */
@@ -31,6 +35,7 @@ export type Citation = {
   /** Short preview for the Sources strip — already sanitized at ingest. */
   preview: string;
   similarity: number;
+  provenance?: ChunkProvenance | null;
 };
 
 const PREVIEW_LEN = 140;
@@ -41,8 +46,19 @@ function previewOf(content: string): string {
   return `${flat.slice(0, PREVIEW_LEN - 1)}…`;
 }
 
+export function formatProvenanceLabel(p?: ChunkProvenance | null): string | null {
+  if (!p) return null;
+  if (p.range) return p.range;
+  if (p.sheet) return p.sheet;
+  if (p.page != null) return `p.${p.page}`;
+  return null;
+}
+
 function sourceLabel(hit: SemanticHit): string {
+  const loc = formatProvenanceLabel(hit.provenance);
+  if (hit.documentName && loc) return `document: ${hit.documentName} (${loc})`;
   if (hit.documentName) return `document: ${hit.documentName}`;
+  if (loc) return `document chunk (${loc})`;
   return "document chunk";
 }
 
@@ -92,6 +108,7 @@ export function packageEvidence(hits: SemanticHit[]): {
     documentName: hit.documentName ?? null,
     preview: previewOf(hit.content),
     similarity: Number(hit.similarity),
+    provenance: hit.provenance ?? null,
   }));
 
   const lines = eligible.map((hit, i) =>
@@ -125,7 +142,7 @@ export function packageCurrentAttachments(docs: CurrentAttachmentDoc[]): string 
     const raw = doc.content.replace(/\s+/g, " ").trim();
     const body =
       raw.length > MAX_ATTACHMENT_PROMPT_CHARS
-        ? `${raw.slice(0, MAX_ATTACHMENT_PROMPT_CHARS)}\n…[truncated]`
+        ? `${raw.slice(0, MAX_ATTACHMENT_PROMPT_CHARS)}\n…[truncated for this chat — full text is in Knowledge]`
         : raw;
     const label = `current attachment: ${doc.name || doc.id}`;
     return fenceRetrievedChunk(i + 1, label, body || "(no extractable text)");

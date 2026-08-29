@@ -1,13 +1,16 @@
-# Local development stack for SecureMind.
+# SecureMind — on-prem Docker stack
 #
-#   docker compose up -d
+#   docker compose up --build
 #
-# Services:
-#   db     — Postgres 16 + pgvector (app DATABASE_URL)
-#   floci  — local AWS emulator on :4566 (S3, Cognito, KMS, …)
+# First boot runs `ollama-init` (default chat + embed weights) then `init`
+# (schema, Floci Cognito) then starts the app.
+# Open http://localhost:3000 — sign in with admin@example.test / <demo-password>!
 #
-# The Next.js app still runs on the host via `npm run dev`. Point .env.local
-# at the URLs below when you want local infra instead of Neon / real AWS.
+# Host dev (app on npm run dev, infra only in Docker):
+#   docker compose up -d db floci ollama ollama-init
+#
+# Tear down (wipes local DB + Floci + Ollama model cache):
+#   docker compose down -v
 
 services:
   db:
@@ -32,13 +35,108 @@ services:
     ports:
       - "4566:4566"
     environment:
-      FLOCI_HOSTNAME: localhost
+      # In-container issuer/JWKS use the Compose service name (not localhost).
+      FLOCI_HOSTNAME: floci
       FLOCI_DEFAULT_REGION: us-east-1
       FLOCI_STORAGE_MODE: persistent
       FLOCI_STORAGE_PERSISTENT_PATH: /app/data
     volumes:
       - securemind-floci:/app/data
 
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - securemind-ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  ollama-init:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      ollama pull nomic-embed-text &&
+      ollama pull llama3.2:3b
+    restart: "no"
+
+  init:
+    build:
+      context: .
+      target: init
+    depends_on:
+      db:
+        condition: service_healthy
+      floci:
+        condition: service_started
+      ollama-init:
+        condition: service_completed_successfully
+    environment:
+      BOOTSTRAP_DIR: /bootstrap
+      DATABASE_URL: postgresql://securemind:securemind@db:5432/securemind
+      DIRECT_URL: postgresql://securemind:securemind@db:5432/securemind
+      AWS_ENDPOINT_URL: http://floci:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_EMBED_MODEL: nomic-embed-text
+      OLLAMA_CHAT_MODEL: llama3.2:3b
+    volumes:
+      - securemind-bootstrap:/bootstrap
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      target: runner
+    ports:
+      - "3000:3000"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    env_file:
+      - path: .env.onprem
+        required: false
+    environment:
+      DATABASE_URL: postgresql://securemind:securemind@db:5432/securemind
+      DIRECT_URL: postgresql://securemind:securemind@db:5432/securemind
+      AUTH_MODE: cognito
+      AUTH_ALLOW_LOCAL_FALLBACK: "false"
+      AWS_ENDPOINT_URL: http://floci:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_CHAT_MODEL: llama3.2:3b
+      OLLAMA_EMBED_MODEL: nomic-embed-text
+      OLLAMA_FALLBACK_MODEL: llama3.2:3b
+      DOCUMENT_STORAGE_PATH: /data/uploads
+      INSTANCE_KEY_FILE: /data/instance.key
+    volumes:
+      - securemind-bootstrap:/bootstrap:ro
+      - securemind-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
 volumes:
   securemind-pgdata:
   securemind-floci:
+  securemind-ollama:
+  securemind-bootstrap:
+  securemind-data:

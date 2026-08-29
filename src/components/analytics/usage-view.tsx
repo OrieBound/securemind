@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -13,10 +12,17 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AnalyticsShell, rangeLabelOf, useAnalyticsFilters } from "./analytics-shell";
+import {
+  AnalyticsShell,
+  rangeLabelOf,
+  useAnalyticsFilters,
+  type InsightsSubjectScope,
+} from "./analytics-shell";
 import { ChartFrame } from "./chart-frame";
+import { tooltipStyle, useChartTheme } from "./use-chart-theme";
 import { KpiCard } from "./kpi-card";
-import { fetchAnalyticsJson, fmtPct, shortModel } from "@/lib/analytics/client";
+import { fmtPct, shortModel } from "@/lib/analytics/client";
+import { useAnalyticsQuery } from "./use-analytics-query";
 
 type WorkspaceOpt = { id: string; name: string };
 
@@ -40,32 +46,21 @@ type UsagePayload = {
   latencySamples: number[];
 };
 
-type Props = { workspaces: WorkspaceOpt[] };
+type Props = {
+  workspaces: WorkspaceOpt[];
+  subject?: InsightsSubjectScope | null;
+  onBackToAdmin?: () => void;
+};
 
-export function UsageAnalyticsView({ workspaces }: Props) {
+export function UsageAnalyticsView({ workspaces, subject = null, onBackToAdmin }: Props) {
+  const chart = useChartTheme();
   const { range, setRange, workspaceId, setWorkspaceId } = useAnalyticsFilters("30d");
-  const [data, setData] = useState<UsagePayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    fetchAnalyticsJson<UsagePayload>("usage", { range, workspaceId })
-      .then(d => {
-        if (!cancelled) setData(d);
-      })
-      .catch(e => {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [range, workspaceId]);
+  const asUser = subject?.userId ?? null;
+  const { data, loading, error, retry } = useAnalyticsQuery<UsagePayload>("usage", {
+    range,
+    workspaceId,
+    asUser,
+  });
 
   const rangeLabel = rangeLabelOf(range);
   const workspaceLabel =
@@ -89,7 +84,17 @@ export function UsageAnalyticsView({ workspaces }: Props) {
       workspaceId={workspaceId}
       onRangeChange={setRange}
       onWorkspaceChange={setWorkspaceId}
+      subject={subject}
+      onBackToAdmin={onBackToAdmin}
     >
+      {error && (
+        <div className="flex items-center gap-3 text-sm text-destructive">
+          <span>{error}</span>
+          <button type="button" onClick={retry} className="underline text-foreground">
+            Retry
+          </button>
+        </div>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
         <KpiCard label="AI requests" value={loading ? "…" : String(data?.kpis.totalRequests ?? 0)} />
         <KpiCard label="Input tokens" value={loading ? "…" : String(data?.kpis.promptTokens ?? 0)} />
@@ -118,11 +123,11 @@ export function UsageAnalyticsView({ workspaces }: Props) {
         >
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={data?.overTime ?? []}>
-              <CartesianGrid stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="date" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} />
-              <YAxis tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} allowDecimals={false} />
-              <Tooltip contentStyle={{ background: "#111827", border: "1px solid rgba(255,255,255,0.1)" }} />
-              <Line type="monotone" dataKey="requests" stroke="#818cf8" strokeWidth={2} dot={false} name="Requests" />
+              <CartesianGrid stroke={chart.grid} />
+              <XAxis dataKey="date" tick={{ fill: chart.tick, fontSize: 11 }} />
+              <YAxis tick={{ fill: chart.tick, fontSize: 11 }} allowDecimals={false} />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
+              <Line type="monotone" dataKey="requests" stroke={chart.series[0]} strokeWidth={2} dot={false} name="Requests" />
             </LineChart>
           </ResponsiveContainer>
         </ChartFrame>
@@ -140,13 +145,13 @@ export function UsageAnalyticsView({ workspaces }: Props) {
         >
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={data?.overTime ?? []}>
-              <CartesianGrid stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="date" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} />
-              <YAxis tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} allowDecimals={false} />
-              <Tooltip contentStyle={{ background: "#111827", border: "1px solid rgba(255,255,255,0.1)" }} />
+              <CartesianGrid stroke={chart.grid} />
+              <XAxis dataKey="date" tick={{ fill: chart.tick, fontSize: 11 }} />
+              <YAxis tick={{ fill: chart.tick, fontSize: 11 }} allowDecimals={false} />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
               <Legend />
-              <Line type="monotone" dataKey="prompt" stroke="#34d399" strokeWidth={2} dot={false} name="Input" />
-              <Line type="monotone" dataKey="completion" stroke="#fbbf24" strokeWidth={2} dot={false} name="Output" />
+              <Line type="monotone" dataKey="prompt" stroke={chart.series[3]} strokeWidth={2} dot={false} name="Input" />
+              <Line type="monotone" dataKey="completion" stroke={chart.series[4]} strokeWidth={2} dot={false} name="Output" />
             </LineChart>
           </ResponsiveContainer>
         </ChartFrame>
@@ -168,11 +173,11 @@ export function UsageAnalyticsView({ workspaces }: Props) {
               layout="vertical"
               margin={{ left: 8 }}
             >
-              <CartesianGrid stroke="rgba(255,255,255,0.06)" horizontal={false} />
-              <XAxis type="number" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} allowDecimals={false} />
-              <YAxis type="category" dataKey="label" width={110} tick={{ fill: "rgba(255,255,255,0.55)", fontSize: 11 }} />
-              <Tooltip contentStyle={{ background: "#111827", border: "1px solid rgba(255,255,255,0.1)" }} />
-              <Bar dataKey="count" fill="#818cf8" name="Requests" />
+              <CartesianGrid stroke={chart.grid} horizontal={false} />
+              <XAxis type="number" tick={{ fill: chart.tick, fontSize: 11 }} allowDecimals={false} />
+              <YAxis type="category" dataKey="label" width={110} tick={{ fill: chart.tick, fontSize: 11 }} />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
+              <Bar dataKey="count" fill={chart.series[0]} name="Requests" />
             </BarChart>
           </ResponsiveContainer>
         </ChartFrame>
@@ -190,11 +195,11 @@ export function UsageAnalyticsView({ workspaces }: Props) {
         >
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={data?.byTier ?? []}>
-              <CartesianGrid stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="tier" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} />
-              <YAxis tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} allowDecimals={false} />
-              <Tooltip contentStyle={{ background: "#111827", border: "1px solid rgba(255,255,255,0.1)" }} />
-              <Bar dataKey="count" fill="#22d3ee" name="Requests" />
+              <CartesianGrid stroke={chart.grid} />
+              <XAxis dataKey="tier" tick={{ fill: chart.tick, fontSize: 11 }} />
+              <YAxis tick={{ fill: chart.tick, fontSize: 11 }} allowDecimals={false} />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
+              <Bar dataKey="count" fill={chart.series[1]} name="Requests" />
             </BarChart>
           </ResponsiveContainer>
         </ChartFrame>
@@ -212,11 +217,11 @@ export function UsageAnalyticsView({ workspaces }: Props) {
         >
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={data?.byGrounding ?? []}>
-              <CartesianGrid stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="status" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} />
-              <YAxis tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} allowDecimals={false} />
-              <Tooltip contentStyle={{ background: "#111827", border: "1px solid rgba(255,255,255,0.1)" }} />
-              <Bar dataKey="count" fill="#34d399" name="Answers" />
+              <CartesianGrid stroke={chart.grid} />
+              <XAxis dataKey="status" tick={{ fill: chart.tick, fontSize: 11 }} />
+              <YAxis tick={{ fill: chart.tick, fontSize: 11 }} allowDecimals={false} />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
+              <Bar dataKey="count" fill={chart.series[3]} name="Answers" />
             </BarChart>
           </ResponsiveContainer>
         </ChartFrame>
@@ -238,26 +243,26 @@ export function UsageAnalyticsView({ workspaces }: Props) {
         >
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={latencyTrend}>
-              <CartesianGrid stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="date" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} />
-              <YAxis tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} />
-              <Tooltip contentStyle={{ background: "#111827", border: "1px solid rgba(255,255,255,0.1)" }} />
-              <Line type="monotone" dataKey="latencyMs" stroke="#f472b6" strokeWidth={2} dot={false} name="Avg latency (ms)" />
+              <CartesianGrid stroke={chart.grid} />
+              <XAxis dataKey="date" tick={{ fill: chart.tick, fontSize: 11 }} />
+              <YAxis tick={{ fill: chart.tick, fontSize: 11 }} />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
+              <Line type="monotone" dataKey="latencyMs" stroke={chart.series[5]} strokeWidth={2} dot={false} name="Avg latency (ms)" />
             </LineChart>
           </ResponsiveContainer>
         </ChartFrame>
       </div>
 
-      <section className="rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-5">
-        <h3 className="text-sm font-semibold text-white/90 mb-3">By workspace</h3>
+      <section className="rounded-xl border border-foreground/10 bg-foreground/[0.03] p-4 sm:p-5">
+        <h3 className="text-sm font-semibold text-foreground/90 mb-3">By workspace</h3>
         {!loading && (data?.byWorkspace.length ?? 0) === 0 && (
-          <p className="text-sm text-white/35">No usage events yet. Ask a question in Chat to start recording.</p>
+          <p className="text-sm text-foreground/35">No usage events yet. Ask a question in Chat to start recording.</p>
         )}
         {(data?.byWorkspace.length ?? 0) > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-left">
               <thead>
-                <tr className="text-white/40 border-b border-white/10">
+                <tr className="text-foreground/40 border-b border-foreground/10">
                   <th className="py-2 pr-3">Workspace</th>
                   <th className="py-2 pr-3">Requests</th>
                   <th className="py-2 pr-3">Input tokens</th>
@@ -266,7 +271,7 @@ export function UsageAnalyticsView({ workspaces }: Props) {
               </thead>
               <tbody>
                 {(data?.byWorkspace ?? []).map(r => (
-                  <tr key={r.workspaceId} className="border-b border-white/5 text-white/70">
+                  <tr key={r.workspaceId} className="border-b border-foreground/5 text-foreground/70">
                     <td className="py-2 pr-3">{r.name}</td>
                     <td className="py-2 pr-3 tabular-nums">{r.requests}</td>
                     <td className="py-2 pr-3 tabular-nums">{r.prompt}</td>

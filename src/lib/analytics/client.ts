@@ -40,14 +40,26 @@ export async function postSecurityEvents(opts: {
 }
 
 export async function fetchAnalyticsJson<T>(
-  path: "security" | "usage" | "cost" | "summary",
-  opts: { range: AnalyticsRange; workspaceId?: string | null },
+  path: "security" | "usage" | "cost",
+  opts: {
+    range: AnalyticsRange;
+    workspaceId?: string | null;
+    /** Admin-only subject override — ignored by the API for non-admins. */
+    asUser?: string | null;
+  },
+  signal?: AbortSignal,
 ): Promise<T> {
   const params = new URLSearchParams({ range: opts.range });
   if (opts.workspaceId && opts.workspaceId !== "all") {
     params.set("workspaceId", opts.workspaceId);
   }
-  const res = await fetch(`/api/analytics/${path}?${params}`);
+  if (opts.asUser) {
+    params.set("asUser", opts.asUser);
+  }
+  const res = await fetch(`/api/analytics/${path}?${params}`, {
+    credentials: "same-origin",
+    signal,
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { error?: string }).error ?? `Failed to load ${path}`);
@@ -61,6 +73,12 @@ export function fmtUsd(d: number | null | undefined): string {
   if (d < 0.0001) return "<$0.0001";
   if (d < 0.01) return `$${d.toFixed(4)}`;
   return `$${d.toFixed(2)}`;
+}
+
+/** Always labels currency as USD (caps / Insights meters). */
+export function fmtUsdLabeled(d: number | null | undefined): string {
+  if (d == null || Number.isNaN(d)) return "Unlimited";
+  return `${fmtUsd(d)} USD`;
 }
 
 export function fmtPct(rate: number | null | undefined): string {

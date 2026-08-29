@@ -15,9 +15,9 @@ const pool = new pg.Pool({
 });
 
 const TABLES = [
-  "Agent", "Workspace",
+  "Workspace",
   "Session", "Message", "SessionSummary",
-  "AgentFact", "WorkspaceFact", "UserFact",
+  "WorkspaceFact",
   "Document", "MemoryFragment",
 ];
 

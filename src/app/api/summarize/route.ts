@@ -139,9 +139,14 @@ export async function POST(req: NextRequest) {
         }),
         // Upsert facts — always per-workspace for full isolation
         ...(workspaceId
-          ? Object.entries(newFacts).map(([key, value]) => {
+          ? Object.entries(newFacts).map(async ([key, value]) => {
               const serialized = serializeFactValue(value);
               if (!serialized) return null;
+              const existing = await db.workspaceFact.findUnique({
+                where: { workspaceId_key: { workspaceId, key } },
+                select: { pinned: true, forgotten: true },
+              });
+              if (existing?.pinned || existing?.forgotten) return null;
               return db.workspaceFact.upsert({
                 where:  { workspaceId_key: { workspaceId, key } },
                 update: { value: serialized, source: sessionId },

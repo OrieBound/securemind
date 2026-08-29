@@ -1,6 +1,8 @@
 # SecureMind
 
-Security-focused cloud-operations knowledge assistant: sanitize sensitive text before it leaves the browser, keep workspace memory, and answer from retrieved evidence with citations.
+A privacy-aware AI workspace for managing models, knowledge, memory, cost, and sensitive-data risk.
+
+SecureMind helps you detect and reduce sensitive-data exposure before chat and Knowledge ingest, keep workspace memory, and answer from retrieved evidence with citations. It does **not** guarantee complete PII removal, security, or regulatory compliance. You remain responsible for reviewing content, configuring controls, and meeting any obligations that apply to you.
 
 **Stack:** Next.js 16 · TypeScript · Prisma 7 · Neon Postgres (pgvector) · Groq (primary) · Ollama (embeddings + fallback)
 
@@ -10,7 +12,7 @@ Security-focused cloud-operations knowledge assistant: sanitize sensitive text b
 
 ## What works today
 
-- **Client-side redaction** with pre-send review (no path that sends the raw detected value)
+- **Client-side detection** with pre-send review (detected values are replaced; the scan can miss values)
 - **Safe terms** (CIDR / domain / prefix / literal); SSN, card numbers, and secrets cannot be allowlisted
 - **Workspaces** with Chat, Knowledge, Memory, Saved
 - **Knowledge ingest** for text, PDF, code, and images (images use Groq vision when configured; extracted text is scrubbed)
@@ -18,7 +20,7 @@ Security-focused cloud-operations knowledge assistant: sanitize sensitive text b
 - **Citations + citation audit** against retrieved fragments
 - **Prompt-injection fencing** on retrieved evidence
 - **Complexity-tier model routing** (Groq / Ollama; optional Bedrock)
-- **Security / Usage / Cost analytics** at `/analytics/*` (persisted sanitized telemetry; Insights rail shows compact summaries)
+- **Security / Usage / Cost analytics** at `/analytics/*` (persisted sanitized telemetry; Insights rail for routing, spend, and detection)
 - **CI** on GitHub Actions (`npm ci`, Prisma generate, typecheck, tests)
 
 ## Requirements
@@ -45,16 +47,35 @@ npm run dev
 
 Open http://localhost:3000.
 
-### Optional: Floci (local AWS emulator, $0)
+### On-prem (Docker only — recommended for download-and-run)
+
+Full stack: Postgres + Floci + Ollama + app. **No Node on the host.**
 
 ```bash
-docker compose up -d floci
-npm run floci:cognito    # writes scripts/.floci-cognito.env — merge into .env.local
+docker compose up --build
 ```
 
-Keep Neon as the database unless you deliberately point at Compose Postgres. Floci is for Cognito/API rehearsal, not a requirement for daily use.
+Sign in: `admin@example.test` / `<demo-password>!`
 
-Demo Cognito user (after setup): `demo@securemind.local` / `<demo-password>!`
+See **[docs/deploy/on-prem-docker.md](docs/deploy/on-prem-docker.md)** for tear-down, Groq BYOK, and developer vs shipping workflows.
+
+### Optional: Floci + host dev (contributors)
+
+Full internal rundown (what Floci mirrors vs App Runner / Aurora / Bedrock):  
+**[docs/deploy/floci-local.md](docs/deploy/floci-local.md)**
+
+```bash
+docker compose up -d          # Postgres + Floci
+npm run floci:cognito         # writes scripts/.floci-cognito.env — merge into .env.local
+```
+
+For a disposable local instance, point `DATABASE_URL` / `DIRECT_URL` at Compose Postgres (see the doc), not your daily Neon.
+
+Demo Cognito users (after setup), password `<demo-password>!`:
+
+- `admin@example.test` (group Admin)
+- `member@securemind.local` (group Member)
+- `demo@securemind.local` (legacy Admin)
 
 ### Without Ollama
 
@@ -73,8 +94,10 @@ Chat falls back to Ollama. Image Knowledge extract falls back to a filename stub
 | `npm test` | Vitest |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
-| `npm run docker:up` / `docker:down` | Compose Postgres + Floci |
+| `npm run docker:up` / `docker:down` | Compose infra (db + floci + ollama + default model pull) for host `npm run dev` |
+| `npm run docker:onprem` / `docker:onprem:down` | Full on-prem stack (`docker compose up --build` / `down -v`) |
 | `npm run floci:cognito` | Provision local Cognito pool/client |
+| `npm run infra:up` / `infra:wire` / `infra:down` | Sandbox Terraform apply / URL wiring / destroy — see [infra/README.md](infra/README.md) |
 
 ## Architecture (short)
 
@@ -89,10 +112,12 @@ Evidence for answers comes from workspace Knowledge + memory fragments. Retrieve
 
 ## Security model
 
-1. Browser scrub before any network call  
-2. Pre-send review of the exact sanitized payload  
-3. Server scrub again on document ingest  
-4. No restore path for redacted values  
+These are **risk-reduction** controls, not a security or compliance guarantee. Detection is pattern-based and can miss values.
+
+1. Browser scan before any network call; detected values are replaced  
+2. Pre-send review of the text that would be sent  
+3. Server scan again on document ingest  
+4. No restore path for already-replaced values  
 5. `userId` only from `getIdentity(req)` — never from the client body  
 
 ## Limitations
@@ -106,7 +131,9 @@ Evidence for answers comes from workspace Knowledge + memory fragments. Retrieve
 
 ## Docs
 
-- [`docs/PRODUCT_THESIS.md`](docs/PRODUCT_THESIS.md) — original product notes (some phase labels are dated)
+- [`docs/securemind-education-guide.md`](docs/securemind-education-guide.md) — full project walkthrough and dependency guide
+- [`docs/README.md`](docs/README.md) — docs index
 - [`docs/adr/0002-storage-choice.md`](docs/adr/0002-storage-choice.md) — why Neon/Postgres + pgvector
 - [`docs/adr/0003-local-aws-scaffolding.md`](docs/adr/0003-local-aws-scaffolding.md) — Floci + Compose
+- [`docs/adr/0004-amplify-lambda-hosting.md`](docs/adr/0004-amplify-lambda-hosting.md) — Amplify UI + API Gateway + Lambda
 - [`AGENTS.md`](AGENTS.md) — rules for agents working in this repo

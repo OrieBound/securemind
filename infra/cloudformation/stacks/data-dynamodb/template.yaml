@@ -1,0 +1,81 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  SecureMind hosted Knowledge fragment table (ADR 0007).
+  PAY_PER_REQUEST is required for DynamoDB vector indexes.
+  VectorIndexes settings are immutable after create — lock EmbedDimensions first.
+  Floci does not emulate SearchVectors; local setup uses scripts/floci-dynamodb-setup.mjs
+  (item API only). Do not apply this stack to a real AWS account until you intend to.
+
+Parameters:
+  EnvName:
+    Type: String
+    Default: lab
+  EmbedDimensions:
+    Type: Number
+    Default: 1024
+    AllowedValues: [768, 1024]
+    Description: 768 = Ollama nomic-embed-text (local). 1024 = Bedrock Titan v2 (hosted).
+
+Resources:
+  FragmentsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub "securemind-fragments-${EnvName}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: workspaceId
+          AttributeType: S
+        - AttributeName: fragmentId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: category
+          AttributeType: S
+      KeySchema:
+        - AttributeName: workspaceId
+          KeyType: HASH
+        - AttributeName: fragmentId
+          KeyType: RANGE
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: false
+      Tags:
+        - Key: Project
+          Value: SecureMind
+        - Key: Env
+          Value: !Ref EnvName
+      # Native vector index (real AWS). Unknown to older cfn-lint; required on hosted tables.
+      VectorIndexes:
+        - IndexName: workspace-vectors
+          VectorAttribute:
+            AttributeName: embedding
+          Dimensions: !Ref EmbedDimensions
+          DistanceFunction: COSINE
+          Projection:
+            ProjectionType: ALL
+          SearchSchema:
+            - AttributeName: workspaceId
+              SearchSchemaElementType: HASH
+            - AttributeName: userId
+              SearchSchemaElementType: INLINE_FILTER
+            - AttributeName: category
+              SearchSchemaElementType: INLINE_FILTER
+
+Outputs:
+  FragmentsTableName:
+    Value: !Ref FragmentsTable
+    Export:
+      Name: !Sub "securemind-${EnvName}-FragmentsTableName"
+  FragmentsTableArn:
+    Value: !GetAtt FragmentsTable.Arn
+    Export:
+      Name: !Sub "securemind-${EnvName}-FragmentsTableArn"
+  VectorIndexName:
+    Value: workspace-vectors
+  EmbedDimensions:
+    Value: !Ref EmbedDimensions
+  StackMode:
+    Value: dynamodb-fragments

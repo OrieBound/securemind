@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -13,10 +13,16 @@ import {
   Area,
   AreaChart,
 } from "recharts";
-import { AnalyticsShell, rangeLabelOf, useAnalyticsFilters } from "./analytics-shell";
+import {
+  AnalyticsShell,
+  rangeLabelOf,
+  useAnalyticsFilters,
+  type InsightsSubjectScope,
+} from "./analytics-shell";
 import { ChartFrame } from "./chart-frame";
+import { tooltipStyle, useChartTheme } from "./use-chart-theme";
 import { KpiCard } from "./kpi-card";
-import { fetchAnalyticsJson } from "@/lib/analytics/client";
+import { useAnalyticsQuery } from "./use-analytics-query";
 
 type WorkspaceOpt = { id: string; name: string };
 
@@ -33,6 +39,7 @@ type SecurityPayload = {
   byCategory: { category: string; count: number }[];
   byOutcome: { outcome: string; count: number }[];
   bySource: { source: string; count: number }[];
+  byDocument: { documentId: string; name: string; count: number }[];
   byWorkspace: { workspaceId: string; name: string; count: number }[];
   overTime: Record<string, string | number>[];
   events: {
@@ -43,41 +50,42 @@ type SecurityPayload = {
     outcome: string;
     source: string;
     count: number;
+    resourceKind?: string | null;
+    resourceId?: string | null;
+    resourceName?: string | null;
   }[];
 };
 
-const CHART_COLORS = ["#818cf8", "#34d399", "#fbbf24", "#f472b6", "#22d3ee", "#a78bfa"];
+const SOURCE_LABELS: Record<string, string> = {
+  investigate: "Chat",
+  knowledge_document: "Knowledge document",
+  image_ocr: "Image OCR",
+};
 
-type Props = { workspaces: WorkspaceOpt[] };
+function sourceLabel(source: string) {
+  return SOURCE_LABELS[source] ?? source;
+}
 
-export function SecurityAnalyticsView({ workspaces }: Props) {
+
+type Props = {
+  workspaces: WorkspaceOpt[];
+  subject?: InsightsSubjectScope | null;
+  onBackToAdmin?: () => void;
+};
+
+export function SecurityAnalyticsView({ workspaces, subject = null, onBackToAdmin }: Props) {
+  const chart = useChartTheme();
   const { range, setRange, workspaceId, setWorkspaceId } = useAnalyticsFilters("30d");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [riskFilter, setRiskFilter] = useState("all");
   const [sourceFilter, setSourceFilter] = useState("all");
   const [outcomeFilter, setOutcomeFilter] = useState("all");
-  const [data, setData] = useState<SecurityPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    fetchAnalyticsJson<SecurityPayload>("security", { range, workspaceId })
-      .then(d => {
-        if (!cancelled) setData(d);
-      })
-      .catch(e => {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [range, workspaceId]);
+  const asUser = subject?.userId ?? null;
+  const { data, loading, error, retry } = useAnalyticsQuery<SecurityPayload>("security", {
+    range,
+    workspaceId,
+    asUser,
+  });
 
   const rangeLabel = rangeLabelOf(range);
   const workspaceLabel =
@@ -111,12 +119,14 @@ export function SecurityAnalyticsView({ workspaces }: Props) {
     <AnalyticsShell
       active="security"
       title="Security"
-      subtitle="Sanitized finding metadata only — raw detected values are never stored or charted."
+      subtitle="Detected-finding metadata only — raw matched values are not stored or charted. Detection is best-effort."
       workspaces={workspaces}
       range={range}
       workspaceId={workspaceId}
       onRangeChange={setRange}
       onWorkspaceChange={setWorkspaceId}
+      subject={subject}
+      onBackToAdmin={onBackToAdmin}
       extraFilters={
         <>
           <FilterSelect label="Category" value={categoryFilter} onChange={setCategoryFilter} options={categories} />
@@ -141,6 +151,14 @@ export function SecurityAnalyticsView({ workspaces }: Props) {
         </>
       }
     >
+      {error && (
+        <div className="flex items-center gap-3 text-sm text-destructive">
+          <span>{error}</span>
+          <button type="button" onClick={retry} className="underline text-foreground">
+            Retry
+          </button>
+        </div>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         <KpiCard label="Total findings" value={loading ? "…" : String(data?.kpis.totalFindings ?? 0)} />
         <KpiCard label="High-risk blocked" value={loading ? "…" : String(data?.kpis.highRiskBlocked ?? 0)} />
@@ -175,11 +193,11 @@ export function SecurityAnalyticsView({ workspaces }: Props) {
         >
           <ResponsiveContainer width="100%" height={240}>
             <AreaChart data={data?.overTime ?? []}>
-              <CartesianGrid stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="date" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} />
-              <YAxis tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} allowDecimals={false} />
+              <CartesianGrid stroke={chart.grid} />
+              <XAxis dataKey="date" tick={{ fill: chart.tick, fontSize: 11 }} />
+              <YAxis tick={{ fill: chart.tick, fontSize: 11 }} allowDecimals={false} />
               <Tooltip
-                contentStyle={{ background: "#111827", border: "1px solid rgba(255,255,255,0.1)" }}
+                contentStyle={tooltipStyle(chart)}
               />
               <Legend />
               {overTimeKeys.map((k, i) => (
@@ -188,8 +206,8 @@ export function SecurityAnalyticsView({ workspaces }: Props) {
                   type="monotone"
                   dataKey={k}
                   stackId="1"
-                  stroke={CHART_COLORS[i % CHART_COLORS.length]}
-                  fill={CHART_COLORS[i % CHART_COLORS.length]}
+                  stroke={chart.series[i % chart.series.length]}
+                  fill={chart.series[i % chart.series.length]}
                   fillOpacity={0.35}
                 />
               ))}
@@ -210,16 +228,16 @@ export function SecurityAnalyticsView({ workspaces }: Props) {
         >
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={data?.byCategory ?? []} layout="vertical" margin={{ left: 24 }}>
-              <CartesianGrid stroke="rgba(255,255,255,0.06)" horizontal={false} />
-              <XAxis type="number" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} allowDecimals={false} />
+              <CartesianGrid stroke={chart.grid} horizontal={false} />
+              <XAxis type="number" tick={{ fill: chart.tick, fontSize: 11 }} allowDecimals={false} />
               <YAxis
                 type="category"
                 dataKey="category"
                 width={100}
-                tick={{ fill: "rgba(255,255,255,0.55)", fontSize: 11 }}
+                tick={{ fill: chart.tick, fontSize: 11 }}
               />
-              <Tooltip contentStyle={{ background: "#111827", border: "1px solid rgba(255,255,255,0.1)" }} />
-              <Bar dataKey="count" fill="#818cf8" name="Findings" />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
+              <Bar dataKey="count" fill={chart.series[0]} name="Findings" />
             </BarChart>
           </ResponsiveContainer>
         </ChartFrame>
@@ -237,11 +255,11 @@ export function SecurityAnalyticsView({ workspaces }: Props) {
         >
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={data?.byOutcome ?? []}>
-              <CartesianGrid stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="outcome" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} />
-              <YAxis tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} allowDecimals={false} />
-              <Tooltip contentStyle={{ background: "#111827", border: "1px solid rgba(255,255,255,0.1)" }} />
-              <Bar dataKey="count" fill="#34d399" name="Events" />
+              <CartesianGrid stroke={chart.grid} />
+              <XAxis dataKey="outcome" tick={{ fill: chart.tick, fontSize: 11 }} />
+              <YAxis tick={{ fill: chart.tick, fontSize: 11 }} allowDecimals={false} />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
+              <Bar dataKey="count" fill={chart.series[3]} name="Events" />
             </BarChart>
           </ResponsiveContainer>
         </ChartFrame>
@@ -255,19 +273,51 @@ export function SecurityAnalyticsView({ workspaces }: Props) {
           error={error}
           empty={!loading && (data?.bySource.length ?? 0) === 0}
           tableHeaders={["Source", "Count"]}
-          tableRows={(data?.bySource ?? []).map(r => [r.source, r.count])}
+          tableRows={(data?.bySource ?? []).map(r => [sourceLabel(r.source), r.count])}
         >
           <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={data?.bySource ?? []} layout="vertical" margin={{ left: 16 }}>
-              <CartesianGrid stroke="rgba(255,255,255,0.06)" horizontal={false} />
-              <XAxis type="number" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} allowDecimals={false} />
-              <YAxis type="category" dataKey="source" width={120} tick={{ fill: "rgba(255,255,255,0.55)", fontSize: 11 }} />
-              <Tooltip contentStyle={{ background: "#111827", border: "1px solid rgba(255,255,255,0.1)" }} />
-              <Bar dataKey="count" fill="#22d3ee" name="Findings" />
+            <BarChart
+              data={(data?.bySource ?? []).map(r => ({ ...r, label: sourceLabel(r.source) }))}
+              layout="vertical"
+              margin={{ left: 16 }}
+            >
+              <CartesianGrid stroke={chart.grid} horizontal={false} />
+              <XAxis type="number" tick={{ fill: chart.tick, fontSize: 11 }} allowDecimals={false} />
+              <YAxis type="category" dataKey="label" width={130} tick={{ fill: chart.tick, fontSize: 11 }} />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
+              <Bar dataKey="count" fill={chart.series[1]} name="Findings" />
             </BarChart>
           </ResponsiveContainer>
         </ChartFrame>
       </div>
+
+      <ChartFrame
+        title="By document"
+        interpretation="Knowledge / OCR findings grouped by the uploaded file that was scanned. Filenames only — never the matched values."
+        rangeLabel={rangeLabel}
+        workspaceLabel={workspaceLabel}
+        loading={loading}
+        error={error}
+        empty={!loading && (data?.byDocument?.length ?? 0) === 0}
+        tableHeaders={["Document", "Count"]}
+        tableRows={(data?.byDocument ?? []).map(r => [r.name, r.count])}
+      >
+        <ResponsiveContainer width="100%" height={220}>
+          <BarChart data={data?.byDocument ?? []} layout="vertical" margin={{ left: 16 }}>
+            <CartesianGrid stroke={chart.grid} horizontal={false} />
+            <XAxis type="number" tick={{ fill: chart.tick, fontSize: 11 }} allowDecimals={false} />
+            <YAxis
+              type="category"
+              dataKey="name"
+              width={160}
+              tick={{ fill: chart.tick, fontSize: 11 }}
+              tickFormatter={(v: string) => (v.length > 28 ? `${v.slice(0, 26)}…` : v)}
+            />
+            <Tooltip contentStyle={tooltipStyle(chart)} />
+            <Bar dataKey="count" fill={chart.series[4]} name="Findings" />
+          </BarChart>
+        </ResponsiveContainer>
+      </ChartFrame>
 
       <ChartFrame
         title="Workspace comparison"
@@ -282,43 +332,47 @@ export function SecurityAnalyticsView({ workspaces }: Props) {
       >
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={data?.byWorkspace ?? []} layout="vertical" margin={{ left: 16 }}>
-            <CartesianGrid stroke="rgba(255,255,255,0.06)" horizontal={false} />
-            <XAxis type="number" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} allowDecimals={false} />
-            <YAxis type="category" dataKey="name" width={140} tick={{ fill: "rgba(255,255,255,0.55)", fontSize: 11 }} />
-            <Tooltip contentStyle={{ background: "#111827", border: "1px solid rgba(255,255,255,0.1)" }} />
-            <Bar dataKey="count" fill="#a78bfa" name="Findings" />
+            <CartesianGrid stroke={chart.grid} horizontal={false} />
+            <XAxis type="number" tick={{ fill: chart.tick, fontSize: 11 }} allowDecimals={false} />
+            <YAxis type="category" dataKey="name" width={140} tick={{ fill: chart.tick, fontSize: 11 }} />
+            <Tooltip contentStyle={tooltipStyle(chart)} />
+            <Bar dataKey="count" fill={chart.series[2]} name="Findings" />
           </BarChart>
         </ResponsiveContainer>
       </ChartFrame>
 
-      <section className="rounded-xl border border-white/10 bg-white/[0.03] p-4 sm:p-5">
-        <h3 className="text-sm font-semibold text-white/90 mb-3">Event history</h3>
-        {loading && <p className="text-sm text-white/40">Loading…</p>}
+      <section className="rounded-xl border border-foreground/10 bg-foreground/[0.03] p-4 sm:p-5">
+        <h3 className="text-sm font-semibold text-foreground/90 mb-3">Event history</h3>
+        {loading && <p className="text-sm text-foreground/40">Loading…</p>}
         {error && <p className="text-sm text-rose-300/80">{error}</p>}
         {!loading && !error && filteredEvents.length === 0 && (
-          <p className="text-sm text-white/35">No security events in this filter set yet.</p>
+          <p className="text-sm text-foreground/35">No security events in this filter set yet.</p>
         )}
         {!loading && filteredEvents.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-xs text-left">
               <thead>
-                <tr className="text-white/40 border-b border-white/10">
+                <tr className="text-foreground/40 border-b border-foreground/10">
                   <th className="py-2 pr-3">When</th>
                   <th className="py-2 pr-3">Category</th>
                   <th className="py-2 pr-3">Risk</th>
                   <th className="py-2 pr-3">Outcome</th>
                   <th className="py-2 pr-3">Source</th>
+                  <th className="py-2 pr-3">Document / detail</th>
                   <th className="py-2">Count</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredEvents.slice(0, 100).map(e => (
-                  <tr key={e.id} className="border-b border-white/5 text-white/70">
+                  <tr key={e.id} className="border-b border-foreground/5 text-foreground/70">
                     <td className="py-2 pr-3 whitespace-nowrap">{new Date(e.at).toLocaleString()}</td>
                     <td className="py-2 pr-3">{e.category}</td>
                     <td className="py-2 pr-3">{e.riskLevel}</td>
                     <td className="py-2 pr-3">{e.outcome}</td>
-                    <td className="py-2 pr-3">{e.source}</td>
+                    <td className="py-2 pr-3">{sourceLabel(e.source)}</td>
+                    <td className="py-2 pr-3 max-w-[220px] truncate" title={e.resourceName ?? undefined}>
+                      {e.resourceName ?? "—"}
+                    </td>
                     <td className="py-2 tabular-nums">{e.count}</td>
                   </tr>
                 ))}
@@ -343,12 +397,12 @@ function FilterSelect({
   options: string[];
 }) {
   return (
-    <label className="text-xs text-white/45">
+    <label className="text-xs text-foreground/45">
       {label}
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="mt-1 block rounded-md border border-white/10 bg-black/30 px-2.5 py-1.5 text-sm text-white/85"
+        className="mt-1 block rounded-md border border-foreground/10 bg-foreground/[0.06] px-2.5 py-1.5 text-sm text-foreground/85"
       >
         <option value="all">All</option>
         {options.map(o => (

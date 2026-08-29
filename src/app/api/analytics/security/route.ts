@@ -6,6 +6,7 @@ import {
   getSecuritySummary,
   resolveWorkspaceScope,
 } from "@/lib/analytics/queries";
+import { resolveAnalyticsSubject } from "@/lib/analytics/subject";
 import { recordSecurityEvents } from "@/lib/analytics/write";
 import type { AnalyticsRange, SecurityOutcome, SecuritySource } from "@/lib/analytics/types";
 import { riskLevelForCategory } from "@/lib/analytics/types";
@@ -21,9 +22,9 @@ const OUTCOMES = new Set<SecurityOutcome>([
 ]);
 
 export async function GET(req: NextRequest) {
-  let userId: string;
+  let identity;
   try {
-    ({ userId } = await getIdentity(req));
+    identity = await getIdentity(req);
   } catch (err) {
     if (err instanceof IdentityError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
@@ -32,18 +33,23 @@ export async function GET(req: NextRequest) {
   }
 
   const url = new URL(req.url);
+  const subject = await resolveAnalyticsSubject(identity, url.searchParams.get("asUser"));
+  if (!subject.ok) {
+    return NextResponse.json({ error: subject.error }, { status: subject.status });
+  }
+
   const rangeParam = (url.searchParams.get("range") ?? "30d") as AnalyticsRange;
   const range = RANGES.has(rangeParam) ? rangeParam : "30d";
   const workspaceParam = url.searchParams.get("workspaceId");
 
-  const scope = await resolveWorkspaceScope(userId, workspaceParam);
+  const scope = await resolveWorkspaceScope(subject.userId, workspaceParam);
   if (!scope.ok) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
   }
 
   try {
     const summary = await getSecuritySummary({
-      userId,
+      userId: subject.userId,
       range,
       workspaceId: scope.workspaceId,
     });

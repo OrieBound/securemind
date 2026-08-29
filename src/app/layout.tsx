@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { ThemeProvider } from "@/components/app/theme-provider";
+import { PRODUCT_DESCRIPTION, PRODUCT_TITLE } from "@/lib/branding";
+import { THEME_BOOT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
+/* Geist is a variable font — weight axis covers 400–700 without synthetic bold. */
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -13,9 +17,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SecureMind — Adaptive intelligence workspace",
-  description:
-    "SecureMind Phase A scaffold: layered memory UX, mocked cognition overlays, retrieval-driven cognition shell.",
+  title: PRODUCT_TITLE,
+  description: PRODUCT_DESCRIPTION,
 };
 
 export default function RootLayout({
@@ -26,9 +29,16 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased dark`}
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="h-full flex flex-col">{children}</body>
+      <head>
+        {/* Apply saved theme before first paint — dark is the default. */}
+        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
+      </head>
+      <body className="h-full flex flex-col">
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
     </html>
   );
 }
