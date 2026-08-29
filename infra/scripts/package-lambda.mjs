@@ -28,11 +28,21 @@ function run(cmd, args, opts = {}) {
   if (r.status !== 0) fail(`${cmd} ${args.join(" ")} exited ${r.status}`);
 }
 
-function esbuildBin() {
-  const name = process.platform === "win32" ? "esbuild.cmd" : "esbuild";
-  const local = path.join(ROOT, "node_modules", ".bin", name);
+function bin(name, hint) {
+  const filename = process.platform === "win32" ? `${name}.cmd` : name;
+  const local = path.join(ROOT, "node_modules", ".bin", filename);
   if (existsSync(local)) return local;
-  fail("esbuild not found. Run npm install (esbuild is a devDependency).");
+  fail(`${name} not found. ${hint}`);
+}
+
+function esbuildBin() {
+  return bin("esbuild", "Run npm install (esbuild is a devDependency).");
+}
+
+/** Chat Lambda pulls in @prisma/client; generate before esbuild or the bundle fails. */
+function prismaGenerate() {
+  console.log("Generating Prisma client…");
+  run(bin("prisma", "Run npm install (prisma is a dependency)."), ["generate"]);
 }
 
 function zipDir(dir, zipPath) {
@@ -69,6 +79,8 @@ function main() {
   rmSync(STAGE, { recursive: true, force: true });
   mkdirSync(path.join(STAGE, "warm"), { recursive: true });
   mkdirSync(path.join(STAGE, "chat"), { recursive: true });
+
+  prismaGenerate();
 
   console.log("Bundling warm Lambda…");
   bundle({

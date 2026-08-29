@@ -94,10 +94,11 @@ data "aws_iam_policy_document" "gha_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
+      # GitHub's `sub` is not always exactly environment:NAME / pull_request.
+      # A suffix (ref, job_workflow_ref, etc.) makes exact values fail with
+      # Not authorized to perform sts:AssumeRoleWithWebIdentity.
       values = [
-        "repo:${local.repo}:environment:${var.github_environment}",
-        "repo:${local.repo}:ref:refs/heads/main",
-        "repo:${local.repo}:pull_request",
+        "repo:${local.repo}:*",
       ]
     }
   }
