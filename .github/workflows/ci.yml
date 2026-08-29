@@ -66,6 +66,9 @@ jobs:
         run: npm ci
 
       - name: Package Lambdas
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
         run: |
           sudo apt-get update -qq && sudo apt-get install -y zip
           node infra/scripts/package-lambda.mjs
@@ -130,6 +133,9 @@ jobs:
         run: npm ci
 
       - name: Package Lambdas
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
         run: |
           sudo apt-get update -qq && sudo apt-get install -y zip
           node infra/scripts/package-lambda.mjs
