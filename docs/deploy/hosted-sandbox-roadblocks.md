@@ -86,7 +86,7 @@ This is **layer 1** (may this job *become* the role?), not missing `lambda:*` on
 
 **Cause:** Not a missing database. Amplify **WEB_COMPUTE** caps the uncompressed SSR package at **220 MB**. Next file-tracing copies every library imported by **every** compiled server route. Chat/warm already go to API Gateway; **workspaces, documents, settings, memory** still run as same-origin Next `/api/*` on Amplify, so Prisma, `pg`, AWS SDK, exceljs/mammoth/pdf-parse, plus SWC/esbuild natives, all land in that bundle. We were ~26 MB over.
 
-**Fix (no product change):** On Amplify, skip Next `standalone` output (`AWS_APP_ID` is set; Docker still uses standalone). After `next build`, `infra/scripts/amplify-prune-compute.mjs` drops `.next/standalone`, `.next/cache`, source maps, and build-only `node_modules` (TypeScript, ESLint, Vitest, Prisma CLI, SWC). Dummy `DATABASE_URL` stays generate-only.
+**Fix:** Keep Next `standalone` (Amplify compute needs it to boot). After `next build`, prune **inside** standalone plus `.next/cache` / source maps / build-only packages (`infra/scripts/amplify-prune-compute.mjs`). Skipping standalone got a “Deployed” job that served HTTP 500 empty HTML. Dummy `DATABASE_URL` stays generate-only.
 
 We did **not** delete `/api/workspaces` or `/api/documents` from the Amplify app. Hosted UI still calls those same-origin. Chat/warm already go to API Gateway. Removing the rest without moving them to Lambda would break the site.
 
