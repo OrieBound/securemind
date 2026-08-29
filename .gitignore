@@ -56,7 +56,9 @@ scripts/.floci-dynamodb.env
 !.env.example
 !.env.onprem.example
 !infra/env.deploy.example
-aws-credentials*
+# Credential dumps at repo root — not src/lib/aws-credentials.ts (SDK chain helper).
+/aws-credentials*
+/aws-credentials.json
 serviceAccountKey*
 
 # vercel
