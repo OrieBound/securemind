@@ -1,5 +1,5 @@
 /**
- * Seed script — populates the database with sample operational workspaces.
+ * Seed script — populates the database with the default Mindy Locke workspace.
  * Run with: npx tsx prisma/seed.ts
  */
 import { config } from "dotenv";
@@ -17,19 +17,18 @@ async function main() {
   console.log("Seeding SecureMind database...");
 
   await db.workspaceFact.deleteMany({ where: { userId: "local" } });
-  await db.userFact.deleteMany({ where: { userId: "local" } });
   await db.workspace.deleteMany({ where: { userId: "local" } });
 
-  const payments = await db.workspace.create({
+  const mindy = await db.workspace.create({
     data: {
       userId:      "local",
-      name:        "Production Payments",
-      emoji:       "💳",
+      name:        "Mindy Locke",
+      emoji:       "🛡️",
       color:       "#6366f1",
-      description: "Stripe, PCI-scoped services, settlement",
+      description: "Runbooks, incidents, architecture, and operational knowledge.",
       context:
-        "Covers the production payment processing stack: Stripe integration, " +
-        "PCI-scoped infrastructure, settlement jobs, and related runbooks.",
+        "Default personal ops workspace: runbooks, incident notes, architecture " +
+        "decisions, and operational knowledge used for evidence-grounded answers.",
       isDefault: true,
     },
   });
@@ -37,7 +36,7 @@ async function main() {
   const session1 = await db.session.create({
     data: {
       userId:      "local",
-      workspaceId: payments.id,
+      workspaceId: mindy.id,
       title:       "Auth failures after deploy",
     },
   });
@@ -66,59 +65,29 @@ async function main() {
     data: {
       sessionId:    session1.id,
       summary:
-        "Investigating authentication failures after a production payments deploy. " +
+        "Investigating authentication failures after a deploy. " +
         "Suspects include JWT audience mismatch, incomplete secret rotation, and readiness probe changes.",
       turnsCovered: 2,
-    },
-  });
-
-  const portal = await db.workspace.create({
-    data: {
-      userId:      "local",
-      name:        "Customer Portal",
-      emoji:       "🌐",
-      color:       "#0ea5e9",
-      description: "Public portal, CDN, Cognito",
-      context:
-        "Customer-facing portal: CloudFront, Cognito user pools, API Gateway, " +
-        "and the operational standards for public endpoints.",
-      isDefault: false,
-    },
-  });
-
-  await db.session.create({
-    data: {
-      userId:      "local",
-      workspaceId: portal.id,
-      title:       "CDN cache invalidation",
     },
   });
 
   await db.workspaceFact.createMany({
     data: [
       {
-        workspaceId: payments.id,
-        userId:      "local",
-        key:         "primary_processor",
-        value:       "Stripe",
-        confidence:  1.0,
-        source:      session1.id,
-      },
-      {
-        workspaceId: payments.id,
+        workspaceId: mindy.id,
         userId:      "local",
         key:         "scope",
-        value:       "PCI",
-        confidence:  0.9,
+        value:       "ops knowledge + runbooks",
+        confidence:  1.0,
         source:      session1.id,
       },
     ],
   });
 
   console.log("Seed complete!");
-  console.log(`   Workspaces: 2 (${payments.name}, ${portal.name})`);
-  console.log("   Sessions:   2");
-  console.log("   Messages:   2");
+  console.log(`   Workspace: ${mindy.name}`);
+  console.log("   Sessions:  1");
+  console.log("   Messages:  2");
 }
 
 main()

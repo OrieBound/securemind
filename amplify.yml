@@ -1,0 +1,26 @@
+# Amplify Hosting buildspec (UI). Amplify runs this after GitHub Actions StartJob.
+# Chat/warm use API Gateway when NEXT_PUBLIC_API_BASE_URL is set.
+# DATABASE_URL/DIRECT_URL here are generate-only dummies (CI same pattern). Hosted
+# runtime data is DynamoDB; do not point these at a real cloud Postgres.
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - export DATABASE_URL="${DATABASE_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
+        - export DIRECT_URL="${DIRECT_URL:-$DATABASE_URL}"
+        - npm ci
+        - npx prisma generate
+    build:
+      commands:
+        - export DATABASE_URL="${DATABASE_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
+        - export DIRECT_URL="${DIRECT_URL:-$DATABASE_URL}"
+        - npm run build
+  artifacts:
+    baseDirectory: .next
+    files:
+      - "**/*"
+  cache:
+    paths:
+      - node_modules/**/*
+      - .next/cache/**/*

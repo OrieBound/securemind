@@ -45,9 +45,9 @@ describe("claim units", () => {
 });
 
 describe("auditCitations", () => {
-  it("returns n/a when no evidence was offered", () => {
+  it("returns not_applicable when no evidence was offered", () => {
     const audit = auditCitations("Anything.", []);
-    expect(audit.status).toBe("n/a");
+    expect(audit.status).toBe("not_applicable");
   });
 
   it("marks a fully cited answer as grounded", () => {

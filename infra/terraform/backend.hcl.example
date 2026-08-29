@@ -1,0 +1,8 @@
+# Copy this file to backend.hcl after bootstrap (gitignored via *.hcl? keep example).
+# Then: terraform init -backend-config=backend.hcl
+#
+# bucket         = "securemind-tfstate-ACCOUNT-us-east-1"
+# key            = "securemind/uat/terraform.tfstate"
+# region         = "us-east-1"
+# dynamodb_table = "securemind-tflock-uat"
+# encrypt        = true

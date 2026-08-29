@@ -12,7 +12,6 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # Prisma config reads DIRECT_URL; no live DB is needed for generate/tests.
       DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
       DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
       AUTH_MODE: local
@@ -37,7 +36,140 @@ jobs:
       - name: Unit tests
         run: npm test
 
-      # Pre-existing UI lint debt (react-hooks rules) — do not block merges yet.
       - name: Lint
         continue-on-error: true
         run: npm run lint
+
+  terraform-plan:
+    name: Terraform plan
+    needs: test
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    environment: aws-sandbox
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      TF_VAR_env_name: sandbox
+      TF_VAR_aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Package Lambdas
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y zip
+          node infra/scripts/package-lambda.mjs
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.5"
+
+      - name: Configure AWS (OIDC)
+        if: vars.AWS_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Write backend.hcl
+        if: vars.TF_STATE_BUCKET != ''
+        run: |
+          cat > infra/terraform/backend.hcl <<EOF
+          bucket         = "${{ vars.TF_STATE_BUCKET }}"
+          key            = "securemind/sandbox/terraform.tfstate"
+          region         = "${{ env.AWS_REGION }}"
+          dynamodb_table = "${{ vars.TF_LOCK_TABLE }}"
+          encrypt        = true
+          EOF
+
+      - name: Terraform init / plan
+        if: vars.AWS_ROLE_ARN != '' && vars.TF_STATE_BUCKET != ''
+        working-directory: infra/terraform
+        run: |
+          terraform init -backend-config=backend.hcl -input=false
+          terraform plan -input=false -no-color
+
+      - name: Skip plan (OIDC not configured)
+        if: vars.AWS_ROLE_ARN == '' || vars.TF_STATE_BUCKET == ''
+        run: echo "Set GitHub vars AWS_ROLE_ARN, TF_STATE_BUCKET, TF_LOCK_TABLE after bootstrap. Skipping plan."
+
+  deploy:
+    name: Terraform apply · Amplify StartJob
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: aws-sandbox
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      TF_VAR_env_name: sandbox
+      TF_VAR_aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
+      AMPLIFY_BRANCH: main
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Package Lambdas
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y zip
+          node infra/scripts/package-lambda.mjs
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.14.5"
+
+      - name: Configure AWS (OIDC)
+        if: vars.AWS_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Write backend.hcl
+        if: vars.TF_STATE_BUCKET != ''
+        run: |
+          cat > infra/terraform/backend.hcl <<EOF
+          bucket         = "${{ vars.TF_STATE_BUCKET }}"
+          key            = "securemind/sandbox/terraform.tfstate"
+          region         = "${{ env.AWS_REGION }}"
+          dynamodb_table = "${{ vars.TF_LOCK_TABLE }}"
+          encrypt        = true
+          EOF
+
+      - name: Terraform apply
+        if: vars.AWS_ROLE_ARN != '' && vars.TF_STATE_BUCKET != ''
+        working-directory: infra/terraform
+        run: |
+          terraform init -backend-config=backend.hcl -input=false
+          terraform apply -auto-approve -input=false
+
+      - name: Trigger Amplify build
+        if: vars.AWS_ROLE_ARN != '' && vars.TF_STATE_BUCKET != ''
+        continue-on-error: true
+        run: |
+          APP_ID="$(terraform -chdir=infra/terraform output -raw amplify_app_id)"
+          aws amplify start-job --app-id "$APP_ID" --branch-name "$AMPLIFY_BRANCH" --job-type RELEASE
+
+      - name: Skip apply (OIDC not configured)
+        if: vars.AWS_ROLE_ARN == '' || vars.TF_STATE_BUCKET == ''
+        run: echo "Set GitHub Environment aws-sandbox vars after bootstrap. Skipping apply."

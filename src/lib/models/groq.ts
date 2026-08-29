@@ -16,16 +16,27 @@
 
 import Groq from "groq-sdk";
 import type { ChatMessage } from "./types";
+import { resolveRuntimeSecrets } from "@/lib/instance-config";
+import { isHostedRuntime } from "@/lib/runtime-env";
 
-let _groq: Groq | null = null;
+/** Hosted installs only use an Admin-pasted Groq key, never a product-injected env key. */
+export function selectGroqApiKey(secrets: {
+  groqApiKey: string | null;
+  instanceGroqApiKey?: string | null;
+}): string | null {
+  if (isHostedRuntime()) return secrets.instanceGroqApiKey?.trim() || null;
+  return secrets.groqApiKey?.trim() || null;
+}
 
-function getClient(): Groq {
-  if (!_groq) {
-    const apiKey = process.env.GROQ_API_KEY;
-    if (!apiKey) throw new Error("GROQ_API_KEY is not set in environment variables.");
-    _groq = new Groq({ apiKey });
+async function getClient(): Promise<Groq> {
+  const secrets = await resolveRuntimeSecrets();
+  const groqApiKey = selectGroqApiKey(secrets);
+  if (!groqApiKey) {
+    throw new Error(
+      "GROQ_API_KEY is not set. Add a key in Settings → Providers (Admin) or .env.local.",
+    );
   }
-  return _groq;
+  return new Groq({ apiKey: groqApiKey });
 }
 
 export type GroqUsage = { promptTokens: number; completionTokens: number };
@@ -35,7 +46,7 @@ export async function* streamGroqChat(
   model: string,
   onUsage?: (usage: GroqUsage) => void,
 ): AsyncGenerator<string> {
-  const client = getClient();
+  const client = await getClient();
 
   // Groq accepts content as string or array — pass through as-is
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -104,9 +115,42 @@ export async function* streamGroqChat(
   if (pending && !inThink) yield pending;
 }
 
+/** Sync check for env-only paths (image extract tests). Prefer hasGroqRuntime in chat. */
 export function isGroqAvailable(): boolean {
   return !!process.env.GROQ_API_KEY;
 }
+
+/**
+ * Includes Admin-configured InstanceConfig keys.
+ * Vendor API (Groq) traffic requires external-risk acknowledgment — Bedrock is
+ * gated separately via allowRealAws / the AWS credential chain.
+ */
+export async function hasGroqRuntime(): Promise<boolean> {
+  const secrets = await resolveRuntimeSecrets();
+  return Boolean(selectGroqApiKey(secrets) && secrets.externalRiskAcknowledged);
+}
+
+/** Why Groq cannot run — for actionable Settings links in the chat UI. */
+export async function getGroqUnavailableReason(): Promise<
+  null | "vendor_risk_required" | "missing_key"
+> {
+  const secrets = await resolveRuntimeSecrets();
+  const groqApiKey = selectGroqApiKey(secrets);
+  if (groqApiKey && !secrets.externalRiskAcknowledged) return "vendor_risk_required";
+  if (!groqApiKey) return "missing_key";
+  return null;
+}
+
+export const VENDOR_RISK_REQUIRED_CODE = "VENDOR_RISK_REQUIRED";
+
+export const VENDOR_RISK_REQUIRED_MESSAGE =
+  "Vendor APIs (e.g. Groq) are blocked until you acknowledge the risk in Settings → Providers.";
+
+export const GROQ_NOT_CONFIGURED_CODE = "GROQ_NOT_CONFIGURED";
+
+export const GROQ_NOT_CONFIGURED_MESSAGE =
+  "Groq is not configured. Add a Groq API key in Settings → Providers, " +
+  "or use an installed local Ollama chat model.";
 
 /** Pattern pass — Micro only for true one-liners; real conversation floors at Standard. */
 export function heuristicComplexityTier(
@@ -122,19 +166,19 @@ export function heuristicComplexityTier(
 
   // ── Upper tiers first (never under-tier hard problems) ──
 
-  // Plus — planning, synthesis (between Standard and High)
+  // Plus — planning, synthesis (between Standard and Max)
   if (/\b(help me plan|best approach|think through|walk me through|pros and cons|strategy|roadmap|brainstorm|weigh (the )?options)\b/i.test(lower)) {
     return "Plus";
   }
   if (/\b(compare|evaluate).{0,40}(options|approaches|trade-?offs|paths)\b/i.test(lower)) return "Plus";
   if (/\b(what should i|how should i|advice on|help me decide)\b/i.test(lower) && len > 60) return "Plus";
 
-  // High — technical depth
+  // Max — technical depth (former High)
   if (/\b(debug|refactor|implement|architecture|stack trace|race condition|code review|design a system)\b/i.test(lower) && len > 50) {
-    return "High";
+    return "Max";
   }
-  if (/(```|[{}();]|=>|function\s|async\s|await\s)/.test(m) && len > 40) return "High";
-  if (inDeepThread && len < 140) return "High";
+  if (/(```|[{}();]|=>|function\s|async\s|await\s)/.test(m) && len > 40) return "Max";
+  if (inDeepThread && len < 140) return "Max";
 
   // Max — explicit deep analysis (rare; classifier usually better but catch obvious cases)
   if (/\b(analyze thoroughly|design a (full|complete) system|doctoral|prove that|formal proof)\b/i.test(lower)) {
@@ -156,9 +200,8 @@ export function heuristicComplexityTier(
     return "Micro";
   }
 
-  // Fast — quick factual lookups (still cheap, noticeably better than 8B)
   if (/\b(when was|who is|who was|capital of|how many|what year|define )\b/i.test(lower) && len < 140) {
-    return "Fast";
+    return "Light";
   }
 
   // Standard — casual companion chat, small talk, short general messages
@@ -173,43 +216,19 @@ export function heuristicComplexityTier(
 }
 
 /**
- * Classifies a user message into the appropriate complexity tier.
- *
- * Tiers (most → least complex):
- *   Apex      — deepest multi-step reasoning, architecture, graduate-level analysis
- *   Deep      — strong reasoning, code review, technical analysis, comparisons
- *   Sharp     — above-average: planning, nuanced explanations, creative depth
- *   Standard  — DEFAULT: general conversation, moderate questions, follow-ups
- *   Efficient — clear direct questions, straightforward how-to, simple explanations
- *   Quick     — simple factual lookups, short answers expected
- *   Swift     — greetings, acknowledgments, one-liners ("thanks", "ok", "got it")
- *
- * Context-aware: accepts recent history so follow-up questions stay at the same
- * tier as the preceding exchange (a follow-up to a deep technical discussion
- * should not drop to Swift just because the follow-up message is short).
+ * LLM-only tier pick — used when score-based routing in route-message.ts is ambiguous.
  *
  * Uses llama-3.1-8b-instant at temperature 0 — near-instant, negligible cost.
  * Returns fallback tier unchanged if classification fails or Groq is unavailable.
  */
-export async function classifyComplexity(
-  message: string,
-  fallback: string,
-  recentHistory: { role: "user" | "assistant"; content: string }[] = [],
-): Promise<{ mode: string; wasAuto: boolean }> {
-  const heuristic = heuristicComplexityTier(message, recentHistory);
-  if (heuristic) return { mode: heuristic, wasAuto: true };
-  return classifyComplexityLlm(message, fallback, recentHistory);
-}
-
-/** LLM-only tier pick — used when score-based routing is ambiguous. */
 export async function classifyComplexityLlm(
   message: string,
   fallback: string,
   recentHistory: { role: "user" | "assistant"; content: string }[] = [],
 ): Promise<{ mode: string; wasAuto: boolean }> {
-  if (!isGroqAvailable()) return { mode: fallback, wasAuto: false };
+  if (!(await hasGroqRuntime())) return { mode: fallback, wasAuto: false };
   try {
-    const client = getClient();
+    const client = await getClient();
 
     const contextLines = recentHistory
       .slice(-4)
@@ -227,20 +246,18 @@ export async function classifyComplexityLlm(
           content: `Pick ONE complexity tier for the LATEST user message. Reply with ONLY the tier name.
 ${contextBlock}
 Tiers (most → least complex):
-Max      — system design, deep multi-step analysis, formal proofs, "design a system"
-High     — debugging, code review, complex technical "why does X", code blocks
+Max      — debugging, code review, system design, deep technical work, code blocks
 Plus     — planning, strategy, comparing options, "help me think through", decision advice
 Standard — DEFAULT for companion chat, emotional topics, small talk, general back-and-forth
-Light    — ONLY simple how-to / explain (45+ chars) where step clarity matters — not casual chat
-Fast     — quick factual lookups ("who is", "capital of") — not conversation
+Light    — how-to / explain / quick facts — not casual chat
 Micro    — ONLY one-line acks ("thanks", "ok", "got it", "lol") — never real conversation
 
 RULES:
 1. Casual companion chat → Standard (NOT Micro). Micro is acks only.
-2. Light is for how-to/explain only — not small talk.
-3. Use Plus for planning / decision-help — not Standard or High unless technical.
-4. Short follow-ups in a deep technical thread → High (not Micro).
-5. Escalate to Max only for genuinely deep analysis requests.`,
+2. Light is for how-to, explain, and short facts — not small talk.
+3. Use Plus for planning / decision-help — not Standard or Max unless technical.
+4. Short follow-ups in a deep technical thread → Max (not Micro).
+5. Use Max for genuine technical depth, not everyday chat.`,
         },
         { role: "user", content: message.slice(0, 600) },
       ],
@@ -248,9 +265,11 @@ RULES:
       temperature: 0,
     });
     const raw = (res.choices[0]?.message?.content ?? "").trim();
-    const VALID = ["Max", "High", "Plus", "Standard", "Light", "Fast", "Micro"];
+    const VALID = ["Max", "Plus", "Standard", "Light", "Micro", "High", "Fast"];
     const found = VALID.find(t => raw.startsWith(t));
-    const mode = found ?? fallback;
+    let mode = found ?? fallback;
+    if (mode === "High") mode = "Max";
+    if (mode === "Fast") mode = "Light";
     return { mode, wasAuto: mode !== fallback };
   } catch {
     return { mode: fallback, wasAuto: false };

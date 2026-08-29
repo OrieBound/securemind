@@ -17,6 +17,14 @@ const MAX_NAME = 60;
 const MAX_DESCRIPTION = 140;
 const MAX_CONTEXT = 2000;
 
+const DEFAULT_WORKSPACE_NAME = "Mindy Locke";
+const DEFAULT_WORKSPACE_EMOJI = "🛡️";
+const DEFAULT_WORKSPACE_DESCRIPTION =
+  "Runbooks, incidents, architecture, and operational knowledge.";
+
+/** Prior default names — renamed once so local DBs pick up the new identity. */
+const LEGACY_DEFAULT_NAMES = ["Cloud Operations", "Aegis", "My Workspace"] as const;
+
 function clean(value: unknown, max: number): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -26,7 +34,7 @@ function clean(value: unknown, max: number): string | undefined {
 export async function GET(req: NextRequest) {
   const { userId } = await getIdentity(req);
 
-  const workspaces = await db.workspace.findMany({
+  let workspaces = await db.workspace.findMany({
     where:   { userId },
     orderBy: { createdAt: "asc" },
     include: {
@@ -45,10 +53,10 @@ export async function GET(req: NextRequest) {
     const initial = await db.workspace.create({
       data: {
         userId,
-        name:        "General",
-        emoji:       "🗂️",
+        name:        DEFAULT_WORKSPACE_NAME,
+        emoji:       DEFAULT_WORKSPACE_EMOJI,
         color:       "#6366f1",
-        description: "Default workspace",
+        description: DEFAULT_WORKSPACE_DESCRIPTION,
         isDefault:   true,
       },
       include: {
@@ -56,6 +64,37 @@ export async function GET(req: NextRequest) {
       },
     });
     return Response.json([initial]);
+  }
+
+  // One-time rename of the previous default seed name so the chat speaker
+  // identity matches the new default without a manual Workspace edit.
+  const legacyDefault = workspaces.find(
+    w =>
+      w.isDefault
+      && (LEGACY_DEFAULT_NAMES as readonly string[]).includes(w.name),
+  );
+  if (legacyDefault) {
+    await db.workspace.update({
+      where: { id: legacyDefault.id },
+      data:  {
+        name:        DEFAULT_WORKSPACE_NAME,
+        emoji:       legacyDefault.emoji === "☁️" ? DEFAULT_WORKSPACE_EMOJI : legacyDefault.emoji,
+        description: legacyDefault.description ?? DEFAULT_WORKSPACE_DESCRIPTION,
+      },
+    });
+    workspaces = await db.workspace.findMany({
+      where:   { userId },
+      orderBy: { createdAt: "asc" },
+      include: {
+        sessions: {
+          orderBy: { updatedAt: "desc" },
+          take: 1,
+          include: {
+            messages: { orderBy: { createdAt: "desc" }, take: 1 },
+          },
+        },
+      },
+    });
   }
 
   return Response.json(workspaces);

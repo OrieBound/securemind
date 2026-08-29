@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Nested from Terraform. DynamoDB vector index is not in the AWS provider yet
+  (hashicorp/terraform-provider-aws#49350). Settings are immutable after create.
+
+Parameters:
+  EnvName:
+    Type: String
+  EmbedDimensions:
+    Type: Number
+    AllowedValues: [768, 1024]
+
+Resources:
+  FragmentsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub "securemind-fragments-${EnvName}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: workspaceId
+          AttributeType: S
+        - AttributeName: fragmentId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: category
+          AttributeType: S
+      KeySchema:
+        - AttributeName: workspaceId
+          KeyType: HASH
+        - AttributeName: fragmentId
+          KeyType: RANGE
+      SSESpecification:
+        SSEEnabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: false
+      Tags:
+        - Key: Project
+          Value: SecureMind
+        - Key: Env
+          Value: !Ref EnvName
+      VectorIndexes:
+        - IndexName: workspace-vectors
+          VectorAttribute:
+            AttributeName: embedding
+          Dimensions: !Ref EmbedDimensions
+          DistanceFunction: COSINE
+          Projection:
+            ProjectionType: ALL
+          SearchSchema:
+            - AttributeName: workspaceId
+              SearchSchemaElementType: HASH
+            - AttributeName: userId
+              SearchSchemaElementType: INLINE_FILTER
+            - AttributeName: category
+              SearchSchemaElementType: INLINE_FILTER
+
+Outputs:
+  FragmentsTableName:
+    Value: !Ref FragmentsTable
+  FragmentsTableArn:
+    Value: !GetAtt FragmentsTable.Arn

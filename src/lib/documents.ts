@@ -2,7 +2,7 @@
  * SecureMind document processing pipeline (Phase B).
  *
  * Workflow after a file is uploaded:
- *   1. Extract plain text (PDF → pdf-parse, images → Groq vision / stub, else UTF-8)
+ *   1. Extract plain text (PDF → pdf-parse, DOCX → mammoth, images → Groq vision / stub, else UTF-8)
  *   2. Scrub PII (same patterns as chat) — only sanitized text is persisted
  *   3. Split the text into overlapping 1500-char chunks
  *   4. Embed each chunk via nomic-embed-text (Ollama, zero cost, 768 dims)
@@ -14,10 +14,16 @@
  */
 
 import { db } from "@/lib/db";
-import { embedText } from "@/lib/models/ollama";
-import { DEFAULT_SAFE_TERMS, scrubPII, type ScrubEvent } from "@/lib/pii";
+import { originalExists, readOriginal } from "@/lib/document-storage";
+import { embedText } from "@/lib/models/embed";
+import { mirrorDocumentChunkToDynamo } from "@/lib/storage/dynamodb-ingest";
+import { scrubPII, type ScrubEvent } from "@/lib/pii";
 import { sanitizeRetrievedText } from "@/lib/prompt-guard";
-import { extractTextFromImage } from "@/lib/image-extract";
+import { extractTextFromImage, isFailedExtractContent } from "@/lib/image-extract";
+import { inspectImagePrivacy } from "@/lib/image-privacy";
+import { resolveIngestScrubOptions } from "@/lib/security-policy";
+import { extractCsvSpreadsheet, extractXlsxSpreadsheet } from "@/lib/spreadsheet/parse";
+import type { ChunkProvenance, SpreadsheetTable } from "@/lib/spreadsheet/types";
 
 export { MAX_FILE_BYTES } from "@/lib/documents/constants";
 
@@ -33,11 +39,20 @@ export const ACCEPTED_MIME_TYPES = [
   "text/x-typescript",
   "application/json",
   "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "image/png",
   "image/jpeg",
   "image/webp",
   "image/gif",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
 ];
+
+const DOCX_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const XLSX_MIME =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const XLS_MIME = "application/vnd.ms-excel";
 
 // Extension → MIME fallback (browsers sometimes send "application/octet-stream")
 export const EXT_TO_MIME: Record<string, string> = {
@@ -46,6 +61,7 @@ export const EXT_TO_MIME: Record<string, string> = {
   csv:  "text/csv",
   json: "application/json",
   pdf:  "application/pdf",
+  docx: DOCX_MIME,
   py:   "text/x-python",
   js:   "text/javascript",
   ts:   "text/x-typescript",
@@ -62,7 +78,40 @@ export const EXT_TO_MIME: Record<string, string> = {
   jpeg: "image/jpeg",
   webp: "image/webp",
   gif:  "image/gif",
+  xlsx: XLSX_MIME,
+  xls:  XLS_MIME,
 };
+
+export type DocumentChunkDraft = {
+  content: string;
+  provenance?: ChunkProvenance | null;
+};
+
+export type ExtractedDocument = {
+  text: string;
+  chunks?: DocumentChunkDraft[];
+  extractMeta?: Record<string, unknown>;
+  tables?: SpreadsheetTable[];
+};
+
+export function isAcceptedDocumentType(mimeType: string, filename: string): boolean {
+  if (ACCEPTED_MIME_TYPES.includes(mimeType)) return true;
+  if (mimeType.startsWith("text/")) return true;
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  return Boolean(EXT_TO_MIME[ext]);
+}
+
+export function isSpreadsheetMime(mimeType: string, filename: string): boolean {
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+  return (
+    mimeType === XLSX_MIME ||
+    mimeType === XLS_MIME ||
+    mimeType === "text/csv" ||
+    ext === "xlsx" ||
+    ext === "xls" ||
+    ext === "csv"
+  );
+}
 
 // Chunking settings — optimised for nomic-embed-text (768-dim, max ~512 tokens)
 const CHUNK_SIZE    = 1500; // characters ≈ 375 tokens
@@ -74,18 +123,17 @@ const MIN_CHUNK_LEN = 80;   // discard near-empty chunks
 /**
  * Scrub extracted document text before DB persist or embedding.
  *
- * Only the shipped default safe terms apply here. User-defined safe terms are
- * deliberately not accepted from the client — the server must not take
- * suppression instructions from the browser. They move server-side when safe
- * terms become workspace-scoped DB records.
+ * Safe terms and sensitivity come from the Admin-owned instance security policy
+ * (never from the upload request body). Defaults apply until an Admin sets policy.
  */
-export function scrubDocumentText(raw: string): {
+export async function scrubDocumentText(raw: string): Promise<{
   content: string;
   redactionCount: number;
   scrubEvents: ScrubEvent[];
   hadRedactions: boolean;
-} {
-  const result = scrubPII(raw.trim(), { safeTerms: DEFAULT_SAFE_TERMS });
+}> {
+  const opts = await resolveIngestScrubOptions();
+  const result = scrubPII(raw.trim(), opts);
   // Neutralize instruction-shaped content before persist/embed so poisoned
   // documents cannot sit in the vector store waiting to be retrieved.
   const guarded = sanitizeRetrievedText(result.sanitized.trim());
@@ -100,10 +148,58 @@ export function scrubDocumentText(raw: string): {
 
 // ── text extraction ────────────────────────────────────────────────────────────
 
+export async function extractDocument(
+  buffer: Buffer,
+  mimeType: string,
+  filename = "upload",
+): Promise<ExtractedDocument> {
+  if (isSpreadsheetMime(mimeType, filename)) {
+    const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+    if (mimeType === "text/csv" || ext === "csv") {
+      const extracted = extractCsvSpreadsheet(buffer, filename);
+      return {
+        text: extracted.text,
+        chunks: extracted.chunks,
+        extractMeta: extracted.meta,
+        tables: extracted.tables,
+      };
+    }
+    if (ext === "xls" && mimeType === XLS_MIME) {
+      throw new Error("Legacy .xls is not supported. Save the workbook as .xlsx or .csv and retry.");
+    }
+    const extracted = await extractXlsxSpreadsheet(buffer);
+    return {
+      text: extracted.text,
+      chunks: extracted.chunks,
+      extractMeta: extracted.meta,
+      tables: extracted.tables,
+    };
+  }
+
+  if (mimeType.startsWith("image/")) {
+    const text = await extractTextFromImage(buffer, mimeType, filename);
+    return {
+      text,
+      extractMeta: {
+        kind: "image",
+        imageScan: inspectImagePrivacy({
+          buffer,
+          mimeType,
+          filename,
+          textExtracted: Boolean(text.trim()),
+        }),
+      },
+    };
+  }
+
+  const text = await extractText(buffer, mimeType, filename);
+  return { text };
+}
+
 /**
  * Extracts plain text from a file buffer.
  * Images use Groq vision when available (then scrubbed at ingest).
- * PDFs use pdf-parse (dynamically imported to avoid Next.js bundling issues).
+ * PDFs use pdf-parse; DOCX uses mammoth. Spreadsheets use structured extract.
  * Everything else is decoded as UTF-8.
  */
 export async function extractText(
@@ -111,16 +207,40 @@ export async function extractText(
   mimeType: string,
   filename = "upload",
 ): Promise<string> {
+  if (isSpreadsheetMime(mimeType, filename)) {
+    const extracted = await extractDocument(buffer, mimeType, filename);
+    return extracted.text;
+  }
+  const ext = filename.split(".").pop()?.toLowerCase() ?? "";
   let raw: string;
-  if (mimeType.startsWith("image/")) {
+  if (mimeType.startsWith("image/") || ["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) {
     return extractTextFromImage(buffer, mimeType, filename);
   }
-  if (mimeType === "application/pdf") {
+  const zipMagic = buffer.length >= 4 && buffer[0] === 0x50 && buffer[1] === 0x4b;
+  const pdfMagic = buffer.length >= 5 && buffer.subarray(0, 5).toString("latin1") === "%PDF-";
+  // Magic bytes win over a mislabeled MIME so a .docx ZIP cannot reach pdf-parse.
+  if (zipMagic || ext === "docx" || mimeType === DOCX_MIME) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const mammoth = require("mammoth") as {
+      extractRawText: (input: { buffer: Buffer }) => Promise<{ value: string }>;
+    };
+    const result = await mammoth.extractRawText({ buffer });
+    raw = result.value ?? "";
+    if (!raw.trim()) {
+      throw new Error("No readable text found in this Word document");
+    }
+  } else if (pdfMagic || ext === "pdf" || mimeType === "application/pdf") {
     // pdf-parse v1.x exports a single function directly — listed in serverExternalPackages
     // so Next.js does not try to webpack-bundle it (avoids fs.readdirSync failures).
+    // Use the bundled pdf.js v2 engine; v1.10 rejects many modern PDFs.
+    // pdf.js also misreads Node Buffer (pooled readFileSync / Buffer.alloc) as a
+    // parameter object and throws "bad XRef entry". Pass a standalone Uint8Array.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const pdfParse = require("pdf-parse") as (b: Buffer) => Promise<{ text: string }>;
-    const data = await pdfParse(buffer);
+    const pdfParse = require("pdf-parse") as (
+      b: Uint8Array,
+      opts?: { version?: string },
+    ) => Promise<{ text: string }>;
+    const data = await pdfParse(Uint8Array.from(buffer), { version: "v2.0.550" });
     raw = data.text;
   } else {
     raw = buffer.toString("utf-8");
@@ -186,13 +306,19 @@ export function chunkText(text: string): string[] {
 // ── processing pipeline ────────────────────────────────────────────────────────
 
 /**
- * Fire-and-forget function called after a Document record is created.
- * Chunks the stored text, embeds each chunk via Ollama, and stores
- * MemoryFragment records with pgvector embeddings.
+ * Called after a Document record is created.
+ * Chunks the stored text, embeds each chunk, and stores MemoryFragment
+ * records with pgvector embeddings.
+ *
+ * On Lambda (or DOCUMENT_INGEST_SYNC=true) callers must await this — work
+ * after the HTTP response returns is not reliable. Local Next may background it.
  *
  * Never throws — sets Document.status to "failed" on any error.
  */
-export async function processDocument(documentId: string): Promise<void> {
+export async function processDocument(
+  documentId: string,
+  preparedChunks?: DocumentChunkDraft[],
+): Promise<void> {
   try {
     const doc = await db.document.findUnique({ where: { id: documentId } });
     if (!doc) {
@@ -200,13 +326,45 @@ export async function processDocument(documentId: string): Promise<void> {
       return;
     }
 
-    const chunks = chunkText(doc.content);
+    if (isFailedExtractContent(doc.content)) {
+      await db.document.update({
+        where: { id: documentId },
+        data: { status: "failed", chunkCount: 0, processingError: "STUB_EXTRACT", processedAt: new Date() },
+      });
+      return;
+    }
+
+    await db.memoryFragment.deleteMany({ where: { documentId } });
+
+    let drafts: DocumentChunkDraft[] = preparedChunks?.length
+      ? preparedChunks
+      : chunkText(doc.content).map(content => ({ content }));
+
+    if ((!preparedChunks || preparedChunks.length === 0) && originalExists(doc.storageKey) && isSpreadsheetMime(doc.mimeType, doc.name)) {
+      try {
+        const original = await readOriginal(doc.storageKey!);
+        const extracted = await extractDocument(original, doc.mimeType, doc.name);
+        if (extracted.chunks?.length) {
+          drafts = [];
+          for (const chunk of extracted.chunks) {
+            const scrubbed = await scrubDocumentText(chunk.content);
+            if (scrubbed.content) drafts.push({ content: scrubbed.content, provenance: chunk.provenance });
+          }
+        }
+      } catch (err) {
+        console.warn("[documents] structured re-extract failed, using stored text:", err);
+      }
+    }
+
+    const chunks: DocumentChunkDraft[] = drafts.length > 0
+      ? drafts
+      : chunkText(doc.content).map(content => ({ content }));
     let embedded = 0;
     let ollamaDown = false;
 
     for (const chunk of chunks) {
       try {
-        const vector = await embedText(chunk);
+        const vector = await embedText(chunk.content);
 
         // Create the MemoryFragment record first (gets a Prisma-managed cuid).
         // workspaceId scopes these chunks to the workspace that owns the document.
@@ -215,8 +373,9 @@ export async function processDocument(documentId: string): Promise<void> {
             userId:      doc.userId,
             workspaceId: doc.workspaceId ?? undefined,
             documentId:  doc.id,
-            content:     chunk,
+            content:     chunk.content,
             category:    "document",
+            provenance:  chunk.provenance ?? undefined,
           },
           select: { id: true },
         });
@@ -228,9 +387,23 @@ export async function processDocument(documentId: string): Promise<void> {
           fragment.id,
         );
 
+        await mirrorDocumentChunkToDynamo({
+          fragmentId: fragment.id,
+          userId: doc.userId,
+          workspaceId: doc.workspaceId,
+          content: chunk.content,
+          embedding: vector,
+          documentId: doc.id,
+          documentName: doc.name,
+          provenance: chunk.provenance ?? null,
+        });
+
         embedded++;
       } catch (chunkErr) {
-        if (String(chunkErr).includes("Cannot reach Ollama")) ollamaDown = true;
+        const msg = String(chunkErr);
+        if (msg.includes("Cannot reach Ollama") || msg.includes("Bedrock embed")) {
+          ollamaDown = true;
+        }
         console.warn(`[documents] chunk ${embedded + 1} embed failed:`, chunkErr);
       }
     }
@@ -242,7 +415,12 @@ export async function processDocument(documentId: string): Promise<void> {
     const finalStatus = embedded > 0 || ollamaDown ? "ready" : "failed";
     await db.document.update({
       where: { id: documentId },
-      data:  { status: finalStatus, chunkCount: embedded },
+      data:  {
+        status: finalStatus,
+        chunkCount: embedded,
+        processedAt: new Date(),
+        processingError: finalStatus === "failed" ? "EMBED_FAILED" : null,
+      },
     });
 
     console.log(

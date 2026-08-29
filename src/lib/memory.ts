@@ -1,11 +1,12 @@
 /**
- * SecureMind semantic memory layer (Phase B).
+ * SecureMind semantic memory layer.
  *
  * Provides two operations:
  *   storeMemoryFragment  — embed a piece of text and persist it to MemoryFragment
  *   retrieveSemanticMemory — cosine similarity search across stored fragments
  *
- * The embedding model is nomic-embed-text (Ollama local, zero cost, 768 dims).
+ * Embeddings: Ollama nomic-embed-text locally (768-d) or Bedrock Titan v2 in cloud
+ * (see EMBED_PROVIDER / src/lib/models/embed.ts). Knowledge ingest is the primary writer.
  * pgvector is required: run scripts/add-vector-embedding.sql once against Neon.
  *
  * All reads/writes of the `embedding` column go through raw SQL because Prisma 7
@@ -13,7 +14,9 @@
  */
 
 import { db } from "@/lib/db";
-import { embedText } from "@/lib/models/ollama";
+import { embedText } from "@/lib/models/embed";
+
+import type { ChunkProvenance } from "@/lib/spreadsheet/types";
 
 export type SemanticHit = {
   id:           string;
@@ -22,10 +25,24 @@ export type SemanticHit = {
   similarity:   number;   // 0–1, higher = more relevant
   documentId?:  string | null;
   documentName?: string | null;
+  provenance?:  ChunkProvenance | null;
 };
 
-// Minimum similarity threshold — hits below this are too noisy to be useful
-const MIN_SIMILARITY = 0.35;
+/**
+ * Minimum cosine similarity for a chunk to enter the model prompt as evidence.
+ * Candidates may be fetched with a slightly lower floor for diagnostics later;
+ * prompt inclusion uses this calibrated threshold.
+ */
+export const EVIDENCE_MIN_SIMILARITY = 0.5;
+/** @deprecated use EVIDENCE_MIN_SIMILARITY */
+const MIN_SIMILARITY = EVIDENCE_MIN_SIMILARITY;
+
+/** Max fragments fetched from pgvector before evidence selection. */
+export const RETRIEVAL_CANDIDATE_LIMIT = 10;
+/** Cap workspace-fact scan before scoring so prompt context stays bounded. */
+export const WORKSPACE_FACT_RETRIEVAL_LIMIT = 64;
+/** Max fragments passed into the final prompt after threshold + dedup. */
+export const EVIDENCE_PROMPT_LIMIT = 4;
 
 /**
  * Embeds `content` and stores it as a MemoryFragment scoped to a workspace.
@@ -81,7 +98,7 @@ export async function retrieveSemanticMemory(
   query:       string,
   workspaceId: string,
   userId = "local",
-  limit  = 6,
+  limit  = RETRIEVAL_CANDIDATE_LIMIT,
 ): Promise<SemanticHit[]> {
   try {
     // Race against a timeout so a slow Ollama embed never delays the chat response
@@ -97,16 +114,18 @@ export async function retrieveSemanticMemory(
 
     const vectorStr = `[${vectorResult.join(",")}]`;
 
-    // All fragment types (episodic, semantic, document) are scoped to the workspace.
-    // LEFT JOIN Document so citation UI can show the source filename.
-    const hits = await db.$queryRawUnsafe<SemanticHit[]>(
+    // Citeable Knowledge only: approved document chunks. Episodic/assistant
+    // fragments must never surface as Sources or prompt evidence.
+    const hits = await db.$queryRawUnsafe<(SemanticHit & { provenance: unknown })[]>(
       `SELECT mf.id, mf.content, mf.category, mf."documentId",
               d.name AS "documentName",
+              mf.provenance,
               1 - (mf.embedding <=> $1::vector) AS similarity
        FROM   "MemoryFragment" mf
-       LEFT JOIN "Document" d ON d.id = mf."documentId"
+       INNER JOIN "Document" d ON d.id = mf."documentId"
        WHERE  mf."userId"      = $2
          AND  mf."workspaceId" = $3
+         AND  mf.category      = 'document'
          AND  mf.embedding     IS NOT NULL
        ORDER BY mf.embedding <=> $1::vector
        LIMIT  $4`,
@@ -116,10 +135,95 @@ export async function retrieveSemanticMemory(
       limit,
     );
 
-    return hits.filter(h => Number(h.similarity) >= MIN_SIMILARITY);
+    return hits
+      .filter(h => Number(h.similarity) >= MIN_SIMILARITY)
+      .map(h => ({
+        ...h,
+        provenance: (h.provenance && typeof h.provenance === "object")
+          ? h.provenance as ChunkProvenance
+          : null,
+      }));
   } catch (err) {
     // Semantic retrieval failure must never break the main chat path
     console.warn("[memory] Retrieval failed — continuing without semantic context:", String(err));
     return [];
   }
+}
+
+export type CombinedContext = {
+  documentHits: SemanticHit[];
+  facts: { key: string; value: string; pinned: boolean; score: number }[];
+};
+
+function factScore(query: string, key: string, value: string, pinned: boolean): number {
+  const q = query.toLowerCase();
+  const hay = `${key} ${value}`.toLowerCase();
+  const terms = q.split(/[^a-z0-9]+/).filter(t => t.length > 2);
+  let hits = 0;
+  for (const t of terms) if (hay.includes(t)) hits++;
+  const overlap = terms.length ? hits / terms.length : 0;
+  return overlap + (pinned ? 0.25 : 0);
+}
+
+async function retrieveDocumentHits(
+  query: string,
+  workspaceId: string,
+  userId: string,
+  limit: number,
+) {
+  const { resolveStorageBackend } = await import("@/lib/runtime-env");
+  if (resolveStorageBackend() === "dynamodb") {
+    const { getDynamoVectors } = await import("@/lib/storage/dynamodb-vectors");
+    return getDynamoVectors().retrieve({ query, workspaceId, userId, limit });
+  }
+  return retrieveSemanticMemory(query, workspaceId, userId, limit);
+}
+
+/**
+ * Combine Knowledge vector hits with eligible workspace facts.
+ * Facts are never citeable — they only rank into the prompt as user-stated context.
+ */
+export async function retrieveCombinedContext(opts: {
+  query: string;
+  workspaceId: string;
+  userId: string;
+  clientFacts?: Record<string, string>;
+  limit?: number;
+}): Promise<CombinedContext> {
+  const limit = opts.limit ?? RETRIEVAL_CANDIDATE_LIMIT;
+  const documentHits = limit <= 0
+    ? []
+    : await retrieveDocumentHits(opts.query, opts.workspaceId, opts.userId, limit);
+
+  const rows = await db.workspaceFact.findMany({
+    where: { workspaceId: opts.workspaceId, forgotten: false },
+    select: { key: true, value: true, pinned: true, updatedAt: true },
+    orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
+    take: WORKSPACE_FACT_RETRIEVAL_LIMIT,
+  });
+
+  const merged = new Map<string, { value: string; pinned: boolean; updatedAt: number }>();
+  for (const [key, value] of Object.entries(opts.clientFacts ?? {})) {
+    if (value) merged.set(key, { value, pinned: false, updatedAt: 0 });
+  }
+  for (const row of rows) {
+    merged.set(row.key, {
+      value: row.value,
+      pinned: row.pinned,
+      updatedAt: row.updatedAt.getTime(),
+    });
+  }
+
+  const facts = [...merged.entries()]
+    .map(([key, row]) => ({
+      key,
+      value: row.value,
+      pinned: row.pinned,
+      score: factScore(opts.query, key, row.value, row.pinned) + Math.min(0.1, row.updatedAt / 1e15),
+    }))
+    .filter(f => f.pinned || f.score > 0 || merged.size <= 8)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 12);
+
+  return { documentHits, facts };
 }
