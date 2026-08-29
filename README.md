@@ -136,4 +136,5 @@ These are **risk-reduction** controls, not a security or compliance guarantee. D
 - [`docs/adr/0002-storage-choice.md`](docs/adr/0002-storage-choice.md) — why Neon/Postgres + pgvector
 - [`docs/adr/0003-local-aws-scaffolding.md`](docs/adr/0003-local-aws-scaffolding.md) — Floci + Compose
 - [`docs/adr/0004-amplify-lambda-hosting.md`](docs/adr/0004-amplify-lambda-hosting.md) — Amplify UI + API Gateway + Lambda
+- [`docs/deploy/hosted-sandbox-roadblocks.md`](docs/deploy/hosted-sandbox-roadblocks.md) — sandbox AWS apply: OIDC, Amplify monorepo, 220 MB cap, two pipelines
 - [`AGENTS.md`](AGENTS.md) — rules for agents working in this repo

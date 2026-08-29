@@ -16,6 +16,11 @@ frontend:
         - export DATABASE_URL="${DATABASE_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
         - export DIRECT_URL="${DIRECT_URL:-$DATABASE_URL}"
         - npm run build
+        # Amplify WEB_COMPUTE cap is 220 MB uncompressed. SWC/esbuild natives
+        # are build-only; Next file-tracing still pulls them into the compute bundle.
+        - rm -rf .next/cache
+        - rm -rf node_modules/@swc node_modules/@esbuild node_modules/esbuild
+        - rm -rf node_modules/@next/swc-linux-x64-gnu node_modules/@next/swc-linux-x64-musl
   artifacts:
     baseDirectory: .next
     files:
