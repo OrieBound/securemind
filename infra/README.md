@@ -89,6 +89,37 @@ Copy the `backend_hcl` output to `infra/terraform/backend.hcl` (gitignored).
 ## GitHub Actions
 
 - **PR:** tests, then `terraform plan` (OIDC) once vars are set
-- **`main`:** tests → apply (Environment `aws-uat`) → `amplify start-job`
+- **`main`:** tests → apply (Environment `aws-sandbox`) → `amplify start-job`
 
 Amplify clones GitHub and runs [`amplify.yml`](../amplify.yml). Actions does not upload a UI zip.
+
+## IAM layers (what failed vs what is next)
+
+These are **different** permissions. The same error name is never used for all of them.
+
+| Layer | What it answers | Where it lives | Typical failure |
+|---|---|---|---|
+| **1. OIDC trust** | May this GitHub job *become* the deploy role at all? | Bootstrap role `securemind-gha-<env>` assume-role policy | `Not authorized to perform sts:AssumeRoleWithWebIdentity` **before** Terraform runs |
+| **2. Deploy policy** | Once assumed, may Terraform create/update the stack? | Same role, inline policy `securemind-gha-deploy-<env>` | `AccessDenied` on `s3:…`, `iam:…`, `lambda:…` **during** plan/apply |
+| **3. Runtime roles** | May Amplify build, or Lambda call Bedrock / DynamoDB? | `securemind-amplify-<env>`, `securemind-api-<env>` | App/build errors after a green apply |
+| **4. Bedrock model access** | Is this account allowed to invoke Titan / chat models? | Bedrock console, not IAM JSON | Runtime `AccessDeniedException` from Bedrock |
+
+Layer 1 is **not** “Terraform lacks an AWS service permission.” GitHub presents a `sub` claim; IAM must `StringLike` that exact string. New GitHub repos (after 2026-07-15) send:
+
+`repo:Owner@OWNER_ID/name@REPO_ID:environment:aws-sandbox`
+
+A trust of `repo:Owner/name:*` does **not** match that. CloudTrail `AssumeRoleWithWebIdentity` → `userName` is the real `sub`.
+
+Other GitHub/IAM mix-ups that look similar:
+
+- Job missing `permissions: id-token: write` (no OIDC token).
+- `AWS_ROLE_ARN` pointing at Amplify/Lambda (`sts:AssumeRole` for a service) instead of `securemind-gha-<env>`.
+- Trust used `StringEquals` with a `*` (wildcard only works on `StringLike`).
+- Environment `aws-sandbox` vars not visible on the job, so OIDC is skipped.
+
+Change trust or the GHA deploy policy with **bootstrap apply**, not `infra:up`:
+
+```bash
+cd infra/terraform/bootstrap
+terraform apply -var="github_repository=OrieBound/securemind" -auto-approve
+```

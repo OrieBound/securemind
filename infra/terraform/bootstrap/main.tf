@@ -20,6 +20,8 @@ data "aws_region" "current" {}
 
 locals {
   repo         = var.github_repository
+  repo_owner   = split("/", var.github_repository)[0]
+  repo_name    = split("/", var.github_repository)[1]
   state_bucket = "securemind-tfstate-${data.aws_caller_identity.current.account_id}-${data.aws_region.current.name}"
   lock_table   = "securemind-tflock-${var.env_name}"
   deploy_role  = "securemind-gha-${var.env_name}"
@@ -94,11 +96,14 @@ data "aws_iam_policy_document" "gha_trust" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      # GitHub's `sub` is not always exactly environment:NAME / pull_request.
-      # A suffix (ref, job_workflow_ref, etc.) makes exact values fail with
-      # Not authorized to perform sts:AssumeRoleWithWebIdentity.
+      # Two GitHub `sub` shapes, plus environment vs branch vs PR:
+      #   repo:owner/name:environment:aws-sandbox
+      #   repo:owner@OWNER_ID/name@REPO_ID:environment:aws-sandbox
+      # Repos created after 2026-07-15 (or opted in) emit the ID form.
+      # StringEquals + a wildcard is a silent no-match — must be StringLike.
       values = [
         "repo:${local.repo}:*",
+        "repo:${local.repo_owner}@*/${local.repo_name}@*:*",
       ]
     }
   }
@@ -123,6 +128,14 @@ data "aws_iam_policy_document" "gha_deploy" {
       "cloudwatch:*",
       "cognito-idp:*",
       "dynamodb:*",
+      "lambda:*",
+      "logs:*",
+      "secretsmanager:*",
+      "sts:GetCallerIdentity",
+      # AWS provider probes these on almost every apply.
+      "ec2:DescribeAccountAttributes",
+      "ec2:DescribeAvailabilityZones",
+      # App stack creates Lambda / Amplify / Bedrock-lab IAM.
       "iam:GetRole",
       "iam:GetRolePolicy",
       "iam:GetPolicy",
@@ -130,9 +143,16 @@ data "aws_iam_policy_document" "gha_deploy" {
       "iam:ListRolePolicies",
       "iam:ListAttachedRolePolicies",
       "iam:ListInstanceProfilesForRole",
+      "iam:ListRoles",
+      "iam:ListPolicies",
+      "iam:ListPolicyVersions",
+      "iam:ListOpenIDConnectProviders",
+      "iam:GetOpenIDConnectProvider",
       "iam:PassRole",
       "iam:CreateRole",
       "iam:DeleteRole",
+      "iam:UpdateRole",
+      "iam:UpdateAssumeRolePolicy",
       "iam:TagRole",
       "iam:UntagRole",
       "iam:PutRolePolicy",
@@ -142,16 +162,17 @@ data "aws_iam_policy_document" "gha_deploy" {
       "iam:CreatePolicy",
       "iam:CreatePolicyVersion",
       "iam:DeletePolicy",
-      "iam:ListPolicyVersions",
-      "lambda:*",
-      "logs:*",
-      "secretsmanager:*",
+      "iam:DeletePolicyVersion",
+      "iam:TagPolicy",
+      "iam:UntagPolicy",
+      "iam:CreateServiceLinkedRole",
+      # Terraform S3 backend (state object replace/delete).
       "s3:GetObject",
       "s3:PutObject",
+      "s3:DeleteObject",
       "s3:ListBucket",
-      "iam:ListOpenIDConnectProviders",
-      "iam:GetOpenIDConnectProvider",
-      "sts:GetCallerIdentity",
+      "s3:GetBucketLocation",
+      "s3:GetBucketVersioning",
     ]
     resources = ["*"]
   }
