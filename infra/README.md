@@ -93,6 +93,8 @@ Copy the `backend_hcl` output to `infra/terraform/backend.hcl` (gitignored).
 
 Amplify clones GitHub and runs [`amplify.yml`](../amplify.yml). Actions does not upload a UI zip.
 
+Sandbox apply hits (OIDC, Amplify monorepo env, 220 MB compute cap, Actions vs Amplify): [docs/deploy/hosted-sandbox-roadblocks.md](../docs/deploy/hosted-sandbox-roadblocks.md).
+
 ## IAM layers (what failed vs what is next)
 
 These are **different** permissions. The same error name is never used for all of them.

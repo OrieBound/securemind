@@ -33,6 +33,7 @@ SecureMind needs a permanently hosted AWS path that stays cheap at low traffic, 
 - Chat core lives in `src/lib/chat/` and is shared by Next routes and Lambda handlers.  
 - Document ingest must complete inside the invocation or fan out (no fire-and-forget on Lambda).  
 - Cross-origin calls use Bearer tokens; cookies remain for same-origin localhost.  
+- Until remaining Next `/api/*` move to the gateway, Amplify still traces Prisma, document parsers, and AWS SDK into the **220 MB** WEB_COMPUTE cap ([hosted sandbox roadblocks](../deploy/hosted-sandbox-roadblocks.md)). Chat/warm are already on API Gateway.  
 - Floci still validates Cognito/S3/secrets locally; streaming API Gateway + Amplify + Bedrock stream require a thin real-AWS PoC.
 
 ### Revisit when

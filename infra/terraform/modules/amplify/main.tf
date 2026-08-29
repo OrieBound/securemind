@@ -84,11 +84,18 @@ resource "aws_amplify_app" "this" {
       phases:
         preBuild:
           commands:
+            - export DATABASE_URL="$${DATABASE_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
+            - export DIRECT_URL="$${DIRECT_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
             - npm ci
             - npx prisma generate
         build:
           commands:
+            - export DATABASE_URL="$${DATABASE_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
+            - export DIRECT_URL="$${DIRECT_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
             - npm run build
+            - rm -rf .next/cache
+            - rm -rf node_modules/@swc node_modules/@esbuild node_modules/esbuild
+            - rm -rf node_modules/@next/swc-linux-x64-gnu node_modules/@next/swc-linux-x64-musl
       artifacts:
         baseDirectory: .next
         files:
@@ -100,7 +107,6 @@ resource "aws_amplify_app" "this" {
   EOT
 
   environment_variables = {
-    AMPLIFY_MONOREPO_APP_ROOT = "."
     AUTH_MODE                 = var.auth_mode
     AUTH_ALLOW_LOCAL_FALLBACK = "false"
     COGNITO_USER_POOL_ID      = var.cognito_user_pool_id

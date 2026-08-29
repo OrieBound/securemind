@@ -25,6 +25,23 @@ const nextConfig: NextConfig = {
   // loads it directly from node_modules at runtime instead — correct behaviour.
   serverExternalPackages: ["pdf-parse", "mammoth", "exceljs"],
 
+  // Amplify Hosting compute is capped at 220 MB. Keep build-only natives and
+  // repo trees that are not the Next server out of the traced bundle.
+  outputFileTracingExcludes: {
+    "*": [
+      "infra/**",
+      "documents/**",
+      "tests/**",
+      "node_modules/esbuild/**",
+      "node_modules/@esbuild/**",
+      "node_modules/@swc/**",
+      "node_modules/typescript/**",
+      "node_modules/eslint/**",
+      "node_modules/@next/swc-linux-x64-gnu/**",
+      "node_modules/@next/swc-linux-x64-musl/**",
+    ],
+  },
+
   experimental: {
     turbopackFileSystemCacheForDev: false,
   },
