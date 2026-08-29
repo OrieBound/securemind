@@ -28,7 +28,7 @@ const nextConfig: NextConfig = {
   // Amplify Hosting compute is capped at 220 MB. Keep build-only natives and
   // repo trees that are not the Next server out of the traced bundle.
   outputFileTracingExcludes: {
-    "*": [
+    "/*": [
       "infra/**",
       "documents/**",
       "tests/**",
@@ -39,6 +39,14 @@ const nextConfig: NextConfig = {
       "node_modules/eslint/**",
       "node_modules/@next/swc-linux-x64-gnu/**",
       "node_modules/@next/swc-linux-x64-musl/**",
+    ],
+    "/api/**": [
+      "infra/**",
+      "documents/**",
+      "tests/**",
+      "node_modules/esbuild/**",
+      "node_modules/@esbuild/**",
+      "node_modules/@swc/**",
     ],
   },
 

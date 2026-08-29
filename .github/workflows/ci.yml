@@ -171,10 +171,11 @@ jobs:
 
       - name: Trigger Amplify build
         if: vars.AWS_ROLE_ARN != '' && vars.TF_STATE_BUCKET != ''
-        continue-on-error: true
         run: |
           APP_ID="$(terraform -chdir=infra/terraform output -raw amplify_app_id)"
-          aws amplify start-job --app-id "$APP_ID" --branch-name "$AMPLIFY_BRANCH" --job-type RELEASE
+          JOB_ID="$(aws amplify start-job --app-id "$APP_ID" --branch-name "$AMPLIFY_BRANCH" --job-type RELEASE --query jobSummary.jobId --output text)"
+          echo "Started Amplify job $JOB_ID on $APP_ID"
+          node infra/scripts/amplify-wait-job.mjs --app-id "$APP_ID" --branch "$AMPLIFY_BRANCH" --job-id "$JOB_ID"
 
       - name: Skip apply (OIDC not configured)
         if: vars.AWS_ROLE_ARN == '' || vars.TF_STATE_BUCKET == ''

@@ -12,7 +12,7 @@ Hosted SecureMind is Amplify UI + API Gateway/Lambda + Cognito + DynamoDB (ADR 0
 
 1. **Terraform** under `infra/terraform/` is the cloud IaC. On-prem Docker Compose is unchanged.
 2. **GitHub Actions + AWS OIDC** is the pipeline. Not CodePipeline, not GitLab CI.
-3. **Amplify** still **builds and hosts** the Next.js UI. Actions triggers `StartJob` after tests/apply. Auto-build is off. The GitHub App is connected in the Amplify console.
+3. **Amplify** still **builds and hosts** the Next.js UI. Actions triggers `StartJob` after tests/apply, then **waits** for that job (`infra/scripts/amplify-wait-job.mjs`) so a failed UI build fails the GitHub check. Auto-build is off. The GitHub App is connected in the Amplify console.
 4. **Default database is DynamoDB.** Nested CloudFormation is used only for the DynamoDB vector index until the AWS provider supports it. Neon/Aurora are not created by default.
 5. **Bootstrap once** from a laptop: S3 state, lock table, OIDC deploy role scoped to this repository.
 

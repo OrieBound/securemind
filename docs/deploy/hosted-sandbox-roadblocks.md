@@ -10,11 +10,13 @@ IaC and IAM layers: [infra/README.md](../../infra/README.md). Hosting decision: 
 
 ## Two pipelines (read this first)
 
-A green **GitHub Actions** run is not a live site.
+A green **GitHub Actions** run is not a live site unless the workflow **waits** for Amplify (`amplify-wait-job.mjs`). Older runs used `continue-on-error` on `StartJob`, so CI could be green while Deployments were red.
+
+The `npm warn ERESOLVE` / vite / esbuild lines in Amplify logs are **install warnings**, not the failure. The 220 MB cap is `CustomerError: The size of the build output … exceeds`.
 
 | Pipeline | What it does |
 |---|---|
-| GitHub Actions `CI` | Tests, `terraform apply` (Cognito, API, Lambdas, DynamoDB, Amplify *app*), then `amplify start-job` |
+| GitHub Actions `CI` | Tests, `terraform apply`, `amplify start-job`, then **poll until Amplify SUCCEED/FAILED** |
 | Amplify Hosting | Clones GitHub and builds Next.js. That is the UI. Auto-build is **off**; Actions (or the console) starts the job |
 
 “Auto-build” in the Amplify console often means `commitId: HEAD` (StartJob / Redeploy), not “every git push rebuilt the UI.”
