@@ -93,9 +93,7 @@ resource "aws_amplify_app" "this" {
             - export DATABASE_URL="$${DATABASE_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
             - export DIRECT_URL="$${DIRECT_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
             - npm run build
-            - rm -rf .next/cache
-            - rm -rf node_modules/@swc node_modules/@esbuild node_modules/esbuild
-            - rm -rf node_modules/@next/swc-linux-x64-gnu node_modules/@next/swc-linux-x64-musl
+            - node infra/scripts/amplify-prune-compute.mjs
       artifacts:
         baseDirectory: .next
         files:
