@@ -4,14 +4,14 @@
  * SecureMind scales model capability to message complexity — never sends
  * everything through the same expensive model.
  *
- * COMPLEXITY TIERS (most → least capable, Groq June 2026):
- *   Max       moonshotai/kimi-k2-instruct-0905      $1.00/$3.00  — most capable, reserved for hardest problems
- *   High      llama-3.3-70b-versatile               $0.59/$0.79  — deep reasoning, nuanced responses
- *   Plus      qwen/qwen3-32b                         $0.29/$0.59  — strong analysis + hybrid thinking
- *   Standard  openai/gpt-oss-120b                   $0.15/$0.60  — solid default (middle tier)
- *   Light     llama-4-scout-17b-16e                 $0.11/$0.34  — fast, great instruction-following
- *   Fast      openai/gpt-oss-20b                    $0.075/$0.30 — lightweight tasks
- *   Micro     llama-3.1-8b-instant                  $0.05/$0.08  — simplest queries, lowest cost
+ * COMPLEXITY TIERS (most → least capable):
+ *   Max       llama-3.3-70b-versatile               $0.59/$0.79  — hardest problems, deep technical work
+ *   Plus      qwen/qwen3-32b                         $0.29/$0.59  — planning, analysis, hybrid thinking
+ *   Standard  openai/gpt-oss-120b                   $0.15/$0.60  — default everyday work
+ *   Light     llama-4-scout-17b-16e                 $0.11/$0.34  — how-to, facts, short instruction-following
+ *   Micro     llama-3.1-8b-instant                  $0.05/$0.08  — acks and one-line replies
+ *
+ * Legacy stored events: High → Max, Fast → Light (see normalizeStoredTier).
  *
  * NOTE: llama-4-maverick was deprecated by Groq on 2026-03-09, replaced by gpt-oss-120b.
  *
@@ -50,23 +50,45 @@ const TASK_ROUTES: Record<ModelTask, ModelConfig> = {
 // Tier only controls which MODEL handles the request; behaviour is identical
 // across tiers and comes from buildSystemPrompt.
 const COMPLEXITY_TIERS: Record<string, { provider: "groq" | "ollama"; model: string }> = {
-  // Max uses the same model as High — Kimi K2 ($1/M) requires billing on Groq free tier.
-  // Swap to moonshotai/kimi-k2-instruct-0905 when a paid Groq account is set up (Phase C+).
   Max:      { provider: "groq", model: "llama-3.3-70b-versatile"                   },
-  High:     { provider: "groq", model: "llama-3.3-70b-versatile"                   },
   Plus:     { provider: "groq", model: "qwen/qwen3-32b"                            },
   Standard: { provider: "groq", model: "openai/gpt-oss-120b"                       },
   Light:    { provider: "groq", model: "meta-llama/llama-4-scout-17b-16e-instruct" },
-  Fast:     { provider: "groq", model: "openai/gpt-oss-20b"                        },
   Micro:    { provider: "groq", model: "llama-3.1-8b-instant"                      },
 };
 
 export const TIER_NAMES = Object.keys(COMPLEXITY_TIERS) as string[];
 export const DEFAULT_TIER = "Standard";
 
+/** Map retired 7-tier names onto the current five. */
+export function normalizeStoredTier(tier: string | null | undefined): string {
+  if (!tier) return DEFAULT_TIER;
+  if (tier === "High") return "Max";
+  if (tier === "Fast") return "Light";
+  return TIER_NAMES.includes(tier) ? tier : DEFAULT_TIER;
+}
+
+/**
+ * Models the router itself can select. Used as the trusted floor of the
+ * server-side allowlist so a browser cannot name an arbitrary model id.
+ */
+export function builtinChatModels(): Map<string, "groq" | "ollama"> {
+  const map = new Map<string, "groq" | "ollama">();
+  for (const tier of Object.values(COMPLEXITY_TIERS)) {
+    map.set(tier.model, tier.provider);
+  }
+  for (const task of Object.values(TASK_ROUTES)) {
+    if (task.provider === "groq" || task.provider === "ollama") {
+      map.set(task.model, task.provider);
+    }
+  }
+  return map;
+}
+
 export function routeModel(task: ModelTask, tier?: string): ModelConfig {
-  if (task === "chat" && tier && COMPLEXITY_TIERS[tier]) {
-    const base = COMPLEXITY_TIERS[tier];
+  const resolved = tier ? normalizeStoredTier(tier) : undefined;
+  if (task === "chat" && resolved && COMPLEXITY_TIERS[resolved]) {
+    const base = COMPLEXITY_TIERS[resolved];
     // Optional Bedrock override for portfolio demos. Model id comes from env
     // because Bedrock model ARNs differ by account/region.
     if (process.env.MODEL_PROVIDER === "bedrock") {
@@ -82,12 +104,12 @@ export function routeModel(task: ModelTask, tier?: string): ModelConfig {
 
 /** Returns the model name that will be used for chat at a given complexity tier. */
 export function chatModelForMode(tier: string): string {
-  return COMPLEXITY_TIERS[tier]?.model ?? (process.env.OLLAMA_CHAT_MODEL ?? "llama3.2");
+  return COMPLEXITY_TIERS[normalizeStoredTier(tier)]?.model ?? (process.env.OLLAMA_CHAT_MODEL ?? "llama3.2");
 }
 
 /** Returns whether the given tier routes to Groq. */
 export function isGroqMode(tier: string): boolean {
-  return COMPLEXITY_TIERS[tier]?.provider === "groq";
+  return COMPLEXITY_TIERS[normalizeStoredTier(tier)]?.provider === "groq";
 }
 
 /**
@@ -109,7 +131,11 @@ export function getCostTier(provider: string, model: string): "free" | "$" | "$$
 
 /** Ollama fallback model if Groq is unavailable. */
 export function ollamaFallbackForMode(_tier: string): string {
-  return process.env.OLLAMA_FALLBACK_MODEL ?? "mistral";
+  return (
+    process.env.OLLAMA_FALLBACK_MODEL ??
+    process.env.OLLAMA_CHAT_MODEL ??
+    "llama3.2"
+  );
 }
 
 /**

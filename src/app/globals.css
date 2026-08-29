@@ -27,6 +27,9 @@
   --color-input: var(--input);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent: var(--accent);
   --color-muted-foreground: var(--muted-foreground);
@@ -39,6 +42,8 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-overlay: var(--overlay);
+  --color-elevated: var(--elevated);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -49,12 +54,141 @@
 }
 
 /*
- * SecureMind is dark-first.
- * :root carries the dark theme directly — no light/dark toggle needed yet.
- * Accent: indigo/violet (oklch ~264°) matching the cloud-engineer aesthetic.
+ * Light theme — clean white canvas with cool grey chrome (Udemy-like).
+ * Applied when <html> does NOT have .dark (default preference remains dark via boot script).
+ *
+ * Layer stack:
+ *   white canvas → cool-grey sidebar/rail → white cards → borders do the separation
  */
 :root {
-  /* Page layers — deep near-black with a subtle blue undertone */
+  color-scheme: light;
+
+  /*
+   * Canvas / content — clean near-white (Udemy-like), with cool grey chrome
+   * so hierarchy comes from borders/hover — not a taupe wash.
+   */
+  /* Center canvas — hair off pure white so the shell isn’t a flat glare */
+  --background:           #F7F8FA;
+  --foreground:           #1C1D1F;
+
+  --card:                 #FFFFFF;
+  --card-foreground:      #1C1D1F;
+
+  --popover:              #FFFFFF;
+  --popover-foreground:   #1C1D1F;
+
+  /* Chips / elevated rows — barely-off white so borders do the work */
+  --elevated:             #FFFFFF;
+
+  /* Brand purple — bold enough to anchor chrome on white */
+  --primary:              #5B3FE0;
+  --primary-foreground:   #FFFFFF;
+  --primary-hover:        #4A2FC9;
+  --primary-soft:         #EDE9FF;
+  --primary-soft-foreground: #352287;
+  --primary-border:       #A78BFA;
+
+  --secondary:            #F3F4F6;
+  --secondary-foreground: #1C1D1F;
+
+  --muted:                #EBECEF;
+  --muted-foreground:     #6A6F7C;
+
+  --accent:               #EDE9FF;
+  --accent-foreground:    #352287;
+
+  /* Semantic — deep text/icon colours (pair with tinted surfaces below) */
+  --destructive:          #9F2A20;
+  --success:              #176B42;
+  --warning:              #8A5A00;
+  --info:                 #184FA8;
+
+  --success-soft:         #E3F5EB;
+  --success-border:       #8FCBAA;
+  --warning-soft:         #FBF0CC;
+  --warning-border:       #E0C05A;
+  --destructive-soft:     #FCE8E6;
+  --destructive-border:   #E8A39C;
+  --info-soft:            #E5EEFA;
+  --info-border:          #9BB8E3;
+
+  --border:               #D1D5DB;
+  --border-strong:        #9CA3AF;
+  --input:                #D1D5DB;
+  --ring:                 #5B3FE0;
+  --overlay:              rgb(28 29 31 / 45%);
+
+  --surface-hover:        #E5E7EB;
+  --surface-selected:     #EDE9FF;
+
+  --radius: 0.75rem;
+
+  --sidebar:                    #F7F7F8;
+  --sidebar-foreground:         #1C1D1F;
+  --sidebar-primary:            #5B3FE0;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent:             #EDE9FF;
+  --sidebar-accent-foreground:  #352287;
+  --sidebar-border:             #E5E7EB;
+  --sidebar-ring:               #5B3FE0;
+
+  /* Chart series — deliberate, accessible on light canvas */
+  --chart-1: #5B3FE0; /* brand */
+  --chart-2: #0D6B63; /* teal */
+  --chart-3: #184FA8; /* blue */
+  --chart-4: #176B42; /* green */
+  --chart-5: #9A4A08; /* amber */
+
+  --scrollbar-thumb: #C0C4CC;
+  --scrollbar-thumb-hover: #9CA3AF;
+
+  --shadow-sm: 0 1px 2px rgb(28 29 31 / 6%);
+  --shadow-md: 0 4px 16px rgb(28 29 31 / 8%);
+  --shadow-lg: 0 14px 40px rgb(28 29 31 / 12%);
+
+  --code-bg: #F3F4F6;
+  --code-border: #D1D5DB;
+
+  /* Text roles — dark on white; secondary greys closer to product chrome */
+  --text-secondary: #3E4149;
+  --text-muted:     #6A6F7C;
+  --text-subtle:    #8B909C;
+  /* Long-form body — match foreground on white */
+  --text-body:      #1C1D1F;
+
+  /*
+   * Typography scale — shared roles (use these instead of one-off rem sizes).
+   * Weights: 400 body · 500 UI chrome · 600 headings · 700 rare display only.
+   */
+  --font-size-meta:    0.75rem;    /* 12px — timestamps, captions */
+  --font-size-label:   0.8125rem;  /* 13px — field labels, badges */
+  --font-size-ui:      0.875rem;   /* 14px — nav, controls */
+  --font-size-body:    0.9375rem;  /* 15px — descriptions, forms */
+  --font-size-chat:    1rem;       /* 16px — assistant / long-form */
+  --font-size-section: 1.0625rem;  /* 17px — section titles */
+  --font-size-title:   1.25rem;    /* 20px — page headings */
+  --font-size-display: 1.5rem;     /* 24px — rare hero */
+
+  --leading-tight:  1.35;
+  --leading-ui:     1.45;
+  --leading-body:   1.6;
+  --leading-chat:   1.625;
+
+  --tracking-body: -0.005em;
+  --tracking-ui:   -0.01em;
+
+  --weight-normal:   400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+}
+
+/*
+ * Dark theme — preserved product default (identical to the prior :root values).
+ */
+.dark {
+  color-scheme: dark;
+
   --background:           oklch(0.065 0.008 265);
   --foreground:           oklch(0.96  0.004 265);
 
@@ -64,9 +198,14 @@
   --popover:              oklch(0.115 0.008 265);
   --popover-foreground:   oklch(0.96  0.004 265);
 
-  /* Indigo accent — primary interactive colour */
+  --elevated:             oklch(0.125 0.008 265);
+
   --primary:              oklch(0.63 0.22 264);
   --primary-foreground:   oklch(0.99 0    0);
+  --primary-hover:        oklch(0.58 0.22 264);
+  --primary-soft:         oklch(0.63 0.22 264 / 15%);
+  --primary-soft-foreground: oklch(0.82 0.12 264);
+  --primary-border:       oklch(0.63 0.22 264 / 35%);
 
   --secondary:            oklch(0.155 0.007 265);
   --secondary-foreground: oklch(0.96  0.004 265);
@@ -78,14 +217,33 @@
   --accent-foreground:    oklch(0.96  0.004 265);
 
   --destructive:          oklch(0.65 0.22 22);
+  --success:              oklch(0.7 0.16 155);
+  --warning:              oklch(0.78 0.14 75);
+  --info:                 oklch(0.72 0.12 230);
+
+  --success-soft:         oklch(0.7 0.16 155 / 12%);
+  --success-border:       oklch(0.7 0.16 155 / 25%);
+  --warning-soft:         oklch(0.78 0.14 75 / 12%);
+  --warning-border:       oklch(0.78 0.14 75 / 25%);
+  --destructive-soft:     oklch(0.65 0.22 22 / 12%);
+  --destructive-border:   oklch(0.65 0.22 22 / 25%);
+  --info-soft:            oklch(0.72 0.12 230 / 12%);
+  --info-border:          oklch(0.72 0.12 230 / 25%);
 
   --border:               oklch(1 0 0 / 7%);
+  --border-strong:        oklch(1 0 0 / 12%);
   --input:                oklch(1 0 0 / 8%);
   --ring:                 oklch(0.63 0.22 264 / 55%);
+  --overlay:              oklch(0 0 0 / 70%);
 
-  --radius: 0.75rem;
+  --surface-hover:        oklch(1 0 0 / 5%);
+  --surface-selected:     oklch(0.63 0.22 264 / 15%);
+  --text-secondary:       oklch(0.72 0.01 265);
+  --text-muted:           oklch(0.58 0.008 265);
+  --text-subtle:          oklch(0.50 0.008 265);
+  /* Softer than pure near-white so paragraphs don’t read as solid slabs */
+  --text-body:            oklch(0.88 0.006 265);
 
-  /* Sidebar — very slightly lighter than page */
   --sidebar:                    oklch(0.085 0.008 265);
   --sidebar-foreground:         oklch(0.96  0.004 265);
   --sidebar-primary:            oklch(0.63  0.22  264);
@@ -100,73 +258,261 @@
   --chart-3: oklch(0.55 0.18 300);
   --chart-4: oklch(0.68 0.14 160);
   --chart-5: oklch(0.60 0.20 30);
-}
 
-/* Keep a .dark alias for any shadcn components that check for the class */
-.dark {
-  --background:           oklch(0.065 0.008 265);
-  --foreground:           oklch(0.96  0.004 265);
-  --card:                 oklch(0.105 0.007 265);
-  --card-foreground:      oklch(0.96  0.004 265);
-  --popover:              oklch(0.115 0.008 265);
-  --popover-foreground:   oklch(0.96  0.004 265);
-  --primary:              oklch(0.63  0.22  264);
-  --primary-foreground:   oklch(0.99  0     0);
-  --secondary:            oklch(0.155 0.007 265);
-  --secondary-foreground: oklch(0.96  0.004 265);
-  --muted:                oklch(0.145 0.006 265);
-  --muted-foreground:     oklch(0.50  0.008 265);
-  --accent:               oklch(0.155 0.01  265);
-  --accent-foreground:    oklch(0.96  0.004 265);
-  --destructive:          oklch(0.65  0.22  22);
-  --border:               oklch(1 0 0 / 7%);
-  --input:                oklch(1 0 0 / 8%);
-  --ring:                 oklch(0.63 0.22 264 / 55%);
-  --sidebar:                    oklch(0.085 0.008 265);
-  --sidebar-foreground:         oklch(0.96  0.004 265);
-  --sidebar-primary:            oklch(0.63  0.22  264);
-  --sidebar-primary-foreground: oklch(0.99  0     0);
-  --sidebar-accent:             oklch(1     0     0   / 5.5%);
-  --sidebar-accent-foreground:  oklch(0.96  0.004 265);
-  --sidebar-border:             oklch(1     0     0   / 6%);
-  --sidebar-ring:               oklch(0.63  0.22  264 / 50%);
+  --scrollbar-thumb: oklch(1 0 0 / 12%);
+  --scrollbar-thumb-hover: oklch(1 0 0 / 20%);
+
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 40%);
+  --shadow-md: 0 4px 16px oklch(0 0 0 / 45%);
+  --shadow-lg: 0 12px 40px oklch(0 0 0 / 55%);
+
+  --code-bg: oklch(1 0 0 / 5%);
+  --code-border: oklch(1 0 0 / 8%);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
-  body {
-    @apply bg-background text-foreground;
-  }
   html {
     @apply font-sans;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-size: var(--font-size-ui);
+    font-weight: var(--weight-normal);
+    line-height: var(--leading-ui);
+    letter-spacing: var(--tracking-body);
+  }
+  /* Default strong/bold in UI chrome — semibold, not heavy black */
+  strong, b {
+    font-weight: var(--weight-semibold);
   }
 }
 
-/* Smooth scrollbar styling */
-::-webkit-scrollbar        { width: 5px; height: 5px; }
-::-webkit-scrollbar-track  { background: transparent; }
-::-webkit-scrollbar-thumb  { background: oklch(1 0 0 / 12%); border-radius: 99px; }
-::-webkit-scrollbar-thumb:hover { background: oklch(1 0 0 / 20%); }
+/* ── Shared typography roles ─────────────────────────────────────────────── */
+.text-meta {
+  font-size: var(--font-size-meta);
+  line-height: 1.4;
+  font-weight: var(--weight-normal);
+  letter-spacing: 0;
+  color: var(--text-muted);
+}
+.text-label {
+  font-size: var(--font-size-label);
+  line-height: var(--leading-ui);
+  font-weight: var(--weight-medium);
+  letter-spacing: var(--tracking-ui);
+}
+.text-ui {
+  font-size: var(--font-size-ui);
+  line-height: var(--leading-ui);
+  font-weight: var(--weight-normal);
+  letter-spacing: var(--tracking-body);
+}
+.text-body {
+  font-size: var(--font-size-body);
+  line-height: var(--leading-body);
+  font-weight: var(--weight-normal);
+  letter-spacing: var(--tracking-body);
+  color: var(--text-body);
+}
+.text-chat {
+  font-size: var(--font-size-chat);
+  line-height: var(--leading-chat);
+  font-weight: var(--weight-normal);
+  letter-spacing: var(--tracking-body);
+  color: var(--text-body);
+}
+.text-section {
+  font-size: var(--font-size-section);
+  line-height: var(--leading-tight);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-ui);
+  color: var(--foreground);
+}
+.text-title {
+  font-size: var(--font-size-title);
+  line-height: var(--leading-tight);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-ui);
+  color: var(--foreground);
+}
+.text-display {
+  font-size: var(--font-size-display);
+  line-height: var(--leading-tight);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-ui);
+  color: var(--foreground);
+}
 
-/* Chat message markdown rendering */
-.chat-prose p                  { margin-bottom: 0.55em; line-height: 1.65; }
-.chat-prose p:last-child       { margin-bottom: 0; }
-.chat-prose strong             { color: oklch(0.96 0 0); font-weight: 600; }
-.chat-prose em                 { color: oklch(0.82 0.02 265); font-style: italic; }
-.chat-prose ul                 { list-style: disc; padding-left: 1.25em; margin: 0.5em 0; space-y: 0.2em; }
-.chat-prose ol                 { list-style: decimal; padding-left: 1.25em; margin: 0.5em 0; }
-.chat-prose li                 { margin-bottom: 0.2em; line-height: 1.55; }
-.chat-prose li > p             { margin-bottom: 0.2em; }
-.chat-prose h1,.chat-prose h2  { font-size: 1em; font-weight: 700; margin: 0.75em 0 0.35em; color: oklch(0.95 0 0); }
-.chat-prose h3,.chat-prose h4  { font-size: 0.9em; font-weight: 600; margin: 0.6em 0 0.25em; color: oklch(0.9 0 0); }
-.chat-prose code               { font-family: var(--font-geist-mono); font-size: 0.82em; background: oklch(1 0 0 / 7%); border: 1px solid oklch(1 0 0 / 10%); border-radius: 4px; padding: 0.1em 0.35em; }
-.chat-prose pre                { background: oklch(1 0 0 / 5%); border: 1px solid oklch(1 0 0 / 8%); border-radius: 10px; padding: 0.85em 1em; overflow-x: auto; margin: 0.6em 0; }
-.chat-prose pre code           { background: none; border: none; padding: 0; font-size: 0.8em; }
-.chat-prose blockquote         { border-left: 2px solid oklch(0.55 0.12 265); padding-left: 0.85em; color: oklch(0.7 0 0); margin: 0.5em 0; font-style: italic; }
-.chat-prose a                  { color: oklch(0.72 0.14 265); text-decoration: underline; text-underline-offset: 3px; }
-.chat-prose hr                 { border-color: oklch(1 0 0 / 8%); margin: 0.75em 0; }
+/* Scrollbars — wide enough to click-drag; theme tokens for thumb color */
+* {
+  scrollbar-width: auto;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+::-webkit-scrollbar        { width: 10px; height: 10px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  {
+  background: var(--scrollbar-thumb);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); background-clip: padding-box; }
+
+/*
+ * Chat message markdown — the primary long-form reading surface.
+ * Regular body weight + comfortable spacing so bold/lists have hierarchy.
+ */
+.chat-prose {
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  font-size: var(--font-size-chat);
+  font-weight: var(--weight-normal);
+  line-height: var(--leading-chat);
+  letter-spacing: var(--tracking-body);
+  color: var(--text-body);
+}
+.chat-prose > :first-child { margin-top: 0; }
+.chat-prose > :last-child  { margin-bottom: 0; }
+
+.chat-prose p {
+  margin: 0 0 0.85em;
+  line-height: var(--leading-chat);
+  font-weight: var(--weight-normal);
+  overflow-wrap: anywhere;
+}
+.chat-prose p:last-child { margin-bottom: 0; }
+
+.chat-prose strong {
+  color: var(--foreground);
+  font-weight: var(--weight-semibold);
+}
+.chat-prose em {
+  color: var(--text-secondary);
+  font-style: italic;
+  font-weight: inherit;
+}
+
+.chat-prose ul,
+.chat-prose ol {
+  margin: 0.65em 0 0.9em;
+  padding-left: 1.35em;
+}
+.chat-prose ul { list-style: disc; }
+.chat-prose ol { list-style: decimal; }
+.chat-prose li {
+  margin: 0.4em 0;
+  line-height: var(--leading-chat);
+  font-weight: var(--weight-normal);
+  overflow-wrap: anywhere;
+  padding-left: 0.15em;
+}
+.chat-prose li > p {
+  margin: 0.25em 0;
+}
+.chat-prose li > p:first-child { margin-top: 0; }
+.chat-prose li > p:last-child  { margin-bottom: 0; }
+.chat-prose li > ul,
+.chat-prose li > ol {
+  margin: 0.35em 0 0.45em;
+}
+.chat-prose ul ul,
+.chat-prose ol ol,
+.chat-prose ul ol,
+.chat-prose ol ul {
+  margin-top: 0.35em;
+  margin-bottom: 0.35em;
+}
+
+.chat-prose h1,
+.chat-prose h2 {
+  font-size: 1.05em;
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-ui);
+  margin: 1.15em 0 0.45em;
+  color: var(--foreground);
+}
+.chat-prose h3,
+.chat-prose h4 {
+  font-size: 1em;
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  margin: 1em 0 0.4em;
+  color: var(--foreground);
+}
+.chat-prose h1:first-child,
+.chat-prose h2:first-child,
+.chat-prose h3:first-child,
+.chat-prose h4:first-child {
+  margin-top: 0;
+}
+
+.chat-prose code {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.875em;
+  font-weight: var(--weight-normal);
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: 4px;
+  padding: 0.12em 0.4em;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+.chat-prose pre {
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: 10px;
+  padding: 0.9em 1.05em;
+  overflow-x: auto;
+  max-width: 100%;
+  margin: 0.85em 0;
+  line-height: 1.5;
+}
+.chat-prose pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.875em;
+  word-break: normal;
+  overflow-wrap: normal;
+  white-space: pre;
+}
+.chat-prose table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0.85em 0;
+  font-size: 0.95em;
+}
+.chat-prose blockquote {
+  border-left: 2px solid var(--primary);
+  padding-left: 0.95em;
+  color: var(--text-secondary);
+  margin: 0.85em 0;
+  font-style: italic;
+  font-weight: var(--weight-normal);
+  overflow-wrap: anywhere;
+}
+.chat-prose a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: var(--weight-medium);
+  overflow-wrap: anywhere;
+}
+.chat-prose hr {
+  border-color: var(--border);
+  margin: 1.1em 0;
+}
 
 /* Hand cursor on everything interactive */
 button,
@@ -193,3 +539,502 @@ nextjs-portal {
   animation: voice-bar-idle 1.2s ease-in-out infinite;
   transform-origin: bottom;
 }
+
+/*
+ * Workspace avatar tint — set --ws-accent to the workspace color hex.
+ * Light mixes with white for a solid pastel; dark keeps a soft translucent wash.
+ */
+.workspace-avatar {
+  background-color: color-mix(in oklab, var(--ws-accent) 28%, transparent);
+  border: 1px solid color-mix(in oklab, var(--ws-accent) 40%, transparent);
+}
+html:not(.dark) .workspace-avatar {
+  background-color: color-mix(in oklab, var(--ws-accent) 42%, white);
+  border: 1px solid color-mix(in oklab, var(--ws-accent) 58%, white);
+}
+
+/* Theme preview cards in Settings → Appearance */
+.theme-preview-dark {
+  background: oklch(0.065 0.008 265);
+  color: oklch(0.96 0.004 265);
+}
+.theme-preview-light {
+  background: #F7F8FA;
+  color: #1C1D1F;
+}
+.theme-preview-light .theme-preview-card {
+  background: #FFFFFF;
+  border-color: #D1D5DB;
+}
+
+/*
+ * Light-mode contrast remaps
+ * -------------------------
+ * Many components use dark-tuned glass (`bg-foreground/[0.04]`, `text-foreground/30`)
+ * and soft indigo/emerald accents. On light surfaces those read as washed-out.
+ * Remap them here so the shared design system lifts contrast without one-off
+ * colour edits across every route. Dark theme is untouched (selector is html:not(.dark)).
+ */
+html:not(.dark) {
+  /* Glass fills → solid hierarchy surfaces */
+  .bg-foreground\/\[0\.02\],
+  .bg-foreground\/\[0\.03\],
+  .bg-foreground\/\[0\.04\],
+  .bg-foreground\/4 {
+    background-color: var(--secondary);
+  }
+  .bg-foreground\/\[0\.05\],
+  .bg-foreground\/\[0\.06\],
+  .bg-foreground\/5,
+  .hover\:bg-foreground\/5:hover,
+  .hover\:bg-foreground\/6:hover {
+    background-color: var(--muted);
+  }
+  .bg-foreground\/\[0\.07\],
+  .bg-foreground\/\[0\.08\],
+  .bg-foreground\/\[0\.09\],
+  .hover\:bg-foreground\/\[0\.06\]:hover,
+  .hover\:bg-foreground\/\[0\.07\]:hover,
+  .hover\:bg-foreground\/\[0\.08\]:hover,
+  .hover\:bg-foreground\/\[0\.09\]:hover,
+  .active\:bg-foreground\/8:active {
+    background-color: var(--surface-hover);
+  }
+  .bg-foreground\/10,
+  .bg-foreground\/\[0\.10\],
+  .bg-foreground\/\[0\.12\] {
+    background-color: var(--elevated);
+  }
+  .bg-secondary\/60 {
+    background-color: var(--secondary);
+  }
+
+  /* Borders — opaque warm greys instead of faint black washes */
+  .border-foreground\/5,
+  .border-foreground\/6,
+  .border-foreground\/7,
+  .border-foreground\/8,
+  .border-foreground\/10,
+  .border-foreground\/12,
+  .hover\:border-foreground\/20:hover {
+    border-color: var(--border);
+  }
+  .border-foreground\/15,
+  .border-foreground\/20,
+  .border-foreground\/25 {
+    border-color: var(--border-strong);
+  }
+
+  /* Text opacity ladder — keep roles readable (WCAG AA target) */
+  .text-muted-foreground {
+    color: var(--text-muted);
+  }
+  .text-foreground\/20,
+  .text-foreground\/22,
+  .text-foreground\/25,
+  .text-foreground\/28,
+  .text-foreground\/30,
+  .text-foreground\/32 {
+    color: var(--text-muted);
+  }
+  .text-foreground\/35,
+  .text-foreground\/38,
+  .text-foreground\/40,
+  .text-foreground\/42,
+  .text-foreground\/45 {
+    color: var(--text-secondary);
+  }
+  .text-foreground\/50,
+  .text-foreground\/55,
+  .text-foreground\/58,
+  .text-foreground\/60 {
+    color: var(--text-secondary);
+  }
+  .text-foreground\/70,
+  .text-foreground\/72,
+  .text-foreground\/75,
+  .text-foreground\/80,
+  .text-foreground\/85,
+  .text-foreground\/90 {
+    color: var(--foreground);
+  }
+  .placeholder\:text-foreground\/25::placeholder {
+    color: var(--text-subtle);
+  }
+  .bg-foreground\/\[0\.09\] {
+    background-color: var(--surface-selected);
+  }
+
+  /* Brand indigo accents — dark-tuned soft colours → light brand roles */
+  .text-indigo-100,
+  .text-indigo-200,
+  .text-indigo-200\/45,
+  .text-indigo-200\/55,
+  .text-indigo-200\/90,
+  .text-indigo-200\/95,
+  .text-indigo-300,
+  .text-indigo-300\/55,
+  .text-indigo-300\/70,
+  .text-indigo-300\/75,
+  .text-indigo-300\/80,
+  .text-indigo-300\/85,
+  .group-hover\:text-indigo-300\/85:hover,
+  .hover\:text-indigo-200:hover {
+    color: var(--primary-soft-foreground);
+  }
+  .text-indigo-400,
+  .text-indigo-400\/50 {
+    color: var(--primary);
+  }
+
+  .bg-indigo-500\/10,
+  .bg-indigo-500\/12,
+  .bg-indigo-500\/15,
+  .bg-indigo-500\/\[0\.04\],
+  .bg-indigo-500\/\[0\.06\],
+  .bg-indigo-500\/\[0\.07\],
+  .bg-indigo-500\/\[0\.08\],
+  .bg-indigo-500\/\[0\.1\],
+  .bg-indigo-400\/15,
+  .bg-indigo-500\/20,
+  .bg-indigo-500\/25,
+  .hover\:bg-indigo-500\/25:hover,
+  .hover\:bg-indigo-400\/25:hover {
+    background-color: var(--primary-soft);
+  }
+  .bg-violet-500\/\[0\.05\],
+  .bg-violet-500\/\[0\.06\],
+  .bg-violet-500\/\[0\.07\],
+  .bg-violet-500\/10,
+  .bg-violet-500\/15 {
+    background-color: var(--primary-soft);
+  }
+  .bg-emerald-500\/\[0\.05\],
+  .bg-emerald-500\/\[0\.06\],
+  .bg-emerald-500\/\[0\.07\] {
+    background-color: var(--success-soft);
+  }
+  .bg-sky-500\/\[0\.05\],
+  .bg-sky-500\/\[0\.07\],
+  .bg-sky-500\/10,
+  .bg-sky-500\/15,
+  .bg-blue-500\/\[0\.05\],
+  .bg-blue-500\/\[0\.07\],
+  .bg-blue-500\/15,
+  .bg-cyan-500\/\[0\.05\],
+  .bg-cyan-500\/\[0\.07\],
+  .bg-cyan-500\/15,
+  .bg-teal-500\/\[0\.05\],
+  .bg-teal-500\/\[0\.07\],
+  .bg-teal-500\/15 {
+    background-color: var(--info-soft);
+  }
+  .bg-amber-500\/\[0\.05\],
+  .bg-amber-500\/\[0\.06\],
+  .bg-amber-500\/\[0\.08\],
+  .bg-orange-500\/\[0\.05\],
+  .bg-orange-500\/\[0\.07\],
+  .bg-orange-500\/15 {
+    background-color: var(--warning-soft);
+  }
+  .bg-indigo-500\/18 {
+    background-color: var(--primary-soft);
+  }
+  .bg-secondary\/40,
+  .bg-secondary\/80 {
+    background-color: var(--muted);
+  }
+  .bg-muted\/70 {
+    background-color: var(--muted);
+  }
+  .bg-background\/40 {
+    background-color: var(--elevated);
+  }
+  .bg-fuchsia-500\/\[0\.05\],
+  .bg-fuchsia-500\/\[0\.07\],
+  .bg-fuchsia-500\/15 {
+    background-color: color-mix(in oklab, var(--primary-soft) 70%, #f0abfc);
+  }
+  .bg-indigo-500\/40 {
+    background-color: var(--primary);
+  }
+
+  .border-indigo-400\/35,
+  .border-indigo-400\/50,
+  .border-indigo-400\/55,
+  .border-indigo-500\/20,
+  .border-indigo-500\/25,
+  .border-indigo-500\/35,
+  .border-indigo-500\/40,
+  .hover\:border-indigo-500\/25:hover,
+  .ring-indigo-400\/30 {
+    border-color: var(--primary-border);
+    --tw-ring-color: var(--primary-border);
+  }
+
+  /* Success / emerald */
+  .text-emerald-200,
+  .text-emerald-200\/85,
+  .text-emerald-200\/90,
+  .text-emerald-300,
+  .text-emerald-300\/80,
+  .text-emerald-300\/90,
+  .text-emerald-400,
+  .text-emerald-400\/70,
+  .group-hover\:text-emerald-300\/80:hover {
+    color: var(--success);
+  }
+  .bg-emerald-500\/10,
+  .bg-emerald-500\/15,
+  .bg-emerald-500\/20,
+  .bg-emerald-400\/8,
+  .hover\:bg-emerald-500\/20:hover {
+    background-color: var(--success-soft);
+  }
+  .border-emerald-500\/20,
+  .border-emerald-500\/25,
+  .border-emerald-500\/30,
+  .border-emerald-500\/35,
+  .border-emerald-500\/40,
+  .border-emerald-500\/50,
+  .border-emerald-400\/15 {
+    border-color: var(--success-border);
+  }
+
+  /*
+   * Warning / amber — dark theme uses pale amber *text* on tinted panels.
+   * On light those stay nearly white → yellow-on-yellow. Force deep warning ink.
+   */
+  .text-amber-50,
+  .text-amber-100,
+  .text-amber-100\/50,
+  .text-amber-100\/70,
+  .text-amber-100\/75,
+  .text-amber-100\/90,
+  .text-amber-200,
+  .text-amber-200\/70,
+  .text-amber-200\/80,
+  .text-amber-200\/85,
+  .text-amber-200\/90,
+  .text-amber-300,
+  .text-amber-300\/75,
+  .text-amber-300\/90,
+  .text-amber-400,
+  .text-amber-400\/60,
+  .text-amber-400\/70,
+  .text-amber-400\/80,
+  .text-yellow-200,
+  .text-yellow-300 {
+    color: var(--warning);
+  }
+  .bg-amber-500\/5,
+  .bg-amber-500\/10,
+  .bg-amber-500\/15,
+  .bg-amber-500\/\[0\.05\],
+  .bg-amber-500\/\[0\.06\],
+  .bg-amber-500\/\[0\.07\],
+  .bg-amber-500\/\[0\.08\],
+  .bg-amber-500\/\[0\.12\],
+  .bg-amber-400\/8,
+  .bg-yellow-500\/10,
+  .bg-yellow-500\/15,
+  .hover\:bg-amber-500\/25:hover,
+  .hover\:bg-amber-500\/\[0\.12\]:hover {
+    background-color: var(--warning-soft);
+  }
+  .border-amber-400\/15,
+  .border-amber-400\/25,
+  .border-amber-400\/35,
+  .border-amber-400\/40,
+  .border-amber-500\/20,
+  .border-amber-500\/25,
+  .border-amber-500\/30,
+  .border-amber-500\/35,
+  .border-amber-500\/40,
+  .border-yellow-500\/20,
+  .border-yellow-500\/30 {
+    border-color: var(--warning-border);
+  }
+
+  /* Error / rose / red — same pale-on-tint problem as amber */
+  .text-rose-200,
+  .text-rose-300,
+  .text-red-200,
+  .text-red-200\/90,
+  .text-red-300,
+  .text-red-300\/75,
+  .text-red-300\/80,
+  .text-red-300\/85,
+  .text-red-300\/90,
+  .text-red-400,
+  .text-red-400\/50,
+  .text-red-400\/60,
+  .text-red-400\/80,
+  .hover\:text-red-400:hover,
+  .hover\:text-red-400\/80:hover {
+    color: var(--destructive);
+  }
+  .bg-rose-500\/10,
+  .bg-rose-500\/15,
+  .bg-red-500\/10,
+  .bg-red-500\/15,
+  .bg-red-500\/20,
+  .bg-red-400\/10,
+  .bg-red-400\/12,
+  .hover\:bg-red-400\/10:hover,
+  .hover\:bg-red-400\/20:hover,
+  .hover\:bg-red-500\/10:hover,
+  .hover\:bg-red-500\/20:hover {
+    background-color: var(--destructive-soft);
+  }
+  .border-rose-500\/20,
+  .border-rose-500\/30,
+  .border-red-500\/20,
+  .border-red-500\/25,
+  .border-red-500\/30,
+  .border-red-400\/15,
+  .border-red-400\/20,
+  .border-red-400\/25 {
+    border-color: var(--destructive-border);
+  }
+
+  /* Blue / info */
+  .text-sky-300,
+  .text-sky-300\/90,
+  .text-blue-300,
+  .text-blue-300\/90,
+  .text-cyan-300,
+  .text-cyan-300\/90,
+  .text-teal-300,
+  .text-teal-300\/90 {
+    color: var(--info);
+  }
+  .bg-sky-500\/10,
+  .bg-blue-500\/10,
+  .bg-cyan-500\/10,
+  .bg-teal-500\/10 {
+    background-color: var(--info-soft);
+  }
+  .border-sky-500\/20,
+  .border-sky-500\/25,
+  .border-sky-500\/35,
+  .border-sky-500\/40,
+  .border-sky-500\/50,
+  .border-sky-400\/30,
+  .border-blue-500\/20,
+  .border-blue-500\/25,
+  .border-blue-500\/35,
+  .border-blue-500\/40,
+  .border-blue-500\/50,
+  .border-blue-400\/30,
+  .border-cyan-500\/20,
+  .border-cyan-500\/25,
+  .border-cyan-500\/35,
+  .border-cyan-500\/40,
+  .border-cyan-500\/50,
+  .border-cyan-400\/30,
+  .border-teal-500\/25,
+  .border-teal-500\/35,
+  .border-teal-500\/40,
+  .border-teal-500\/50,
+  .border-teal-400\/30 {
+    border-color: var(--info-border);
+  }
+
+  /* Violet / fuchsia (provider badges, catalog) */
+  .text-violet-300,
+  .text-violet-300\/90,
+  .text-fuchsia-300,
+  .text-fuchsia-300\/90 {
+    color: var(--primary-soft-foreground);
+  }
+  .bg-violet-500\/20 {
+    background-color: var(--primary-soft);
+  }
+  .border-violet-500\/25,
+  .border-violet-500\/35,
+  .border-violet-500\/40,
+  .border-violet-500\/50,
+  .border-violet-400\/30,
+  .border-fuchsia-500\/25,
+  .border-fuchsia-500\/35,
+  .border-fuchsia-500\/40,
+  .border-fuchsia-500\/50,
+  .border-fuchsia-400\/30 {
+    border-color: var(--primary-border);
+  }
+  .text-orange-300,
+  .text-orange-300\/90 {
+    color: var(--warning);
+  }
+  .border-orange-500\/25,
+  .border-orange-500\/35,
+  .border-orange-500\/40,
+  .border-orange-500\/50,
+  .border-orange-400\/30 {
+    border-color: var(--warning-border);
+  }
+
+  /* Amber selected wraps */
+  .bg-amber-500\/20 {
+    background-color: var(--warning-soft);
+  }
+  .border-amber-500\/25 {
+    border-color: var(--warning-border);
+  }
+  .text-amber-300 {
+    color: var(--warning);
+  }
+
+  /* Emerald wraps used for Knowledge icon */
+  .bg-emerald-500\/20 {
+    background-color: var(--success-soft);
+  }
+  .border-emerald-500\/25 {
+    border-color: var(--success-border);
+  }
+
+  /* Indigo icon wraps */
+  .bg-indigo-500\/20 {
+    background-color: var(--primary-soft);
+  }
+  .border-indigo-500\/25 {
+    border-color: var(--primary-border);
+  }
+
+  /* Primary actions that used translucent indigo pills */
+  .bg-primary\/10 {
+    background-color: var(--primary-soft);
+  }
+  .border-primary\/50 {
+    border-color: var(--primary-border);
+  }
+
+  /* Focus rings — solid brand purple, not a faint wash */
+  .focus-visible\:ring-ring\/50:focus-visible {
+    --tw-ring-color: color-mix(in oklab, var(--ring) 55%, transparent);
+  }
+
+  /* Cards stay solid cream — no translucent mix that collapses into the canvas */
+  [data-slot="card"],
+  .bg-card\/80 {
+    background-color: var(--card);
+  }
+}
+
+/* Light: selected tabs / nav feel intentional */
+html:not(.dark) [data-slot="tabs-trigger"][data-active],
+html:not(.dark) [data-slot="tabs-trigger"][aria-selected="true"] {
+  background-color: var(--elevated);
+  color: var(--primary-soft-foreground);
+  border-color: var(--primary-border);
+  box-shadow: var(--shadow-sm);
+}
+html:not(.dark) [data-slot="tabs-trigger"]:not([data-active]):not([aria-selected="true"]) {
+  color: var(--text-secondary);
+}
+html:not(.dark) [data-slot="tabs-list"] {
+  background-color: var(--secondary);
+  border: 1px solid var(--border-strong);
+}
+

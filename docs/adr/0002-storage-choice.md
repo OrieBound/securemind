@@ -1,6 +1,8 @@
 ## ADR 0002: Keep Postgres + pgvector as the primary store
 
-**Status**: Accepted · **Date**: 2026-08-01 · **Supersedes**: the Aurora Serverless v2 assumption in `AGENTS.md`
+**Status**: Superseded for **hosted AWS** by [ADR 0007](0007-hosted-dynamodb-vectors.md). **Still accepted** for local / on-prem (Docker Compose Postgres + pgvector) and as the optional Neon adapter. · **Date**: 2026-08-01 · **Updated**: 2026-08-24 · **Supersedes**: the Aurora Serverless v2 assumption in `AGENTS.md`
+
+> **2026-08-24.** Hosted AWS no longer defaults to Neon. DynamoDB native vector search (`SearchVectors`) is the AWS edition store. This ADR remains the rationale for why local development stays on Postgres, and why Neon is an optional hosted Postgres path rather than the AWS default. Do not treat the original “DynamoDB rejected” row as current for cloud.
 
 ---
 
@@ -11,7 +13,7 @@ SecureMind stores four kinds of data:
 | Kind | Model | Access pattern |
 |---|---|---|
 | Relational records | `Workspace`, `Session`, `Message`, `Document` | Point lookups and small ordered scans, always scoped by `userId` |
-| Derived text | `SessionSummary`, `WorkspaceFact`, `UserFact` | Read on session load, upserted by the background summarizer |
+| Derived text | `SessionSummary`, `WorkspaceFact` | Read on session load; facts upserted by the background summarizer |
 | Vectors | `MemoryFragment.embedding` — `vector(768)` | Top-k cosine similarity, filtered by `workspaceId` and `userId` |
 | Chunked documents | `MemoryFragment` with `category = "document"` | Same as above |
 
@@ -21,14 +23,16 @@ The project is moving toward an AWS-oriented architecture. That raises a fair qu
 
 ### Decision
 
-**Keep Postgres + pgvector.** Do not migrate storage as part of the pivot. Revisit only when a listed trigger below actually fires.
+**Keep Postgres + pgvector with Neon as the default external database.** Do not migrate day-to-day storage off Neon as part of the hosting pivot.
+
+**Optional Aurora (2026-08-03):** Aurora Serverless v2 remains a parked CloudFormation template (`infra/cloudformation/stacks/data-aurora`). It is not the default and is not created from Terraform.
 
 ### Options considered
 
 | Option | Idle cost | Vector search | Verdict |
 |---|---|---|---|
 | **Neon Postgres + pgvector** (current) | $0 on free tier, scales to zero | Native, same transaction as relational data | **Chosen** |
-| Aurora Serverless v2 + pgvector | ~$43/mo at the 0.5 ACU floor | Same as above | Rejected for now — same capability, real monthly cost |
+| Aurora Serverless v2 + pgvector | ~$43/mo at the 0.5 ACU floor | Same as above | Optional deploy-time stack only — not default |
 | DynamoDB for metadata + separate vector store | Near $0 idle | Needs a second system | Rejected — splits one consistent write into two, for no gain at this size |
 | OpenSearch Serverless | ~$700/mo minimum (2 OCU) | Strong at scale | Rejected — cost is disproportionate by orders of magnitude |
 | Bedrock Knowledge Bases | Depends on the backing store | Managed chunk-embed-retrieve | Rejected — would replace the ingest and retrieval logic that is the point of the project |

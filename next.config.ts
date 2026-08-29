@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Standalone output for the on-prem Docker image (see Dockerfile).
+  output: "standalone",
+
   // Move the dev-tools badge away from the sidebar (default is bottom-left which
   // overlaps the sidebar Settings button). Use bottom-right instead.
   // The badge cannot be fully hidden while the slow-filesystem warning is active.
@@ -20,7 +23,7 @@ const nextConfig: NextConfig = {
   // pdf-parse uses require() + fs.readdirSync internally to load test fixtures.
   // If webpack bundles it, those fs calls fail. Marking it external means Node.js
   // loads it directly from node_modules at runtime instead — correct behaviour.
-  serverExternalPackages: ["pdf-parse", "mammoth"],
+  serverExternalPackages: ["pdf-parse", "mammoth", "exceljs"],
 
   experimental: {
     turbopackFileSystemCacheForDev: false,

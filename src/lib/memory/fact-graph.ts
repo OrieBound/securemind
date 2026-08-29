@@ -8,7 +8,7 @@ export type FactAssociation = {
   factId: string;
   key: string;
   value: string;
-  category: "identity" | "behavioral" | "personality" | "other";
+  category: "identity" | "behavioral" | "other";
   confidence: number;
   source: string | null;
   updatedAt: string;
@@ -29,14 +29,9 @@ const BEHAVIORAL_KEYS = new Set([
   "response_length", "technical_level", "communication_style",
   "preferred_topics", "tone_preference", "feedback_style",
 ]);
-const PERSONALITY_KEYS = new Set([
-  "sociability", "talkativeness", "patience", "calmness", "sensitivity",
-  "politeness", "preferred_problem_types", "emotional_tone",
-]);
 
 function factCategory(key: string): FactAssociation["category"] {
   const k = key.toLowerCase();
-  if (PERSONALITY_KEYS.has(k)) return "personality";
   if (BEHAVIORAL_KEYS.has(k)) return "behavioral";
   if (IDENTITY_KEYS.has(k)) return "identity";
   return "other";
@@ -139,7 +134,6 @@ export function categoryLabel(cat: FactAssociation["category"]): string {
   switch (cat) {
     case "identity": return "Identity";
     case "behavioral": return "Communication";
-    case "personality": return "Personality";
     default: return "Other";
   }
 }

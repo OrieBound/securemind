@@ -5,7 +5,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 
-const PRISMA_SCHEMA_EPOCH = "2026-08-01-workspace-rename";
+const PRISMA_SCHEMA_EPOCH = "2026-08-23-knowledge-memory";
 
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;

@@ -9,9 +9,9 @@ import {
   ChevronRight,
   ChevronDown,
   FileText,
+  GripVertical,
   Loader2,
   MessageSquare,
-  Pencil,
   Settings,
   Shield,
   ShieldAlert,
@@ -24,7 +24,6 @@ import {
   MapPin,
   Fingerprint,
   KeyRound,
-  SlidersHorizontal,
   Sparkles,
   Square,
   Trash2,
@@ -39,12 +38,26 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type DragEvent,
 } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import type { InsightsSubjectScope } from "@/components/analytics/analytics-shell";
+import {
+  readStashedInsightsSubject,
+  stashInsightsSubject,
+} from "@/lib/analytics/insights-subject-client";
+
+/** Survives /analytics → / remount so Back to Admin reopens Settings → Admin. */
+const OPEN_SETTINGS_KEY = "sm_open_settings";
 
 import { ComposerInput, type ComposerInputHandle, type ComposerVoiceInsert } from "@/components/app/composer-input";
+import {
+  ModelSetupPanel,
+  RuntimeStatusBar,
+  type RuntimeStatusPayload,
+} from "@/components/app/model-setup-panel";
 import {
   SettingsHub,
   SettingsSidebarNav,
@@ -56,20 +69,83 @@ import {
 } from "@/components/app/settings-hub";
 import { MemoryDashboard } from "@/components/app/memory-dashboard";
 import { WorkspaceEditor } from "@/components/app/workspace-editor";
+import {
+  KnowledgeDetail,
+  KnowledgeLibraryFilters,
+  knowledgeLibraryKind,
+  type KnowledgeLibraryFilter,
+} from "@/components/app/knowledge-detail";
+import {
+  ModelCatalogProvider,
+  ProviderBadge,
+  buildChatPickerModels,
+  guessProvider,
+  isChatSelectableModel,
+  modelDisplayName,
+  useModelCatalog,
+} from "@/components/app/model-catalog";
+import { ComplexityTiersEditor, type ComplexityTiersBind } from "@/components/app/complexity-tiers-editor";
+import { isReferenceOnlyModel } from "@/lib/models/reference-catalog";
+import {
+  DEFAULT_TIER_MODELS,
+  displayModelForTier,
+  effectiveTierOverrides,
+  sanitizeTierOverrides,
+} from "@/lib/models/tier-assignment";
+import { isChatUsableModelId } from "@/lib/models/catalog-shared";
+import { formatGroqChatError } from "@/lib/models/groq-connectivity";
+import {
+  DEFAULT_COST_BASELINE_MODEL,
+  GROQ_MODEL_PRICING,
+  estimateBaselineCostUsd,
+  estimateInferenceCost,
+} from "@/lib/pricing";
+import { useTheme } from "@/components/app/theme-provider";
+import { useAuthSession } from "@/components/app/auth-session";
+import {
+  LEFT_SIDEBAR_DEFAULT,
+  LEFT_SIDEBAR_KEY,
+  LEFT_SIDEBAR_MAX,
+  LEFT_SIDEBAR_MIN,
+  PanelResizeHandle,
+  RIGHT_SIDEBAR_DEFAULT,
+  RIGHT_SIDEBAR_KEY,
+  RIGHT_SIDEBAR_MAX,
+  RIGHT_SIDEBAR_MIN,
+  SETTINGS_NAV_HEIGHT_DEFAULT,
+  SETTINGS_NAV_HEIGHT_KEY,
+  SETTINGS_NAV_HEIGHT_MAX,
+  SETTINGS_NAV_HEIGHT_MIN,
+  SidebarResizeHandle,
+  useResizableHeight,
+  useSidebarWidth,
+} from "@/components/app/sidebar-resize";
+import { INTEL_HEIGHT, IntelPanelStack } from "@/components/app/intel-panels";
+import {
+  InsightsTabsList,
+  useInsightsTabOrder,
+  type InsightsTabId,
+} from "@/components/app/insights-nav";
+import {
+  WorkspaceFeatureNav,
+  useWorkspaceFeatureOrder,
+  type WorkspaceFeatureId,
+} from "@/components/app/workspace-feature-nav";
+import {
+  reorderIds,
+  useWorkspaceListOrder,
+} from "@/components/app/workspace-list-order";
 import { SecurityAnalyticsView } from "@/components/analytics/security-view";
 import { UsageAnalyticsView } from "@/components/analytics/usage-view";
 import { CostAnalyticsView } from "@/components/analytics/cost-view";
 import {
   fetchAnalyticsJson,
-  fmtPct,
-  fmtUsd as fmtAnalyticsUsd,
   postSecurityEvents,
-  shortModel,
 } from "@/lib/analytics/client";
+import type { AnalyticsRange } from "@/lib/analytics/types";
 
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 import {
   Sheet,
@@ -78,10 +154,17 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import EmojiPicker, { Theme, type EmojiClickData } from "emoji-picker-react";
+import {
+  apiAuthHeaders,
+  apiUrl,
+  usesRemoteApi,
+  warmChatConnection,
+} from "@/lib/client/api-base";
+import { PRODUCT_CHROME_TAGLINE, PRODUCT_POSITIONING } from "@/lib/branding";
 import { cn } from "@/lib/utils";
 import {
   scrubPII,
@@ -105,7 +188,11 @@ import {
   MAX_FILE_MB,
   SUPPORTED_DOC_FORMATS_SHORT,
 } from "@/lib/documents/constants";
-import { formatAttachmentsForHistory } from "@/lib/attachments";
+import {
+  ATTACHMENT_LIMITS_HINT,
+  formatAttachmentsForHistory,
+  MAX_ATTACHMENTS_PER_TURN,
+} from "@/lib/attachments";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 
@@ -117,8 +204,8 @@ type RouteInfo = {
   wasAutoRouted?: boolean;
   costTier?: "free" | "$" | "$$" | "$$$";
   latencyMs?: number;  // time-to-first-token from send
-  costUsd?: number;    // exact cost from actual token usage
-  savedUsd?: number;   // savings vs 70B baseline
+  costUsd?: number;    // list-rate estimate from token usage (undefined if unpriced)
+  savedUsd?: number;   // estimated savings vs baseline model
 };
 
 type CitationRef = {
@@ -157,6 +244,9 @@ type ChatMessage = {
   scrubEvents?: ScrubEvent[];
   bookmarked?: boolean;
   error?: string;
+  /** Machine-readable setup error — e.g. VENDOR_RISK_REQUIRED → Settings link. */
+  errorCode?: string;
+  errorSettingsSection?: SettingsSection;
   images?: string[];   // base64 data URLs for inline image display
   routeInfo?: RouteInfo;
   /** Retrieved sources for this turn — used citations only. */
@@ -213,13 +303,30 @@ type DocRecord = {
   redactionCount?: number;
   scrubEvents?:   ScrubEvent[];
   hadRedactions?: boolean;
+  /** True when Knowledge already had this name+size in the workspace. */
+  reused?: boolean;
+  processingError?: string | null;
+  hasOriginal?: boolean;
+  extractMeta?: {
+    kind?: string;
+    sheets?: { name: string; headers: string[]; rowCount: number }[];
+    imageScan?: {
+      textScanned: boolean;
+      metadataFound: boolean;
+      metadataRemoved: boolean;
+      visualScan: "unavailable" | "limited" | "completed";
+      filenameScanned: boolean;
+      note: string;
+    };
+  } | null;
 };
 
-type DocFragment = { id: string; content: string; createdAt: string };
+type DocFragment = { id: string; content: string; createdAt: string; provenance?: { range?: string; sheet?: string } | null };
 
 type DocDetail = DocRecord & {
   content:   string;
   fragments: DocFragment[];
+  fragmentTotal?: number;
 };
 
 /**
@@ -300,15 +407,7 @@ const SELECTABLE_MODELS = [
 ];
 
 // Default model assigned to each complexity tier (mirrors router.ts COMPLEXITY_TIERS)
-const DEFAULT_MODE_MODELS: Record<string, string> = {
-  Max:      "llama-3.3-70b-versatile",
-  High:     "llama-3.3-70b-versatile",
-  Plus:     "qwen/qwen3-32b",
-  Standard: "openai/gpt-oss-120b",
-  Light:    "meta-llama/llama-4-scout-17b-16e-instruct",
-  Fast:     "openai/gpt-oss-20b",
-  Micro:    "llama-3.1-8b-instant",
-};
+const DEFAULT_MODE_MODELS: Record<string, string> = DEFAULT_TIER_MODELS;
 
 function shortModelName(id: string): string {
   const map: Record<string, string> = {
@@ -331,6 +430,7 @@ const PII_SCAN_ICONS: Record<string, typeof Mail> = {
   "Phone numbers": Phone,
   "Credit / debit card numbers": CreditCard,
   "Social Security numbers": Hash,
+  "Social Insurance numbers": Hash,
   "IPv4 addresses": Globe,
   "Street addresses": MapPin,
   "Passport / national ID patterns": Fingerprint,
@@ -340,6 +440,7 @@ const PII_SCAN_ICONS: Record<string, typeof Mail> = {
 type RouteHit = {
   tier: string;
   model: string;
+  provider?: string;
   at: string;
   workspaceId?: string;
   promptTokens?: number;
@@ -347,11 +448,14 @@ type RouteHit = {
   costUsd?: number;
   savedUsd?: number;
 };
-type StatsRange = "today" | "monthly" | "all";
+type StatsRange = "today" | "weekly" | "monthly" | "all";
 
 const ROUTE_HISTORY_KEY = "sm_route_history";
 const SAVINGS_BASELINE_KEY = "sm_savings_baseline";
-const GROQ_BYOK_KEY = "sm_groq_byok";
+const TIER_MODEL_OVERRIDES_KEY = "sm_tier_model_overrides";
+const MODEL_SELECTION_MODE_KEY = "sm_model_selection_mode";
+const FIXED_MODEL_ID_KEY = "sm_fixed_model_id";
+const TIER_CHANGED_FLASH_MS = 4500;
 const SETTINGS_TRANSITION_MS = 300;
 const viewTransition = "transition-all duration-300 ease-in-out";
 const PII_ARCHIVE_KEY     = "sm_pii_archive";
@@ -362,6 +466,7 @@ const SAFE_TERMS_KEY      = "sm_safe_terms";
 /** Keys written by the removed approve-to-expose flow. Purged on first load. */
 const LEGACY_PII_APPROVALS_KEY = "sm_pii_approvals";
 const PII_PURGE_FLAG_KEY       = "sm_pii_purged_v2";
+const STORAGE_SWEEP_FLAG_KEY   = "sm_storage_swept_v1";
 
 /**
  * One-time cleanup for installs that ran the old approve-to-expose flow.
@@ -392,6 +497,43 @@ function purgeLegacyPiiValues() {
   }
 }
 
+/** Drop superseded Insights / sidebar layout keys from earlier iterations. */
+function sweepOrphanedStorageKeys() {
+  try {
+    if (localStorage.getItem(STORAGE_SWEEP_FLAG_KEY)) return;
+    const keepExact = new Set([
+      "sm_intel_panels_usage_v6",
+      "sm_intel_panels_security_v2",
+      "sm_intel_panels_cost_v3",
+      "sm_right_sidebar_w_v4",
+      "sm_insights_tab_order_v2",
+    ]);
+    const orphanExact = [
+      "sm_intel_panels_security",
+      "sm_intel_panels_cost",
+      "sm_right_sidebar_w",
+      "sm_right_sidebar_w_v2",
+      "sm_right_sidebar_w_v3",
+      "sm_insights_tab_order",
+    ];
+    for (const key of orphanExact) localStorage.removeItem(key);
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const key = localStorage.key(i);
+      if (!key || keepExact.has(key)) continue;
+      if (
+        /^sm_intel_panels_usage_v[1-5]$/.test(key)
+        || /^sm_intel_panels_security_v1$/.test(key)
+        || /^sm_intel_panels_cost_v[12]$/.test(key)
+      ) {
+        localStorage.removeItem(key);
+      }
+    }
+    localStorage.setItem(STORAGE_SWEEP_FLAG_KEY, new Date().toISOString());
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 function persistPiiArchive(entries: SessionScrubEntry[]) {
   try { localStorage.setItem(PII_ARCHIVE_KEY, JSON.stringify(entries)); } catch { /* quota */ }
 }
@@ -410,20 +552,40 @@ function workspaceDisplay(workspaces: Workspace[], workspaceId?: string): { name
   return a ? { name: a.name, emoji: a.emoji } : { name: "Removed workspace" };
 }
 
-/** Keep only companion-tagged hits so All = sum of per-companion counts. */
+/** Keep only workspace-tagged hits so All = sum of per-workspace counts. */
 function taggedRouteHits(hits: RouteHit[], knownWorkspaceIds?: Set<string>): RouteHit[] {
   return hits.filter(h => {
-    if (!h.workspaceId) return false;
+    // Keep unscoped hits so All still shows turns recorded before workspace id was set.
+    if (!h.workspaceId) return true;
     if (knownWorkspaceIds && !knownWorkspaceIds.has(h.workspaceId)) return false;
     return true;
   });
 }
+
+/** Insights rail ranges → analytics API ranges. */
+function statsRangeToAnalytics(range: StatsRange): AnalyticsRange {
+  if (range === "today") return "today";
+  if (range === "weekly") return "7d";
+  if (range === "monthly") return "30d";
+  return "all";
+}
+
+type InsightsCostPayload = {
+  kpis: {
+    estimatedCostUsd: number;
+    routingSavingsUsd: number;
+    pricedRequests: number;
+    unpricedRequests: number;
+  };
+  byModel: { model: string; costUsd: number }[];
+};
 
 function persistRouteHistory(hits: RouteHit[]) {
   try { localStorage.setItem(ROUTE_HISTORY_KEY, JSON.stringify(hits)); } catch { /* quota */ }
 }
 
 function navTitle(nav: NavId): string {
+  if (nav === "home") return "Home";
   if (nav === "settings") return "App settings";
   if (nav === "workspace-settings") return "Workspace";
   if (nav === "security-dashboard") return "Security";
@@ -466,16 +628,16 @@ function WorkspaceBreadcrumb({
             onClick={onToggle}
             className={cn(
               "flex items-center gap-1 rounded-lg px-1.5 py-0.5 -ml-1.5 transition-colors cursor-pointer",
-              "font-semibold text-white/90 hover:bg-white/5",
-              open && "bg-white/8",
+              "font-semibold text-foreground/90 hover:bg-foreground/5",
+              open && "bg-foreground/8",
             )}
           >
             <span className="truncate">{agent.name}</span>
-            <ChevronDown className={cn("size-3 text-white/35 shrink-0 transition-transform", open && "rotate-180")} aria-hidden />
+            <ChevronDown className={cn("size-3 text-foreground/35 shrink-0 transition-transform", open && "rotate-180")} aria-hidden />
           </button>
           {open && (
-            <div className="absolute top-full left-0 mt-1 z-30 w-52 rounded-xl bg-[#0e0e14] border border-white/10 shadow-2xl shadow-black/60 py-1 overflow-hidden">
-              <p className="px-3 py-1.5 text-[0.6rem] uppercase tracking-widest text-white/25">Switch workspace</p>
+            <div className="absolute top-full left-0 mt-1 z-30 w-52 rounded-xl bg-popover border border-foreground/10 shadow-2xl shadow-black/60 py-1 overflow-hidden">
+              <p className="px-3 py-1.5 text-[0.6rem] uppercase tracking-widest text-foreground/25">Switch workspace</p>
               {workspaces.map(a => (
                 <button
                   key={a.id}
@@ -484,8 +646,8 @@ function WorkspaceBreadcrumb({
                   className={cn(
                     "flex w-full items-center gap-2.5 px-3 py-2 text-sm transition-colors text-left cursor-pointer",
                     a.id === agent.id
-                      ? "text-white/85 bg-white/6"
-                      : "text-white/45 hover:bg-white/5 hover:text-white/70",
+                      ? "text-foreground/85 bg-foreground/6"
+                      : "text-foreground/45 hover:bg-foreground/5 hover:text-foreground/70",
                   )}
                 >
                   <span>{a.emoji}</span>
@@ -497,15 +659,15 @@ function WorkspaceBreadcrumb({
           )}
         </div>
       ) : agent ? (
-        <span className="font-semibold text-white/90 truncate">{agent.name}</span>
+        <span className="font-semibold text-foreground/90 truncate">{agent.name}</span>
       ) : null}
       {agent && (
         <>
-          <ChevronRight className="size-3.5 text-white/25 shrink-0" aria-hidden />
-          <span className="text-white/45 truncate font-medium">{sectionLabel}</span>
+          <ChevronRight className="size-3.5 text-foreground/25 shrink-0" aria-hidden />
+          <span className="text-foreground/45 truncate font-medium">{sectionLabel}</span>
         </>
       )}
-      {!agent && <span className="font-semibold text-white/70">{sectionLabel}</span>}
+      {!agent && <span className="font-semibold text-foreground/70">{sectionLabel}</span>}
     </nav>
   );
 }
@@ -537,6 +699,13 @@ function startOfToday(): Date {
   return d;
 }
 
+function startOfWeek(): Date {
+  const d = new Date();
+  d.setDate(d.getDate() - 6);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
 function startOfMonth(): Date {
   const d = new Date();
   d.setDate(1);
@@ -549,11 +718,10 @@ function filterByRange<T extends { at: string }>(
   range: StatsRange,
 ): T[] {
   if (range === "all") return items;
-  if (range === "today") {
-    const t0 = startOfToday().getTime();
-    return items.filter(i => new Date(i.at).getTime() >= t0);
-  }
-  const t0 = startOfMonth().getTime();
+  const t0 =
+    range === "today"   ? startOfToday().getTime()
+    : range === "weekly" ? startOfWeek().getTime()
+    : startOfMonth().getTime();
   return items.filter(i => new Date(i.at).getTime() >= t0);
 }
 
@@ -566,11 +734,12 @@ function StatsRangePicker({
 }) {
   const options: { id: StatsRange; label: string }[] = [
     { id: "today",   label: "Today" },
+    { id: "weekly",  label: "Weekly" },
     { id: "monthly", label: "Monthly" },
     { id: "all",     label: "All time" },
   ];
   return (
-    <div className="flex gap-1.5 p-1 bg-white/5 rounded-lg border border-white/6">
+    <div className="flex gap-1.5 p-1 bg-foreground/5 rounded-lg border border-foreground/10">
       {options.map(opt => (
         <button
           key={opt.id}
@@ -579,8 +748,8 @@ function StatsRangePicker({
           className={cn(
             "flex-1 min-w-0 whitespace-nowrap text-[0.68rem] font-medium rounded-md px-2.5 py-1.5 transition-all",
             value === opt.id
-              ? "bg-white/10 text-white/80 shadow-sm"
-              : "text-white/30 hover:text-white/55",
+              ? "bg-elevated text-foreground shadow-sm border border-border"
+              : "text-foreground/45 hover:text-foreground/70",
           )}
         >
           {opt.label}
@@ -593,13 +762,22 @@ function StatsRangePicker({
 function SavingsBaselinePicker({
   value,
   onChange,
+  models,
 }: {
   value: string;
   onChange: (modelId: string) => void;
+  models: Array<{ id: string; name: string; provider: Parameters<typeof ProviderBadge>[0]["provider"] }>;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const selected = SELECTABLE_MODELS.find(m => m.id === value);
+  const selected = models.find(m => m.id === value);
+
+  const options = useMemo(() => {
+    const pricedGroq = models.filter(m => m.provider === "groq" && m.id in GROQ_MODEL_PRICING);
+    const pricedIds = new Set(pricedGroq.map(m => m.id));
+    const rest = models.filter(m => !pricedIds.has(m.id));
+    return [...pricedGroq, ...rest];
+  }, [models]);
 
   useEffect(() => {
     if (!open) return;
@@ -613,7 +791,7 @@ function SavingsBaselinePicker({
   return (
     <div ref={rootRef}>
       <div className="flex items-center gap-2">
-        <span className="text-[0.62rem] font-medium text-white/35 shrink-0">Baseline model</span>
+        <span className="text-[0.62rem] font-medium text-foreground/35 shrink-0">Baseline model</span>
         <div className="relative flex-1 min-w-0">
           <button
             type="button"
@@ -622,21 +800,22 @@ function SavingsBaselinePicker({
             aria-expanded={open}
             className={cn(
               "flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 text-left transition-colors cursor-pointer",
-              open ? "border-indigo-400/35 bg-indigo-500/10" : "border-white/10 bg-white/[0.04] hover:bg-white/[0.06]",
+              open ? "border-indigo-400/35 bg-indigo-500/10" : "border-foreground/10 bg-foreground/[0.04] hover:bg-foreground/[0.06]",
             )}
           >
-            <span className="text-[0.68rem] text-white/70 truncate">
-              {selected?.label ?? displayModelLabel(value)}
+            <span className="flex items-center gap-1.5 min-w-0 text-[0.68rem] text-foreground/70 truncate">
+              {selected && <ProviderBadge provider={selected.provider} />}
+              <span className="truncate">{selected?.name ?? displayModelLabel(value)}</span>
             </span>
-            <ChevronDown className={cn("size-3 text-white/35 shrink-0 transition-transform", open && "rotate-180")} aria-hidden />
+            <ChevronDown className={cn("size-3 text-foreground/35 shrink-0 transition-transform", open && "rotate-180")} aria-hidden />
           </button>
           {open && (
             <ul
               role="listbox"
-              className="absolute z-30 mt-1 w-full max-h-48 overflow-y-auto rounded-xl border border-white/10 bg-[#0e0e14] py-1 shadow-2xl shadow-black/60"
+              className="absolute z-30 mt-1 w-full max-h-56 overflow-y-auto rounded-xl border border-foreground/10 bg-popover py-1 shadow-2xl shadow-black/60"
             >
-              {SELECTABLE_MODELS.map(m => (
-                <li key={m.id}>
+              {options.map(m => (
+                <li key={`${m.provider}:${m.id}`}>
                   <button
                     type="button"
                     role="option"
@@ -644,10 +823,13 @@ function SavingsBaselinePicker({
                     onClick={() => { onChange(m.id); setOpen(false); }}
                     className={cn(
                       "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[0.68rem] transition-colors cursor-pointer",
-                      m.id === value ? "bg-indigo-500/15 text-indigo-200" : "text-white/50 hover:bg-white/5 hover:text-white/75",
+                      m.id === value ? "bg-indigo-500/15 text-indigo-200" : "text-foreground/50 hover:bg-foreground/5 hover:text-foreground/75",
                     )}
                   >
-                    <span className="truncate">{m.label}</span>
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <ProviderBadge provider={m.provider} />
+                      <span className="truncate">{m.name}</span>
+                    </span>
                     {m.id === value && <Check className="size-3 text-indigo-400 shrink-0" aria-hidden />}
                   </button>
                 </li>
@@ -696,7 +878,7 @@ function WorkspaceStatsFilter({
   return (
     <div ref={rootRef} className="mb-2">
       <div className="flex items-center gap-2">
-        <span className="text-[0.62rem] font-medium text-white/35 shrink-0">Workspace</span>
+        <span className="text-[0.62rem] font-medium text-foreground/35 shrink-0">Workspace</span>
         <div className="relative flex-1 min-w-0">
           <button
             type="button"
@@ -705,18 +887,18 @@ function WorkspaceStatsFilter({
             aria-expanded={open}
             className={cn(
               "flex w-full items-center justify-between gap-2 h-7 rounded-md px-2",
-              "bg-white/5 border border-white/8 text-[0.68rem] text-white/70",
-              "hover:bg-white/[0.07] hover:border-white/12 transition-colors cursor-pointer",
-              open && "border-white/15 bg-white/[0.07]",
+              "bg-foreground/5 border border-foreground/8 text-[0.68rem] text-foreground/70",
+              "hover:bg-foreground/[0.07] hover:border-foreground/12 transition-colors cursor-pointer",
+              open && "border-foreground/15 bg-foreground/[0.07]",
             )}
           >
             <span className="truncate text-left">{selectedLabel}</span>
-            <ChevronDown className={cn("size-3 shrink-0 text-white/35 transition-transform", open && "rotate-180")} aria-hidden />
+            <ChevronDown className={cn("size-3 shrink-0 text-foreground/35 transition-transform", open && "rotate-180")} aria-hidden />
           </button>
           {open && (
             <div
               role="listbox"
-              className="absolute top-full left-0 right-0 mt-1 z-30 rounded-xl bg-[#0e0e14] border border-white/10 shadow-2xl shadow-black/60 py-1 overflow-hidden max-h-48 overflow-y-auto"
+              className="absolute top-full left-0 right-0 mt-1 z-30 rounded-xl bg-popover border border-foreground/10 shadow-2xl shadow-black/60 py-1 overflow-hidden max-h-48 overflow-y-auto"
             >
               {options.map(opt => (
                 <button
@@ -728,8 +910,8 @@ function WorkspaceStatsFilter({
                   className={cn(
                     "flex w-full items-center gap-2 px-2.5 py-1.5 text-[0.68rem] text-left transition-colors cursor-pointer",
                     value === opt.id
-                      ? "text-white/85 bg-white/6"
-                      : "text-white/50 hover:bg-white/5 hover:text-white/75",
+                      ? "text-foreground/85 bg-foreground/6"
+                      : "text-foreground/50 hover:bg-foreground/5 hover:text-foreground/75",
                   )}
                 >
                   {opt.emoji && <span className="shrink-0">{opt.emoji}</span>}
@@ -745,42 +927,40 @@ function WorkspaceStatsFilter({
   );
 }
 
-// ─── pricing ──────────────────────────────────────────────────────────────────
-// Groq published pricing (USD per million tokens, input/output).
-// The baseline is 70B versatile — savings are measured against it.
-
-const GROQ_MODEL_PRICING: Record<string, { inputPerM: number; outputPerM: number }> = {
-  "llama-3.3-70b-versatile":                   { inputPerM: 0.59,  outputPerM: 0.79 },
-  "qwen/qwen3-32b":                            { inputPerM: 0.29,  outputPerM: 0.59 },
-  "openai/gpt-oss-120b":                       { inputPerM: 0.15,  outputPerM: 0.60 },
-  "meta-llama/llama-4-scout-17b-16e-instruct": { inputPerM: 0.11,  outputPerM: 0.34 },
-  "openai/gpt-oss-20b":                        { inputPerM: 0.075, outputPerM: 0.30 },
-  "llama-3.1-8b-instant":                      { inputPerM: 0.05,  outputPerM: 0.08 },
-};
-const DEFAULT_SAVINGS_BASELINE = "llama-3.3-70b-versatile";
+// ─── pricing (list-rate estimates — shared with server analytics) ─────────────
+const DEFAULT_SAVINGS_BASELINE = DEFAULT_COST_BASELINE_MODEL;
 /** Fallback token split when exact usage wasn't captured (est. ~700 tokens/turn). */
 const EST_PROMPT_TOKENS = 500;
 const EST_COMPLETION_TOKENS = 200;
 
+function providerForHit(hit: RouteHit): string {
+  return hit.provider ?? guessProvider(hit.model) ?? "groq";
+}
+
 function calcTurnCost(
+  provider: string,
   model: string,
   promptTokens: number,
   completionTokens: number,
   baselineModel = DEFAULT_SAVINGS_BASELINE,
-): { costUsd: number; savedUsd: number } {
-  const p = GROQ_MODEL_PRICING[model];
-  const b = GROQ_MODEL_PRICING[baselineModel] ?? GROQ_MODEL_PRICING[DEFAULT_SAVINGS_BASELINE]!;
-  if (!p) return { costUsd: 0, savedUsd: 0 };
-  const cost     = (promptTokens * p.inputPerM     + completionTokens * p.outputPerM)     / 1_000_000;
-  const baseline = (promptTokens * b.inputPerM + completionTokens * b.outputPerM) / 1_000_000;
-  return { costUsd: cost, savedUsd: Math.max(0, baseline - cost) };
+): { costUsd: number; savedUsd: number } | null {
+  const actual = estimateInferenceCost({ provider, model, promptTokens, completionTokens });
+  if (!actual.priced || actual.estimatedCostUsd == null) return null;
+  const baseline = estimateBaselineCostUsd(promptTokens, completionTokens, baselineModel);
+  const savedUsd = baseline == null ? 0 : Math.max(0, baseline - actual.estimatedCostUsd);
+  return { costUsd: actual.estimatedCostUsd, savedUsd };
 }
 
-function turnCostForHit(hit: RouteHit, baselineModel: string): { costUsd: number; savedUsd: number } {
+function turnCostForHit(hit: RouteHit, baselineModel: string): { costUsd: number; savedUsd: number } | null {
+  const provider = providerForHit(hit);
   if (hit.promptTokens != null && hit.completionTokens != null) {
-    return calcTurnCost(hit.model, hit.promptTokens, hit.completionTokens, baselineModel);
+    return calcTurnCost(provider, hit.model, hit.promptTokens, hit.completionTokens, baselineModel);
   }
-  return calcTurnCost(hit.model, EST_PROMPT_TOKENS, EST_COMPLETION_TOKENS, baselineModel);
+  // Without tokens, only Ollama can be priced ($0); cloud needs usage.
+  if (provider === "ollama") {
+    return calcTurnCost(provider, hit.model, 0, 0, baselineModel);
+  }
+  return calcTurnCost(provider, hit.model, EST_PROMPT_TOKENS, EST_COMPLETION_TOKENS, baselineModel);
 }
 
 function fmtUsd(d: number): string {
@@ -791,19 +971,38 @@ function fmtUsd(d: number): string {
 
 // ─── constants ────────────────────────────────────────────────────────────────
 
-const DEFAULT_WORKSPACE_NAME = "Aegis";
+const DEFAULT_WORKSPACE_NAME = "Mindy Locke";
 
 // Complexity tiers — ordered most capable → cheapest (mirrors router.ts COMPLEXITY_TIERS)
 const MODES = [
   "Max",
-  "High",
   "Plus",
   "Standard",
   "Light",
-  "Fast",
   "Micro",
 ] as const;
 type Mode = (typeof MODES)[number];
+
+function isMode(value: string): value is Mode {
+  return (MODES as readonly string[]).includes(value);
+}
+
+function parseTierModelOverrides(raw: string | null): Record<string, string> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const next: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (isMode(key) && typeof value === "string" && value.trim()) {
+        next[key] = value.trim();
+      }
+    }
+    return sanitizeTierOverrides(next);
+  } catch {
+    return {};
+  }
+}
 
 const SUB_NAV_ITEMS = [
   {
@@ -835,7 +1034,12 @@ const SUB_NAV_ITEMS = [
     iconColor: "text-amber-300",
   },
 ] as const;
-type NavId = (typeof SUB_NAV_ITEMS)[number]["id"] | "workspace-settings" | "settings" | "security-dashboard";
+type NavId =
+  | (typeof SUB_NAV_ITEMS)[number]["id"]
+  | "home"
+  | "workspace-settings"
+  | "settings"
+  | "security-dashboard";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
@@ -954,8 +1158,15 @@ function docTypeInfo(mimeType: string): { label: string; cls: string } {
   if (mimeType === "text/markdown")     return { label: "MD",   cls: "text-sky-400 bg-sky-500/10 border-sky-500/20" };
   if (mimeType === "application/json")  return { label: "JSON", cls: "text-amber-400 bg-amber-500/10 border-amber-500/20" };
   if (mimeType === "text/csv")          return { label: "CSV",  cls: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" };
+  if (mimeType.includes("spreadsheet") || mimeType === "application/vnd.ms-excel") {
+    return { label: "XLSX", cls: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" };
+  }
+  if (mimeType.includes("wordprocessingml")) {
+    return { label: "DOCX", cls: "text-sky-400 bg-sky-500/10 border-sky-500/20" };
+  }
+  if (mimeType.startsWith("image/")) return { label: "IMG", cls: "text-fuchsia-400 bg-fuchsia-500/10 border-fuchsia-500/20" };
   if (mimeType.startsWith("text/x-"))  return { label: "CODE", cls: "text-violet-400 bg-violet-500/10 border-violet-500/20" };
-  return { label: "TXT", cls: "text-white/40 bg-white/5 border-white/10" };
+  return { label: "TXT", cls: "text-foreground/40 bg-foreground/5 border-foreground/10" };
 }
 
 // ─── Redacted inline block ────────────────────────────────────────────────────
@@ -965,8 +1176,8 @@ function RedactedBlock({ category }: { category: string }) {
     <span
       aria-label={`${category} removed for privacy`}
       className="inline-flex items-center gap-1 mx-0.5 rounded-md px-2 py-0.5 align-middle
-                 bg-white/8 border border-white/10
-                 text-[0.68rem] font-mono text-white/40 select-none cursor-default"
+                 bg-foreground/8 border border-foreground/10
+                 text-[0.68rem] font-mono text-foreground/40 select-none cursor-default"
     >
       <Shield className="size-2.5 shrink-0" aria-hidden />
       {categoryLabel(category)}
@@ -991,8 +1202,11 @@ function WorkspaceAvatar({
   if (emoji && color) {
     return (
       <div
-        className={cn("shrink-0 rounded-xl flex items-center justify-center select-none", cls)}
-        style={{ backgroundColor: color + "33", border: `1px solid ${color}55` }}
+        className={cn(
+          "workspace-avatar shrink-0 rounded-xl flex items-center justify-center select-none",
+          cls,
+        )}
+        style={{ "--ws-accent": color } as CSSProperties}
         aria-hidden
       >
         {emoji}
@@ -1004,7 +1218,7 @@ function WorkspaceAvatar({
     <div
       className={cn(
         "shrink-0 rounded-xl flex items-center justify-center font-semibold select-none text-xs",
-        "bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-900/30",
+        "bg-gradient-to-br from-indigo-500 to-violet-600 text-foreground shadow-lg shadow-indigo-900/30",
         cls,
       )}
     >
@@ -1021,6 +1235,121 @@ function stripAttachedDocumentBlock(content: string): string {
   return visible || "Attached file for review.";
 }
 
+function formatThinkingElapsed(ms: number): string {
+  if (ms < 1000) return `${(ms / 1000).toFixed(1)}s`;
+  const totalSec = Math.floor(ms / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  if (min > 0) return `${min}:${String(sec).padStart(2, "0")}`;
+  return `${totalSec}s`;
+}
+
+const OLLAMA_LOCAL_WAIT_COPY =
+  "This pause is Ollama running on your machine — not a SecureMind outage or hang. " +
+  "Local speed depends on your CPU or GPU; 10–40 seconds before the first word is common without a GPU.";
+
+const OLLAMA_FASTER_PATH_COPY =
+  "For a faster reply, connect Amazon Bedrock or a vendor API (for example Groq) in Settings. " +
+  "Those run off this computer and may incur cost.";
+
+/** Visible thinking state while waiting for the first token (common with local Ollama). */
+function ThinkingIndicator({
+  startedAt,
+  provider,
+  onStop,
+  onOpenSettings,
+  compact = false,
+}: {
+  startedAt: number;
+  provider?: string;
+  onStop?: () => void;
+  onOpenSettings?: (section: SettingsSection) => void;
+  compact?: boolean;
+}) {
+  const [elapsedMs, setElapsedMs] = useState(0);
+
+  useEffect(() => {
+    const tick = () => setElapsedMs(Date.now() - startedAt);
+    tick();
+    const id = window.setInterval(tick, 100);
+    return () => window.clearInterval(id);
+  }, [startedAt]);
+
+  const isOllama = provider === "ollama";
+  const slowCloudHint =
+    !isOllama && elapsedMs >= 8000 ? "Still processing your request…" : null;
+
+  return (
+    <div
+      className={cn(
+        "rounded-xl border border-indigo-500/20 bg-indigo-500/[0.08]",
+        compact ? "px-3 py-2" : "px-3.5 py-3",
+      )}
+      role="status"
+      aria-live="polite"
+      aria-label={
+        isOllama
+          ? `Waiting on this computer, ${formatThinkingElapsed(elapsedMs)} elapsed`
+          : `Thinking, ${formatThinkingElapsed(elapsedMs)} elapsed`
+      }
+    >
+      <div className="flex items-center gap-2.5 flex-wrap">
+        <Loader2 className="size-4 animate-spin text-indigo-300/90 shrink-0" aria-hidden />
+        <span className="text-sm font-medium text-indigo-100/90">
+          {isOllama ? "Waiting on your machine" : "Thinking"}
+        </span>
+        <span className="text-xs font-mono tabular-nums text-indigo-200/55">
+          {formatThinkingElapsed(elapsedMs)}
+        </span>
+        {provider && (
+          <span className="text-[0.58rem] uppercase tracking-wider font-semibold text-indigo-200/45">
+            {provider}
+          </span>
+        )}
+        {onStop && (
+          <button
+            type="button"
+            onClick={onStop}
+            className={cn(
+              "ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1",
+              "text-[0.68rem] font-medium text-muted-foreground bg-muted/80 border border-border",
+              "hover:bg-muted hover:text-foreground transition-colors cursor-pointer",
+            )}
+            aria-label="Stop generating"
+          >
+            <Square className="size-2.5 fill-current" aria-hidden />
+            Stop
+          </button>
+        )}
+      </div>
+      {isOllama && (
+        <div className={cn("pl-6 space-y-1.5", compact ? "mt-1.5" : "mt-2")}>
+          <p className="text-[0.68rem] leading-relaxed text-indigo-100/75">
+            {OLLAMA_LOCAL_WAIT_COPY}
+          </p>
+          <p className="text-[0.68rem] leading-relaxed text-indigo-200/50">
+            {OLLAMA_FASTER_PATH_COPY}
+          </p>
+          {onOpenSettings && (
+            <button
+              type="button"
+              onClick={() => onOpenSettings("providers")}
+              className="text-[0.68rem] font-medium text-indigo-200 underline underline-offset-2 hover:text-indigo-100 cursor-pointer"
+            >
+              Open Settings → Providers
+            </button>
+          )}
+        </div>
+      )}
+      {slowCloudHint && (
+        <p className="mt-2 text-[0.68rem] leading-relaxed text-indigo-200/45 pl-6">
+          {slowCloudHint}
+        </p>
+      )}
+    </div>
+  );
+}
+
 // ─── MessageBubble ────────────────────────────────────────────────────────────
 
 const MessageBubble = memo(function MessageBubble({
@@ -1029,8 +1358,12 @@ const MessageBubble = memo(function MessageBubble({
   workspaceEmoji,
   workspaceColor,
   onBookmark,
+  onOpenSettings,
   highlighted = false,
   showTimestamp = true,
+  isThinking = false,
+  thinkingStartedAt,
+  onStopThinking,
 }: {
   showTimestamp?: boolean;
   message: ChatMessage;
@@ -1039,47 +1372,87 @@ const MessageBubble = memo(function MessageBubble({
   workspaceEmoji?: string;
   workspaceColor?: string;
   onBookmark: (id: string) => void;
+  onOpenSettings?: (section: SettingsSection) => void;
   highlighted?: boolean;
+  isThinking?: boolean;
+  thinkingStartedAt?: number;
+  onStopThinking?: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const isUser = message.role === "user";
   const displayContent = isUser ? stripAttachedDocumentBlock(message.content) : message.content;
 
   const body = isUser && message.segments ? (
-    <p className="whitespace-pre-wrap break-words leading-relaxed">
+    <p className="text-chat whitespace-pre-wrap break-words [overflow-wrap:anywhere] min-w-0">
       {message.segments.map((seg, i) =>
         seg.redacted
           ? <RedactedBlock key={i} category={seg.category} />
-          : <span key={i}>{seg.text}</span>,
+          : <span key={i} className="[overflow-wrap:anywhere]">{seg.text}</span>,
       )}
     </p>
   ) : (
-    <div className="text-sm leading-relaxed">
+    <div className="min-w-0 max-w-full overflow-hidden">
       {message.error
         ? (
-          <span className="flex items-start gap-2 text-red-400/80">
-            <span className="shrink-0 mt-0.5">⚠</span>
-            <span>{
-              message.error.match(/^4\d\d|^5\d\d/)
-                ? "Something went wrong reaching the AI. Check your GROQ_API_KEY or make sure Ollama is running."
-                : message.error
-            }</span>
+          <span className="text-body flex flex-col gap-2 text-amber-100/90 break-words [overflow-wrap:anywhere]">
+            <span className="flex items-start gap-2">
+              <span className="shrink-0 mt-0.5 text-amber-300/90">⚠</span>
+              <span>{
+                message.errorCode === "VENDOR_RISK_REQUIRED" ||
+                message.errorCode === "GROQ_NOT_CONFIGURED" ||
+                message.errorCode === "BEDROCK_NOT_CONFIGURED" ||
+                message.errorCode === "MODEL_PROVIDER_REQUIRED" ||
+                message.errorCode === "OLLAMA_EMBED_MODEL"
+                  ? message.error
+                  : message.errorCode === "OLLAMA_MODEL_MISSING"
+                    ? `Setup needed: ${message.error.replace(/^Setup needed:\s*/i, "")}`
+                  : /^[45]\d\d/.test(message.error)
+                    ? formatGroqChatError(message.error)
+                    : message.error
+              }</span>
+            </span>
+            {(message.errorCode === "VENDOR_RISK_REQUIRED" ||
+              message.errorCode === "GROQ_NOT_CONFIGURED" ||
+              message.errorCode === "BEDROCK_NOT_CONFIGURED" ||
+              message.errorCode === "MODEL_PROVIDER_REQUIRED" ||
+              message.errorSettingsSection ||
+              /console\.groq\.com|api\.groq\.com|rejected this API key/i.test(message.error)) &&
+              onOpenSettings && (
+              <button
+                type="button"
+                onClick={() =>
+                  onOpenSettings(message.errorSettingsSection ?? "providers")
+                }
+                className="self-start ml-6 text-[0.72rem] font-medium text-indigo-200 underline underline-offset-2 hover:text-indigo-100 cursor-pointer"
+              >
+                Open Settings → {SETTINGS_SECTION_LABELS[message.errorSettingsSection ?? "providers"]}
+              </button>
+            )}
           </span>
         )
         : displayContent
           ? (
-            <div className="chat-prose">
+            <div className="chat-prose min-w-0 max-w-full">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {message.content}
+                {isUser ? displayContent : message.content}
               </ReactMarkdown>
             </div>
           )
+          : message.role === "assistant" && isThinking && thinkingStartedAt
+            ? (
+              <ThinkingIndicator
+                startedAt={thinkingStartedAt}
+                provider={message.routeInfo?.provider}
+                onStop={onStopThinking}
+                onOpenSettings={onOpenSettings}
+              />
+            )
           : message.role === "assistant"
             ? (
               <span className="inline-flex gap-1 items-center">
-                <span className="animate-bounce delay-0   size-1.5 rounded-full bg-white/30 inline-block" />
-                <span className="animate-bounce delay-150 size-1.5 rounded-full bg-white/30 inline-block" />
-                <span className="animate-bounce delay-300 size-1.5 rounded-full bg-white/30 inline-block" />
+                <span className="animate-bounce delay-0   size-1.5 rounded-full bg-foreground/30 inline-block" />
+                <span className="animate-bounce delay-150 size-1.5 rounded-full bg-foreground/30 inline-block" />
+                <span className="animate-bounce delay-300 size-1.5 rounded-full bg-foreground/30 inline-block" />
               </span>
             )
             : null}
@@ -1097,14 +1470,14 @@ const MessageBubble = memo(function MessageBubble({
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
-        <div className="relative max-w-[75%]">
+        <div className="relative max-w-[75%] min-w-0">
           {/* Bookmark button */}
           <button
             onClick={() => onBookmark(message.id)}
             aria-label={message.bookmarked ? "Remove from saved" : "Save conclusion"}
             className={cn(
               "absolute -top-2 -left-7 rounded-full p-1 transition-all duration-150",
-              "bg-white/5 border border-white/8 hover:bg-white/10",
+              "bg-foreground/5 border border-foreground/8 hover:bg-foreground/10",
               hovered || message.bookmarked ? "opacity-100" : "opacity-0 pointer-events-none",
               message.bookmarked && "text-primary",
             )}
@@ -1112,30 +1485,30 @@ const MessageBubble = memo(function MessageBubble({
             <Bookmark className={cn("size-3", message.bookmarked && "fill-current")} aria-hidden />
           </button>
 
-          <div className="rounded-2xl rounded-tr-sm bg-white/8 border border-white/8 px-4 py-3 text-sm text-foreground">
+          <div className="rounded-2xl rounded-tr-sm bg-[var(--primary-soft)] border border-[var(--primary-border)] dark:bg-foreground/8 dark:border-foreground/8 px-4 py-3 min-w-0 max-w-full overflow-hidden [overflow-wrap:anywhere]">
             {/* Attached images */}
             {message.images && message.images.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-2">
+              <div className="flex flex-wrap gap-2 mb-2.5">
                 {message.images.map((src, i) => (
                   <img
                     key={i}
                     src={src}
                     alt="attachment"
-                    className="max-h-48 max-w-full rounded-xl object-cover border border-white/10"
+                    className="max-h-48 max-w-full rounded-xl object-cover border border-foreground/10"
                   />
                 ))}
               </div>
             )}
             {body}
             {message.scrubEvents && message.scrubEvents.length > 0 && (
-              <p className="mt-2 flex items-center gap-1.5 border-t border-white/8 pt-2 text-[0.68rem] text-white/35">
+              <p className="text-meta mt-2.5 flex items-center gap-1.5 border-t border-foreground/8 pt-2">
                 <ShieldCheck className="size-3 shrink-0" aria-hidden />
                 {message.scrubEvents.map(e => `${e.count} ${e.category}`).join(", ")} removed
               </p>
             )}
           </div>
           {showTimestamp && message.createdAt && (
-            <p suppressHydrationWarning className="mt-1 text-right text-[0.6rem] text-white/25 tabular-nums select-none">
+            <p suppressHydrationWarning className="text-meta mt-1.5 text-right tabular-nums select-none">
               {formatMsgTime(message.createdAt)}
             </p>
           )}
@@ -1164,7 +1537,7 @@ const MessageBubble = memo(function MessageBubble({
           aria-label={message.bookmarked ? "Remove from saved" : "Save conclusion"}
           className={cn(
             "absolute -top-3 right-0 rounded-full p-1 transition-all duration-150",
-            "bg-white/5 border border-white/8 hover:bg-white/10",
+            "bg-foreground/5 border border-foreground/8 hover:bg-foreground/10",
             hovered || message.bookmarked ? "opacity-100" : "opacity-0 pointer-events-none",
             message.bookmarked && "text-primary",
           )}
@@ -1172,36 +1545,38 @@ const MessageBubble = memo(function MessageBubble({
           <Bookmark className={cn("size-3", message.bookmarked && "fill-current")} aria-hidden />
         </button>
 
-        <p className="mb-1 text-[0.68rem] font-medium text-white/35">{workspaceName}</p>
-        <div className="text-sm text-foreground/90">{body}</div>
+        <p className="text-label mb-1.5 text-[var(--text-muted)]">{workspaceName}</p>
+        <div className="min-w-0 max-w-full overflow-hidden [overflow-wrap:anywhere]">
+          {body}
+        </div>
 
         {/* Route badge — shows which mode + model handled this turn */}
         {message.routeInfo && !message.error && (
-          <div className="mt-2 flex items-center gap-2 flex-wrap">
+          <div className="mt-2.5 flex items-center gap-2 flex-wrap">
             {/* Provider pill */}
             <span className={cn(
-              "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[0.6rem] font-mono font-semibold uppercase tracking-wide",
+              "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[0.65rem] font-mono font-medium uppercase tracking-wide",
               message.routeInfo.provider === "groq"
                 ? "text-indigo-400/80 bg-indigo-400/10 border border-indigo-400/15"
                 : "text-emerald-400/70 bg-emerald-400/8 border border-emerald-400/15",
             )}>
               <Zap className="size-2.5 shrink-0" aria-hidden />
-              {message.routeInfo.provider === "ollama" ? "local" : message.routeInfo.provider}
+              {message.routeInfo.provider === "ollama" ? "Ollama" : message.routeInfo.provider}
             </span>
             {/* Mode — with "auto" indicator when classifier picked it */}
-            <span className="text-[0.65rem] text-white/40 font-medium inline-flex items-center gap-1">
+            <span className="text-meta inline-flex items-center gap-1">
               {message.routeInfo.mode}
               {message.routeInfo.isVision && " · vision"}
               {message.routeInfo.wasAutoRouted && (
-                <span className="text-[0.55rem] text-indigo-400/50 font-mono uppercase tracking-wide">auto</span>
+                <span className="text-[0.65rem] text-[var(--primary-soft-foreground)] font-mono uppercase tracking-wide opacity-70">auto</span>
               )}
             </span>
-            <span className="text-white/15 text-[0.6rem]">·</span>
-            <code className="text-[0.65rem] font-mono text-white/30">
+            <span className="text-meta opacity-50">·</span>
+            <code className="text-meta font-mono">
               {message.routeInfo.model}
             </code>
             {message.routeInfo.latencyMs !== undefined && (
-              <span className="text-[0.6rem] text-white/20 tabular-nums">
+              <span className="text-meta tabular-nums">
                 · {message.routeInfo.latencyMs < 1000
                   ? `${message.routeInfo.latencyMs}ms`
                   : `${(message.routeInfo.latencyMs / 1000).toFixed(1)}s`}
@@ -1212,7 +1587,7 @@ const MessageBubble = memo(function MessageBubble({
         {(message.citations?.length || message.evidenceStatus === "insufficient" || (message.showGroundingBadge !== false && message.citationAudit)) && !message.error && (
           <div className="mt-2.5 space-y-1.5">
             {message.evidenceStatus === "insufficient" && !message.citations?.length && (
-              <p className="flex items-center gap-1.5 text-[0.65rem] text-amber-200/50">
+              <p className="text-meta flex items-center gap-1.5 text-amber-200/70">
                 <ShieldAlert className="size-3 shrink-0" aria-hidden />
                 No relevant workspace Knowledge for this question
               </p>
@@ -1220,12 +1595,12 @@ const MessageBubble = memo(function MessageBubble({
             {message.showGroundingBadge !== false && message.citationAudit && message.citationAudit.status !== "n/a" && message.citationAudit.status !== "not_applicable" && (
               <p
                 className={cn(
-                  "flex items-center gap-1.5 text-[0.65rem]",
+                  "text-meta flex items-center gap-1.5",
                   message.citationAudit.status === "grounded" || message.citationAudit.status === "declined"
-                    ? "text-emerald-300/55"
+                    ? "text-emerald-300/70"
                     : message.citationAudit.status === "partial"
-                      ? "text-amber-200/55"
-                      : "text-red-300/60",
+                      ? "text-amber-200/70"
+                      : "text-red-300/75",
                 )}
               >
                 {message.citationAudit.status === "grounded" && (
@@ -1249,21 +1624,21 @@ const MessageBubble = memo(function MessageBubble({
               </p>
             )}
             {message.citations && message.citations.length > 0 && (
-              <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] px-3 py-2 space-y-1.5">
-                <p className="text-[0.58rem] uppercase tracking-wider text-white/30 font-semibold">
+              <div className="rounded-xl border border-foreground/[0.07] bg-foreground/[0.02] px-3 py-2 space-y-1.5">
+                <p className="text-[0.58rem] uppercase tracking-wider text-foreground/30 font-semibold">
                   Sources
                 </p>
                 <ul className="space-y-1">
                   {message.citations.map(c => (
-                      <li key={c.fragmentId} className="flex items-start gap-2 text-[0.68rem] text-white/45">
+                      <li key={c.fragmentId} className="flex items-start gap-2 text-[0.68rem] text-foreground/45">
                         <span className="shrink-0 font-mono text-indigo-300/80">
                           [{c.index}]
                         </span>
                         <span className="min-w-0">
-                          <span className="text-white/55 font-medium">
+                          <span className="text-foreground/55 font-medium">
                             {c.documentName ?? (c.category === "document" ? "Document" : "Memory")}
                           </span>
-                          <span className="text-white/30"> — {c.preview}</span>
+                          <span className="text-foreground/30"> — {c.preview}</span>
                         </span>
                       </li>
                   ))}
@@ -1273,7 +1648,7 @@ const MessageBubble = memo(function MessageBubble({
           </div>
         )}
         {showTimestamp && message.createdAt && !message.error && (
-          <p suppressHydrationWarning className="mt-1 text-[0.6rem] text-white/25 tabular-nums select-none">
+          <p suppressHydrationWarning className="text-meta mt-1.5 tabular-nums select-none">
             {formatMsgTime(message.createdAt)}
           </p>
         )}
@@ -1347,10 +1722,10 @@ function BookmarkCard({
       type="button"
       onClick={onOpen}
       className={cn(
-        "group w-full text-left rounded-2xl border px-4 py-3.5 hover:bg-white/[0.08] transition-colors relative overflow-hidden cursor-pointer",
+        "group w-full text-left rounded-2xl border px-4 py-3.5 hover:bg-foreground/[0.08] transition-colors relative overflow-hidden cursor-pointer",
         bookmark.read
-          ? "bg-white/[0.04] border-white/[0.08]"
-          : "bg-white/7 border-indigo-400/20",
+          ? "bg-foreground/[0.04] border-foreground/[0.08]"
+          : "bg-foreground/7 border-indigo-400/20",
       )}
     >
       {!bookmark.read && (
@@ -1362,7 +1737,7 @@ function BookmarkCard({
           className={cn(
             "flex size-8 shrink-0 items-center justify-center rounded-xl text-base border",
             isUser
-              ? "bg-white/[0.06] border-white/[0.08]"
+              ? "bg-foreground/[0.06] border-foreground/[0.08]"
               : "bg-indigo-500/15 border-indigo-500/20",
           )}
           aria-hidden
@@ -1375,7 +1750,7 @@ function BookmarkCard({
             <div className="flex items-center gap-2 min-w-0">
               <span className={cn(
                 "text-xs font-semibold truncate",
-                bookmark.read ? "text-white/55" : "text-white/85",
+                bookmark.read ? "text-foreground/55" : "text-foreground/85",
               )}>
                 {bookmark.label}
               </span>
@@ -1386,7 +1761,7 @@ function BookmarkCard({
               )}
             </div>
             {timestamp && (
-              <span className="text-[0.62rem] text-white/35 tabular-nums shrink-0 text-right leading-tight max-w-[9rem]">
+              <span className="text-[0.62rem] text-foreground/35 tabular-nums shrink-0 text-right leading-tight max-w-[9rem]">
                 {timestamp}
               </span>
             )}
@@ -1394,7 +1769,7 @@ function BookmarkCard({
 
           <p className={cn(
             "text-sm leading-relaxed line-clamp-4",
-            bookmark.read ? "text-white/55" : "text-white/80",
+            bookmark.read ? "text-foreground/55" : "text-foreground/80",
           )}>
             {bookmark.preview}
           </p>
@@ -1408,14 +1783,14 @@ function BookmarkCard({
           )}
 
           {bookmark.heavy && (
-            <p className="mt-2 flex items-center gap-1 text-[0.65rem] text-white/35">
+            <p className="mt-2 flex items-center gap-1 text-[0.65rem] text-foreground/35">
               <Shield className="size-2.5 shrink-0" aria-hidden />
               Contains redacted content
             </p>
           )}
 
-          <div className="mt-3 pt-2.5 border-t border-white/[0.06] flex items-center justify-between gap-2">
-            <span className="text-[0.68rem] text-white/28 group-hover:text-indigo-300/85 transition-colors flex items-center gap-1.5">
+          <div className="mt-3 pt-2.5 border-t border-foreground/[0.06] flex items-center justify-between gap-2">
+            <span className="text-[0.68rem] text-foreground/28 group-hover:text-indigo-300/85 transition-colors flex items-center gap-1.5">
               <MessageSquare className="size-3 shrink-0" aria-hidden />
               Open in investigate
               <ChevronRight className="size-3 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" aria-hidden />
@@ -1433,7 +1808,7 @@ function BookmarkCard({
                   onRemove();
                 }
               }}
-              className="flex items-center gap-1 text-[0.65rem] text-white/25 hover:text-red-400/80 transition-colors px-1.5 py-0.5 rounded-md hover:bg-red-400/10"
+              className="flex items-center gap-1 text-[0.65rem] text-foreground/25 hover:text-red-400/80 transition-colors px-1.5 py-0.5 rounded-md hover:bg-red-400/10"
             >
               <Trash2 className="size-3 shrink-0" aria-hidden />
               <span className="hidden sm:inline">Remove</span>
@@ -1472,23 +1847,23 @@ function DocumentDropZone({
         "rounded-xl border border-dashed text-center transition-all cursor-pointer select-none",
         compact ? "px-4 py-3" : "px-5 py-8",
         active
-          ? "border-indigo-400/55 bg-indigo-500/12 scale-[1.01]"
-          : "border-white/10 bg-white/[0.02] hover:border-white/16 hover:bg-white/[0.04]",
+          ? "border-[var(--primary-border)] bg-[var(--primary-soft)] scale-[1.01]"
+          : "border-border bg-card hover:border-[var(--border-strong)] hover:bg-[var(--surface-hover)]",
         uploading && "opacity-60 pointer-events-none",
       )}
     >
       <Upload className={cn(
-        "mx-auto text-indigo-300/70",
+        "mx-auto text-[var(--primary-soft-foreground)]",
         compact ? "size-4 mb-1" : "size-7 mb-3",
       )} aria-hidden />
       <p className={cn(
-        "font-medium text-white/55",
+        "font-medium text-foreground",
         compact ? "text-[0.78rem]" : "text-sm",
       )}>
         {active ? "Drop to upload" : compact ? "Drag files here or click to browse" : "Drag & drop files here"}
       </p>
       <p className={cn(
-        "text-white/30 leading-relaxed",
+        "text-muted-foreground leading-relaxed",
         compact ? "text-[0.68rem] mt-1" : "text-xs mt-2 max-w-sm mx-auto",
       )}>
         {SUPPORTED_DOC_FORMATS_SHORT} · Max {MAX_FILE_MB} MB per file
@@ -1502,10 +1877,12 @@ function DocumentCard({
   doc,
   onOpen,
   onDelete,
+  onRetry,
 }: {
   doc: DocRecord;
   onOpen: () => void;
   onDelete: () => void;
+  onRetry?: () => void;
 }) {
   const typeInfo = docTypeInfo(doc.mimeType);
   const isProcessing = doc.status === "processing";
@@ -1520,15 +1897,15 @@ function DocumentCard({
       onKeyDown={e => e.key === "Enter" && onOpen()}
       className={cn(
         "group relative rounded-2xl border p-4 cursor-pointer transition-all text-left",
-        "bg-white/[0.03] border-white/[0.07]",
-        "hover:bg-white/[0.06] hover:border-white/[0.12]",
-        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/20",
+        "bg-card border-border shadow-[var(--shadow-sm)]",
+        "hover:bg-[var(--surface-hover)] hover:border-[var(--border-strong)]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
       )}
     >
       <button
         type="button"
         onClick={e => { e.stopPropagation(); onDelete(); }}
-        className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-lg hover:bg-red-500/15 text-white/25 hover:text-red-400"
+        className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-lg hover:bg-[var(--destructive-soft)] text-muted-foreground hover:text-destructive"
         aria-label="Delete document"
       >
         <Trash2 className="size-3.5" aria-hidden />
@@ -1541,60 +1918,69 @@ function DocumentCard({
         )}>
           {typeInfo.label}
         </span>
-        <p className="text-[0.8rem] font-medium text-white/70 leading-snug line-clamp-2 break-all">
+        <p className="text-[0.8rem] font-semibold text-foreground leading-snug line-clamp-2 break-all">
           {doc.name}
         </p>
       </div>
 
       {!doc.workspaceId && (
-        <p className="text-[0.62rem] text-amber-400/70 mb-2">Unassigned — from a removed workspace</p>
+        <p className="text-[0.62rem] text-warning mb-2">Unassigned — from a removed workspace</p>
       )}
 
       <div className="flex items-center gap-1.5 mb-2">
         <span className={cn(
           "size-1.5 rounded-full shrink-0",
-          isProcessing ? "bg-yellow-400 animate-pulse" :
-          isFailed     ? "bg-red-400" :
-          isStored     ? "bg-amber-400" :
-                         "bg-emerald-400",
+          isProcessing ? "bg-warning animate-pulse" :
+          isFailed     ? "bg-destructive" :
+          isStored     ? "bg-warning" :
+                         "bg-success",
         )} />
         <span className={cn(
-          "text-[0.68rem]",
-          isProcessing ? "text-yellow-400" :
-          isFailed     ? "text-red-400" :
-          isStored     ? "text-amber-400" :
-                         "text-emerald-400",
+          "text-[0.68rem] font-medium",
+          isProcessing ? "text-warning" :
+          isFailed     ? "text-destructive" :
+          isStored     ? "text-warning" :
+                         "text-success",
         )}>
           {isProcessing ? "Processing…" :
-           isFailed     ? "Processing failed" :
+           isFailed     ? (doc.processingError ? `Failed · ${doc.processingError}` : "Needs attention") :
            isStored     ? "Stored · start Ollama to index" :
            `${doc.chunkCount} chunks indexed`}
         </span>
       </div>
 
       {doc.contentPreview && (
-        <p className="text-[0.72rem] text-white/30 leading-relaxed line-clamp-3 mb-3">
+        <p className="text-[0.72rem] text-muted-foreground leading-relaxed line-clamp-3 mb-3">
           {doc.contentPreview}
         </p>
       )}
 
       {(doc.redactionCount ?? 0) > 0 && (
-        <p className="flex items-center gap-1 text-[0.65rem] text-amber-400/75 mb-2">
+        <p className="flex items-center gap-1 text-[0.65rem] text-warning mb-2">
           <Shield className="size-2.5 shrink-0" aria-hidden />
-          {doc.redactionCount} PII {doc.redactionCount === 1 ? "item" : "items"} scrubbed at upload
+          {doc.redactionCount} detected {doc.redactionCount === 1 ? "item" : "items"} replaced at upload
         </p>
       )}
 
-      <p className="text-[0.65rem] text-white/20 mb-3">
+      <p className="text-[0.65rem] text-[var(--text-subtle)] mb-3">
         {fmtBytes(doc.sizeBytes)} · {timeSince(doc.createdAt)}
       </p>
 
-      <div className="pt-2.5 border-t border-white/[0.06] flex items-center justify-between gap-2">
-        <span className="text-[0.68rem] text-white/25 group-hover:text-emerald-300/80 transition-colors flex items-center gap-1.5">
+      <div className="pt-2.5 border-t border-border flex items-center justify-between gap-2">
+        <span className="text-[0.68rem] font-medium text-[var(--primary-soft-foreground)] group-hover:text-primary transition-colors flex items-center gap-1.5">
           <FileText className="size-3 shrink-0" aria-hidden />
           View details
-          <ChevronRight className="size-3 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" aria-hidden />
+          <ChevronRight className="size-3 opacity-70 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" aria-hidden />
         </span>
+        {isFailed && onRetry && (
+          <button
+            type="button"
+            onClick={e => { e.stopPropagation(); onRetry(); }}
+            className="text-[0.68rem] text-amber-200/80 hover:text-amber-100"
+          >
+            Retry
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1643,14 +2029,14 @@ function VoiceBar({
         >
           {displayText ? (
             <p className="italic">
-              <span className="text-white/40">{liveText.final}</span>
-              <span className="text-white/28">{liveText.interim}</span>
+              <span className="text-foreground/40">{liveText.final}</span>
+              <span className="text-foreground/28">{liveText.interim}</span>
               {previewPending && (
-                <span className="inline-block ml-1.5 size-1.5 rounded-full bg-white/25 animate-pulse align-middle not-italic" />
+                <span className="inline-block ml-1.5 size-1.5 rounded-full bg-foreground/25 animate-pulse align-middle not-italic" />
               )}
             </p>
           ) : (
-            <p className="text-white/22 italic">
+            <p className="text-foreground/22 italic">
               {previewPending ? "Listening…" : "Start speaking…"}
             </p>
           )}
@@ -1659,7 +2045,7 @@ function VoiceBar({
 
       {isTranscribing && (
         <div className="min-h-[52px] flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-sm text-white/40 min-w-0">
+          <div className="flex items-center gap-2 text-sm text-foreground/40 min-w-0">
             <Loader2 className="size-4 animate-spin text-indigo-400/70 shrink-0" />
             Transcribing…
           </div>
@@ -1668,7 +2054,7 @@ function VoiceBar({
             onClick={onCancel}
             aria-label="Cancel transcription"
             title="Cancel transcription"
-            className="shrink-0 p-1 rounded-md text-white/30 hover:text-red-400/80 hover:bg-red-400/10 transition-colors"
+            className="shrink-0 p-1 rounded-md text-foreground/30 hover:text-red-400/80 hover:bg-red-400/10 transition-colors"
           >
             <X className="size-4" />
           </button>
@@ -1676,7 +2062,7 @@ function VoiceBar({
       )}
 
       {state === "requesting" && (
-        <p className="min-h-[52px] flex items-center text-sm text-white/30 animate-pulse">
+        <p className="min-h-[52px] flex items-center text-sm text-foreground/30 animate-pulse">
           Requesting microphone…
         </p>
       )}
@@ -1700,7 +2086,7 @@ function VoiceBar({
             ))}
           </div>
 
-          <span className="shrink-0 text-xs tabular-nums text-white/35 select-none">
+          <span className="shrink-0 text-xs tabular-nums text-foreground/35 select-none">
             {mm}:{ss}
           </span>
 
@@ -1708,7 +2094,7 @@ function VoiceBar({
             type="button"
             onClick={onCancel}
             aria-label="Cancel recording"
-            className="shrink-0 p-1 rounded-md text-white/30 hover:text-red-400/80 hover:bg-red-400/10 transition-colors"
+            className="shrink-0 p-1 rounded-md text-foreground/30 hover:text-red-400/80 hover:bg-red-400/10 transition-colors"
           >
             <X className="size-4" />
           </button>
@@ -1737,13 +2123,43 @@ type AppShellProps = {
   analyticsView?: AnalyticsViewId;
 };
 
-export function AppShell({ analyticsView }: AppShellProps = {}) {
+export type InsightsSubjectRef = InsightsSubjectScope;
+
+export function AppShell(props: AppShellProps = {}) {
+  return (
+    <ModelCatalogProvider>
+      <AppShellView {...props} />
+    </ModelCatalogProvider>
+  );
+}
+
+function AppShellView({ analyticsView }: AppShellProps = {}) {
+  const { theme: appearanceTheme } = useTheme();
+  const authSession = useAuthSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const asUserParam = searchParams.get("asUser");
+  const asUserLabelParam = searchParams.get("label");
   const isAnalytics = Boolean(analyticsView);
+  const settingsIsAdmin =
+    !authSession
+    || authSession.role === "super_admin"
+    || authSession.role === "admin";
+  const settingsActorRole =
+    authSession?.role === "super_admin" || authSession?.role === "admin" || authSession?.role === "member"
+      ? authSession.role
+      : ("owner" as const);
+  const defaultSettingsSection: SettingsSection =
+    settingsIsAdmin
+      ? "admin"
+      : "overview";
 
   // ── core state ──────────────────────────────────────────────────────────────
   const [activeNav, setActiveNav] = useState<NavId>("thread");
-  const [settingsSection, setSettingsSectionState] = useState<SettingsSection>("overview");
+  const [insightsTabOrder, setInsightsTabOrder] = useInsightsTabOrder();
+  const [insightsTab, setInsightsTab] = useState<InsightsTabId>("context");
+  const [featureOrder, setFeatureOrder] = useWorkspaceFeatureOrder();
+  const [settingsSection, setSettingsSectionState] = useState<SettingsSection>(() => defaultSettingsSection);
   const [securityBackLabel, setSecurityBackLabel] = useState("Back to investigate");
   const settingsReturnSectionRef = useRef<SettingsSection | null>(null);
   const lastWorkNavRef = useRef<NavId>("thread");
@@ -1755,41 +2171,159 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
     try { localStorage.setItem(SETTINGS_SECTION_KEY, section); } catch { /* quota */ }
   }, []);
 
+  /**
+   * When true, the Settings sheet is hidden. Dashboards must not force it open —
+   * only an explicit Settings prompt (toggle / section nav) opens it.
+   * Start collapsed on analytics so a remount never flashes the sheet open.
+   */
+  const [settingsMenuCollapsed, setSettingsMenuCollapsed] = useState(
+    () => Boolean(analyticsView),
+  );
+
   const openSettings = useCallback((section?: SettingsSection) => {
-    if (activeNav !== "settings" && activeNav !== "security-dashboard") {
+    if (
+      activeNav !== "settings"
+      && activeNav !== "security-dashboard"
+    ) {
       lastWorkNavRef.current = activeNav;
     }
     if (section) setSettingsSection(section);
+    else if (settingsIsAdmin && settingsSection === "overview") setSettingsSection(defaultSettingsSection);
+    setSettingsMenuCollapsed(false);
     setActiveNav("settings");
-  }, [activeNav, setSettingsSection]);
+  }, [activeNav, defaultSettingsSection, setSettingsSection, settingsIsAdmin, settingsSection]);
+
+  /** Leave /analytics/* and land on Settings for `section` (survives AppShell remount). */
+  const returnToSettingsSection = useCallback((section: SettingsSection) => {
+    stashInsightsSubject(null);
+    try {
+      localStorage.setItem(SETTINGS_SECTION_KEY, section);
+      sessionStorage.setItem(OPEN_SETTINGS_KEY, section);
+    } catch { /* quota */ }
+    router.push(`/?settings=${encodeURIComponent(section)}`);
+  }, [router]);
 
   const closeSettings = useCallback(() => {
-    const dest = lastWorkNavRef.current;
-    setActiveNav(dest === "settings" || dest === "security-dashboard" ? "thread" : dest);
+    // Don't clobber a nav change that already left Settings (e.g. workspace click).
+    setActiveNav(prev => {
+      if (prev !== "settings" && prev !== "security-dashboard") return prev;
+      const dest = lastWorkNavRef.current;
+      return dest === "settings" || dest === "security-dashboard" ? "thread" : dest;
+    });
   }, []);
 
+  /** Animated leave Settings / analytics entirely — used by the Settings toggle. */
+  const dismissSettings = useCallback(() => {
+    if (settingsAnimatingOut) return;
+    if (activeNav !== "settings" && !analyticsView) return;
+    setSettingsAnimatingOut(true);
+    window.setTimeout(() => {
+      if (analyticsView) {
+        stashInsightsSubject(null);
+        router.push("/");
+      }
+      closeSettings();
+      setSettingsMenuCollapsed(false);
+      setSettingsAnimatingOut(false);
+    }, SETTINGS_TRANSITION_MS);
+  }, [activeNav, analyticsView, closeSettings, router, settingsAnimatingOut]);
+
+  /**
+   * Hide the Settings sheet on outside click — stay on the current page
+   * (Settings hub or analytics). The Settings toggle still exits entirely.
+   */
+  const dismissSettingsMenu = useCallback(() => {
+    if (settingsAnimatingOut || settingsMenuCollapsed) return;
+    if (activeNav !== "settings" && !analyticsView) return;
+    setSettingsMenuCollapsed(true);
+  }, [
+    activeNav,
+    analyticsView,
+    settingsAnimatingOut,
+    settingsMenuCollapsed,
+  ]);
+
   const toggleSettings = useCallback(() => {
-    if (activeNav === "settings" || analyticsView) {
-      setSettingsAnimatingOut(true);
-      window.setTimeout(() => {
-        if (analyticsView) router.push("/");
-        closeSettings();
-        setSettingsAnimatingOut(false);
-      }, SETTINGS_TRANSITION_MS);
-    } else {
-      openSettings();
+    // Analytics: toggle sheet only — do not leave the dashboard.
+    if (analyticsView) {
+      setSettingsMenuCollapsed(prev => !prev);
+      return;
     }
-  }, [activeNav, analyticsView, closeSettings, openSettings, router]);
+    if (activeNav === "settings") {
+      if (settingsMenuCollapsed) {
+        setSettingsMenuCollapsed(false);
+        return;
+      }
+      dismissSettings();
+      return;
+    }
+    openSettings();
+  }, [activeNav, analyticsView, dismissSettings, openSettings, settingsMenuCollapsed]);
+
+  const settingsChromeRef = useRef<HTMLDivElement>(null);
+
+  // Any pointerdown outside the Settings sheet + toggle collapses the menu.
+  useEffect(() => {
+    const sheetOpen =
+      (activeNav === "settings" || Boolean(analyticsView))
+      && !settingsAnimatingOut
+      && !settingsMenuCollapsed;
+    if (!sheetOpen) return;
+
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target;
+      if (!(target instanceof Node)) return;
+      if (settingsChromeRef.current?.contains(target)) return;
+      dismissSettingsMenu();
+    };
+
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [
+    activeNav,
+    analyticsView,
+    dismissSettingsMenu,
+    settingsAnimatingOut,
+    settingsMenuCollapsed,
+  ]);
 
   /** Non-dashboard Settings sections (Overview / Workspace / Inference). */
   const handleSettingsSectionChange = useCallback((section: SettingsSection) => {
+    setSettingsMenuCollapsed(false);
+    if (analyticsView) {
+      returnToSettingsSection(section);
+      return;
+    }
     setSettingsSection(section);
-    if (analyticsView) router.push("/");
     setActiveNav("settings");
-  }, [analyticsView, router, setSettingsSection]);
+  }, [analyticsView, returnToSettingsSection, setSettingsSection]);
+
+  // Deep link: /?settings=admin (and session fallback) after leaving analytics.
+  const consumedSettingsDeepLink = useRef(false);
+  useEffect(() => {
+    if (analyticsView || consumedSettingsDeepLink.current) return;
+    const fromQuery = searchParams.get("settings");
+    let section = fromQuery;
+    if (!section) {
+      try {
+        section = sessionStorage.getItem(OPEN_SETTINGS_KEY);
+        if (section) sessionStorage.removeItem(OPEN_SETTINGS_KEY);
+      } catch { /* ignore */ }
+    }
+    if (!section || !isSettingsSection(section)) return;
+    consumedSettingsDeepLink.current = true;
+    setSettingsSectionState(section);
+    try { localStorage.setItem(SETTINGS_SECTION_KEY, section); } catch { /* quota */ }
+    setActiveNav("settings");
+    if (fromQuery) router.replace("/", { scroll: false });
+  }, [analyticsView, searchParams, router]);
 
   useEffect(() => {
-    if ((activeNav === "settings" || analyticsView) && !settingsAnimatingOut) {
+    const sheetShouldEnter =
+      (activeNav === "settings" || Boolean(analyticsView))
+      && !settingsMenuCollapsed
+      && !settingsAnimatingOut;
+    if (sheetShouldEnter) {
       setSettingsEntering(true);
       const id = requestAnimationFrame(() => {
         requestAnimationFrame(() => setSettingsEntering(false));
@@ -1797,9 +2331,26 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
       return () => cancelAnimationFrame(id);
     }
     setSettingsEntering(false);
-  }, [activeNav, analyticsView, settingsAnimatingOut]);
+  }, [activeNav, analyticsView, settingsAnimatingOut, settingsMenuCollapsed]);
 
-  const openInsightsDashboard = useCallback((view: InsightsDashboard) => {
+  // Opening a full Insights dashboard must not drag the Settings sheet open with it.
+  useEffect(() => {
+    if (analyticsView) setSettingsMenuCollapsed(true);
+  }, [analyticsView]);
+
+  const openInsightsDashboard = useCallback((
+    view: InsightsDashboard,
+    subject?: InsightsSubjectRef | null,
+  ) => {
+    setSettingsMenuCollapsed(true);
+    if (subject?.userId) {
+      stashInsightsSubject(subject);
+      const params = new URLSearchParams({ asUser: subject.userId });
+      if (subject.label) params.set("label", subject.label);
+      router.push(`/analytics/${view}?${params.toString()}`);
+      return;
+    }
+    stashInsightsSubject(null);
     router.push(`/analytics/${view}`);
   }, [router]);
 
@@ -1807,20 +2358,156 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
     router.push("/");
   }, [router]);
 
-  // Full Insights dashboards live under Settings — keep that menu open and
-  // highlight Usage / Cost / Security while those routes are active.
+  const [insightsSubject, setInsightsSubject] = useState<InsightsSubjectScope | null>(null);
+  const [subjectWorkspaces, setSubjectWorkspaces] = useState<{ id: string; name: string }[]>([]);
+  const insightsReadyUserRef = useRef<string | null>(null);
+
+  // Resolve admin subject from URL (preferred) or session stash; enrich via API.
+  useEffect(() => {
+    if (!analyticsView) {
+      setInsightsSubject(null);
+      setSubjectWorkspaces([]);
+      insightsReadyUserRef.current = null;
+      return;
+    }
+
+    const stashed = readStashedInsightsSubject();
+    const userId = asUserParam ?? stashed?.userId ?? null;
+    if (!userId) {
+      stashInsightsSubject(null);
+      setInsightsSubject(null);
+      setSubjectWorkspaces([]);
+      insightsReadyUserRef.current = null;
+      return;
+    }
+
+    const seedLabel =
+      asUserLabelParam?.trim()
+      || (stashed?.userId === userId ? stashed.label : null)
+      || (userId === "local" ? "Local user" : `${userId.slice(0, 12)}…`);
+    const seedEmail = stashed?.userId === userId ? stashed.email : null;
+    const seed: InsightsSubjectScope = {
+      userId,
+      label: seedLabel,
+      email: seedEmail,
+    };
+    setInsightsSubject(seed);
+    stashInsightsSubject(seed);
+
+    // If the URL lost asUser but stash has it, put it back so tabs/API stay scoped.
+    if (!asUserParam && typeof window !== "undefined") {
+      const params = new URLSearchParams({ asUser: userId });
+      if (seed.label) params.set("label", seed.label);
+      router.replace(`/analytics/${analyticsView}?${params.toString()}`);
+    }
+
+    if (insightsReadyUserRef.current === userId) return;
+
+    const ac = new AbortController();
+    void (async () => {
+      try {
+        const res = await fetch(
+          `/api/admin/insights-subject?userId=${encodeURIComponent(userId)}`,
+          { credentials: "same-origin", signal: ac.signal },
+        );
+        if (ac.signal.aborted) return;
+        if (!res.ok) {
+          // Keep seed label — do not clear the banner on API failure.
+          setSubjectWorkspaces([]);
+          return;
+        }
+        const meta = (await res.json()) as {
+          userId: string;
+          label: string;
+          email: string | null;
+          workspaces: { id: string; name: string }[];
+        };
+        const next: InsightsSubjectScope = {
+          userId: meta.userId,
+          label: meta.label,
+          email: meta.email,
+        };
+        setInsightsSubject(next);
+        stashInsightsSubject(next);
+        setSubjectWorkspaces(meta.workspaces ?? []);
+        insightsReadyUserRef.current = userId;
+      } catch {
+        if (!ac.signal.aborted) setSubjectWorkspaces([]);
+      }
+    })();
+    return () => {
+      ac.abort();
+    };
+  }, [analyticsView, asUserParam, asUserLabelParam, router]);
+
+  const backToAdminFromInsights = useCallback(() => {
+    returnToSettingsSection("admin");
+  }, [returnToSettingsSection]);
+
+  // Full Insights dashboards live under Settings for section highlighting when
+  // the sheet is opened — the sheet itself stays collapsed unless prompted.
+  // Admin drill-down keeps Admin console highlighted in the nav.
   useEffect(() => {
     if (!analyticsView) return;
     setActiveNav("settings");
+    const scoped = Boolean(asUserParam || readStashedInsightsSubject()?.userId);
+    if (scoped) {
+      setSettingsSectionState("admin");
+      return;
+    }
     if (analyticsView === "usage") setSettingsSectionState("insights-context");
     else if (analyticsView === "cost") setSettingsSectionState("insights-savings");
     else setSettingsSectionState("insights-security");
-  }, [analyticsView]);
+  }, [analyticsView, asUserParam]);
 
-  const [groqByokDraft, setGroqByokDraft] = useState("");
-  const [groqByokSaved, setGroqByokSaved] = useState(false);
   const [mode, setMode]           = useState<Mode>("Standard" as Mode);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
+  const [streamStartedAt, setStreamStartedAt] = useState<number | null>(null);
+  /** Groq key present but Settings → Inference vendor consent unchecked. */
+  const [vendorRiskBlocked, setVendorRiskBlocked] = useState(false);
+  const [vendorHasGroq, setVendorHasGroq] = useState(false);
+  const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatusPayload | null>(null);
+
+  const refreshRuntimeStatus = useCallback(async () => {
+    try {
+      const res = await fetch(apiUrl("/api/runtime/status"), {
+        credentials: usesRemoteApi() ? "omit" : "same-origin",
+        headers: { ...apiAuthHeaders() },
+      });
+      if (!res.ok) return;
+      setRuntimeStatus((await res.json()) as RuntimeStatusPayload);
+    } catch {
+      /* advisory */
+    }
+  }, []);
+
+  const refreshVendorRiskBanner = useCallback(async () => {
+    try {
+      const res = await fetch("/api/settings/providers?lite=1", { credentials: "same-origin" });
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        hasGroqKey?: boolean;
+        hasEnvGroqKey?: boolean;
+        externalRiskAckAt?: string | null;
+      };
+      const hasKey = Boolean(data.hasGroqKey || data.hasEnvGroqKey);
+      setVendorHasGroq(hasKey);
+      setVendorRiskBlocked(hasKey && !data.externalRiskAckAt);
+    } catch {
+      /* ignore — banner is advisory */
+    }
+  }, []);
+
+  // Lite flags only (no AWS probe). Skip while Settings is open — re-check on leave.
+  useEffect(() => {
+    if (activeNav === "settings") return;
+    void refreshVendorRiskBanner();
+  }, [activeNav, refreshVendorRiskBanner]);
+
+  useEffect(() => {
+    void refreshRuntimeStatus();
+  }, [refreshRuntimeStatus]);
 
   // ── voice input state ───────────────────────────────────────────────────────
   const [voiceState, setVoiceState]   = useState<"idle" | "requesting" | "listening" | "transcribing">("idle");
@@ -1865,9 +2552,19 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
   const [piiStatsRange, setPiiStatsRange]     = useState<StatsRange>("today");
   const [piiStatsWorkspaceId, setPiiStatsWorkspaceId] = useState("all");
   const [routeHistory, setRouteHistory]       = useState<RouteHit[]>([]);
+  /** Server cost summary for Insights → Cost (same source as /analytics/cost). */
+  const [serverCost, setServerCost] = useState<InsightsCostPayload | null>(null);
+  const [serverCostLoading, setServerCostLoading] = useState(false);
   const [piiArchive, setPiiArchive]           = useState<SessionScrubEntry[]>([]);
   const [piiSensitivity, setPiiSensitivityState] = useState<PiiSensitivityTier>(DEFAULT_SENSITIVITY);
   const [safeTerms, setSafeTerms]             = useState<SafeTerm[]>(DEFAULT_SAFE_TERMS);
+  const [canEditSecurity, setCanEditSecurity] = useState(false);
+  const [securityPending, setSecurityPending] = useState<null | {
+    piiSensitivity: PiiSensitivityTier;
+    note: string | null;
+    stricterThanActive: boolean;
+  }>(null);
+  const [securityNotice, setSecurityNotice] = useState<string | null>(null);
   const [pendingSend, setPendingSend]         = useState<PendingSend | null>(null);
   const [highlightedPiiRecordId, setHighlightedPiiRecordId] = useState<string | null>(null);
   const [openWorkspacePickerId, setOpenWorkspacePickerId] = useState<string | null>(null);
@@ -1889,6 +2586,19 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
 
   // ── agent state ──────────────────────────────────────────────────────────────
   const [workspaces, setWorkspaces]               = useState<Workspace[]>([]);
+  const workspaceIds = useMemo(() => workspaces.map(w => w.id), [workspaces]);
+  const [workspaceListOrder, setWorkspaceListOrder] = useWorkspaceListOrder(workspaceIds);
+  const orderedWorkspaces = useMemo(() => {
+    const byId = new Map(workspaces.map(w => [w.id, w]));
+    return workspaceListOrder
+      .map(id => byId.get(id))
+      .filter((w): w is Workspace => Boolean(w));
+  }, [workspaces, workspaceListOrder]);
+  const [dragWorkspaceId, setDragWorkspaceId] = useState<string | null>(null);
+  const [workspaceDropIndex, setWorkspaceDropIndex] = useState<number | null>(null);
+  const workspaceDropIndexRef = useRef<number | null>(null);
+  const suppressWorkspaceClick = useRef(false);
+  const workspaceRowRefs = useRef<Record<string, HTMLElement | null>>({});
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [expandedWorkspaceId, setExpandedWorkspaceId] = useState<string | null>(null);
   // Which companion's content is shown in the current section (Chat, Bookmarks, etc.)
@@ -1901,42 +2611,172 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
   const workspaceName = activeWorkspace?.name ?? DEFAULT_WORKSPACE_NAME;
   const viewWorkspaceName = viewWorkspace?.name ?? workspaceName;
 
+  // ── resizable sidebars ──────────────────────────────────────────────────────
+  const leftSidebar = useSidebarWidth(
+    LEFT_SIDEBAR_KEY,
+    LEFT_SIDEBAR_DEFAULT,
+    LEFT_SIDEBAR_MIN,
+    LEFT_SIDEBAR_MAX,
+  );
+  const rightSidebar = useSidebarWidth(
+    RIGHT_SIDEBAR_KEY,
+    RIGHT_SIDEBAR_DEFAULT,
+    RIGHT_SIDEBAR_MIN,
+    RIGHT_SIDEBAR_MAX,
+  );
+  const settingsNavHeight = useResizableHeight(
+    SETTINGS_NAV_HEIGHT_KEY,
+    SETTINGS_NAV_HEIGHT_DEFAULT,
+    SETTINGS_NAV_HEIGHT_MIN,
+    SETTINGS_NAV_HEIGHT_MAX,
+  );
+  const settingsNavContentRef = useRef<HTMLDivElement>(null);
+  const settingsNavExpandedForMeasure =
+    (activeNav === "settings" || Boolean(analyticsView))
+    && !settingsAnimatingOut
+    && !settingsEntering
+    && !settingsMenuCollapsed;
+  // Grow the Settings stack so every section is visible without scrolling
+  // (still capped at SETTINGS_NAV_HEIGHT_MAX; user can drag taller/shorter).
+  useEffect(() => {
+    if (!settingsNavExpandedForMeasure || settingsNavHeight.dragging) return;
+    const el = settingsNavContentRef.current;
+    if (!el) return;
+    const needed = Math.ceil(el.scrollHeight + 8);
+    const next = Math.min(
+      SETTINGS_NAV_HEIGHT_MAX,
+      Math.max(SETTINGS_NAV_HEIGHT_MIN, needed),
+    );
+    if (next > settingsNavHeight.height) {
+      settingsNavHeight.setHeight(next);
+    }
+  }, [
+    settingsNavExpandedForMeasure,
+    settingsNavHeight.dragging,
+    settingsNavHeight.height,
+    settingsNavHeight.setHeight,
+    settingsIsAdmin,
+  ]);
+
   // ── intel panel + model overrides ───────────────────────────────────────────
   const [isIntelOpen,       setIsIntelOpen]       = useState(!analyticsView);
-  const [railSummary, setRailSummary] = useState<{
-    security: { findings: number; highRiskBlocked: number; topCategory: string | null };
-    usage: { requests: number; tokens: number; groundedRate: number | null; topModel: string | null };
-    cost: { estimatedCostUsd: number; avgCostPerRequest: number | null; routingSavingsUsd: number };
-  } | null>(null);
 
   useEffect(() => {
     if (isAnalytics) setIsIntelOpen(false);
   }, [isAnalytics]);
 
-  useEffect(() => {
-    if (isAnalytics) return;
-    let cancelled = false;
-    fetchAnalyticsJson<{
-      security: { findings: number; highRiskBlocked: number; topCategory: string | null };
-      usage: { requests: number; tokens: number; groundedRate: number | null; topModel: string | null };
-      cost: { estimatedCostUsd: number; avgCostPerRequest: number | null; routingSavingsUsd: number };
-    }>("summary", { range: "30d", workspaceId: activeWorkspaceId })
-      .then(d => {
-        if (!cancelled) setRailSummary(d);
-      })
-      .catch(() => {
-        if (!cancelled) setRailSummary(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [isAnalytics, activeWorkspaceId, turnCount]);
-  const [openPickerMode,    setOpenPickerMode]    = useState<string | null>(null);
+  // Live vendor lists load when the user opens a picker — not on every page load.
+  const { catalog, byId: catalogById, ensureLoaded } = useModelCatalog();
+  const chatCatalogModels = useMemo(() => buildChatPickerModels(catalog), [catalog]);
+  const pickerById = useCallback(
+    (id: string) => chatCatalogModels.find(m => m.id === id) ?? catalogById(id),
+    [chatCatalogModels, catalogById],
+  );
+  const groqCatalogReady = catalog.groq.length > 0 || vendorHasGroq;
+  const ollamaCatalogReady = catalog.ollama.length > 0;
+  const openaiCatalogReady = catalog.openai.length > 0;
+  const anthropicCatalogReady = catalog.anthropic.length > 0;
+  const googleCatalogReady = catalog.google.length > 0;
+  const cloudDefaultsWillRun = vendorHasGroq && !vendorRiskBlocked;
+  const localFallbackModel =
+    runtimeStatus?.model.provider === "ollama" ? runtimeStatus.model.model : null;
+  const labelFor = useCallback(
+    (id: string) => {
+      const hit = pickerById(id);
+      if (hit) return modelDisplayName(hit);
+      return SELECTABLE_MODELS.find(m => m.id === id)?.label ?? shortModelName(id);
+    },
+    [pickerById],
+  );
+  const providerFor = useCallback(
+    (id: string) => pickerById(id)?.provider ?? guessProvider(id),
+    [pickerById],
+  );
+  const tierProviderReady = useCallback(
+    (provider: ReturnType<typeof providerFor>, modelId: string) => {
+      if (!provider) return false;
+      const hit = pickerById(modelId);
+      if (hit && isReferenceOnlyModel(hit)) return false;
+      if (provider === "groq") return groqCatalogReady;
+      if (provider === "ollama") return ollamaCatalogReady;
+      if (provider === "openai") return openaiCatalogReady;
+      if (provider === "anthropic") return anthropicCatalogReady;
+      if (provider === "google") return googleCatalogReady;
+      return catalog.bedrock.length > 0;
+    },
+    [
+      anthropicCatalogReady,
+      catalog.bedrock.length,
+      googleCatalogReady,
+      groqCatalogReady,
+      ollamaCatalogReady,
+      openaiCatalogReady,
+      pickerById,
+    ],
+  );
+
   const [modeModelOverrides, setModeModelOverrides] = useState<Record<string, string>>({});
   const [modelSelectionMode, setModelSelectionMode] = useState<"auto" | "fixed">("auto");
   const [fixedModelId,       setFixedModelId]       = useState("openai/gpt-oss-120b");
+  const [tierPrefsReady,     setTierPrefsReady]     = useState(false);
+  const [changedTiers, setChangedTiers] = useState<Record<string, number>>({});
   const [savingsBaselineModel, setSavingsBaselineModel] = useState(DEFAULT_SAVINGS_BASELINE);
   const savingsBaselineModelRef = useRef(DEFAULT_SAVINGS_BASELINE);
+
+  const markTierChanged = useCallback((tier: string) => {
+    const token = Date.now();
+    setChangedTiers(prev => ({ ...prev, [tier]: token }));
+    window.setTimeout(() => {
+      setChangedTiers(prev => {
+        if (prev[tier] !== token) return prev;
+        const next = { ...prev };
+        delete next[tier];
+        return next;
+      });
+    }, TIER_CHANGED_FLASH_MS);
+  }, []);
+
+  const assignTierModel = useCallback((tier: string, modelId: string | null) => {
+    setModeModelOverrides(prev => {
+      const next = { ...prev };
+      if (!modelId) delete next[tier];
+      else next[tier] = modelId;
+      return next;
+    });
+    markTierChanged(tier);
+  }, [markTierChanged]);
+
+  useEffect(() => {
+    try {
+      setModeModelOverrides(parseTierModelOverrides(localStorage.getItem(TIER_MODEL_OVERRIDES_KEY)));
+      const storedSelectionMode = localStorage.getItem(MODEL_SELECTION_MODE_KEY);
+      if (storedSelectionMode === "fixed") setModelSelectionMode("fixed");
+      const storedFixed = localStorage.getItem(FIXED_MODEL_ID_KEY)?.trim();
+      if (storedFixed) setFixedModelId(storedFixed);
+    } catch { /* private browsing */ }
+    setTierPrefsReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (modelSelectionMode === "fixed" || Object.keys(modeModelOverrides).length > 0) {
+      void ensureLoaded();
+    }
+  }, [modelSelectionMode, modeModelOverrides, ensureLoaded]);
+
+  useEffect(() => {
+    if (!tierPrefsReady) return;
+    try {
+      localStorage.setItem(TIER_MODEL_OVERRIDES_KEY, JSON.stringify(sanitizeTierOverrides(modeModelOverrides)));
+    } catch { /* quota */ }
+  }, [tierPrefsReady, modeModelOverrides]);
+
+  useEffect(() => {
+    if (!tierPrefsReady) return;
+    try {
+      localStorage.setItem(MODEL_SELECTION_MODE_KEY, modelSelectionMode);
+      localStorage.setItem(FIXED_MODEL_ID_KEY, fixedModelId);
+    } catch { /* quota */ }
+  }, [tierPrefsReady, modelSelectionMode, fixedModelId]);
 
   useEffect(() => { savingsBaselineModelRef.current = savingsBaselineModel; }, [savingsBaselineModel]);
 
@@ -1945,6 +2785,66 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
     try { localStorage.setItem(SAVINGS_BASELINE_KEY, modelId); } catch { /* quota */ }
   }, []);
   const [lastRouteInfo, setLastRouteInfo] = useState<RouteInfo | null>(null);
+  const postedModelOverrides = useMemo(
+    () =>
+      effectiveTierOverrides({
+        selectionMode: modelSelectionMode,
+        fixedModelId,
+        overrides: modeModelOverrides,
+        cloudDefaultsWillRun,
+      }),
+    [cloudDefaultsWillRun, fixedModelId, modeModelOverrides, modelSelectionMode],
+  );
+  const displayModelIdForTier = useCallback(
+    (tier: string) =>
+      displayModelForTier({
+        tier,
+        overrides: modeModelOverrides,
+        cloudDefaultsWillRun,
+        localFallbackModel,
+      }),
+    [cloudDefaultsWillRun, localFallbackModel, modeModelOverrides],
+  );
+
+  const tierModelStatus = useCallback(
+    (modelId: string) => {
+      const catalog = pickerById(modelId);
+      const notForChat = !isChatUsableModelId(modelId)
+        || (catalog ? !isChatSelectableModel(catalog) : /embed/i.test(modelId));
+      const provider = providerFor(modelId);
+      return {
+        notForChat,
+        ready: notForChat ? false : tierProviderReady(provider, modelId),
+      };
+    },
+    [pickerById, providerFor, tierProviderReady],
+  );
+
+  const composerInUseLabel = useMemo(() => {
+    if (lastRouteInfo) {
+      return `Last reply · ${lastRouteInfo.provider} · ${lastRouteInfo.model}`;
+    }
+    if (modelSelectionMode === "fixed") {
+      const p = guessProvider(fixedModelId);
+      return `Every message · ${p ?? "model"} · ${fixedModelId}`;
+    }
+    if (cloudDefaultsWillRun) {
+      return "Auto by complexity · assigned models";
+    }
+    if (runtimeStatus?.model.provider) {
+      return `Ready · ${runtimeStatus.model.provider}${
+        runtimeStatus.model.model ? ` · ${runtimeStatus.model.model}` : ""
+      }`;
+    }
+    return null;
+  }, [
+    cloudDefaultsWillRun,
+    fixedModelId,
+    lastRouteInfo,
+    modelSelectionMode,
+    runtimeStatus?.model.model,
+    runtimeStatus?.model.provider,
+  ]);
 
   // ── memory state ─────────────────────────────────────────────────────────────
   const [sessionSummary, setSessionSummary]   = useState("");
@@ -1953,7 +2853,6 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
 
   // Full memory view — fetched from DB when the Memory tab opens
   const [workspaceFacts,         setWorkspaceFacts]         = useState<WorkspaceFactRecord[]>([]);
-  const [userFacts,          setUserFacts]           = useState<WorkspaceFactRecord[]>([]);
   const [allSessionSummaries, setAllSessionSummaries] = useState<SessionSummaryRecord[]>([]);
   const [memoryStats,        setMemoryStats]        = useState<{ semanticFragmentCount: number; documentFragmentCount: number } | null>(null);
   const [memoryLoading,      setMemoryLoading]       = useState(false);
@@ -1970,10 +2869,10 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
   useEffect(() => { summarizedCountRef.current = summarizedCount; }, [summarizedCount]);
   useEffect(() => { messagesRef.current        = messages;        }, [messages]);
   useEffect(() => {
-    if (activeWorkspaceId && messages.length > 0) {
+    if (!isStreaming && activeWorkspaceId && messages.length > 0) {
       writeCachedMessages(activeWorkspaceId, messages);
     }
-  }, [messages, activeWorkspaceId]);
+  }, [messages, activeWorkspaceId, isStreaming]);
   useEffect(() => {
     activeNavRef.current = activeNav;
     // Clear the unseen badge the moment the user opens Bookmarks
@@ -1985,66 +2884,83 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
     if (activeWorkspaceId) setExpandedWorkspaceId(activeWorkspaceId);
   }, [activeWorkspaceId]);
 
-  // ── bookmark localStorage persistence ───────────────────────────────────────
-  // Load bookmarks when the active agent changes
+  // ── bookmark server persistence (migrates leftover localStorage once) ────────
   useEffect(() => {
     if (!activeWorkspaceId) return;
-    try {
-      const stored = localStorage.getItem(`sm_bm_${activeWorkspaceId}`);
-      if (stored) {
-        const parsed: BookmarkEntry[] = JSON.parse(stored);
-        setBookmarks(parsed);
-        // Restore bookmarked state on messages if they match
+    let cancelled = false;
+    const localKey = `sm_bm_${activeWorkspaceId}`;
+    (async () => {
+      try {
+        const res = await fetch(`/api/bookmarks?workspaceId=${activeWorkspaceId}`);
+        if (!res.ok) return;
+        let items = (await res.json() as { items?: BookmarkEntry[] }).items ?? [];
+        if (items.length === 0) {
+          const stored = localStorage.getItem(localKey);
+          if (stored) {
+            const parsed = JSON.parse(stored) as BookmarkEntry[];
+            const migrated = await fetch("/api/bookmarks", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                workspaceId: activeWorkspaceId,
+                migrate: true,
+                items: parsed,
+              }),
+            });
+            if (migrated.ok) {
+              items = (await migrated.json() as { items?: BookmarkEntry[] }).items ?? parsed;
+              localStorage.removeItem(localKey);
+            }
+          }
+        } else {
+          try { localStorage.removeItem(localKey); } catch { /* ignore */ }
+        }
+        if (cancelled) return;
+        setBookmarks(items);
         setMessages(prev => prev.map(m => ({
           ...m,
-          bookmarked: parsed.some(b => b.messageId === m.id),
+          bookmarked: items.some(b => b.messageId === m.id),
         })));
-      } else {
-        setBookmarks([]);
-      }
-    } catch { /* ignore malformed storage */ }
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspaceId]);
-
-  // Persist bookmarks whenever they change
-  useEffect(() => {
-    if (!activeWorkspaceId) return;
-    localStorage.setItem(`sm_bm_${activeWorkspaceId}`, JSON.stringify(bookmarks));
-  }, [bookmarks, activeWorkspaceId]);
 
   // ── memory fetch ────────────────────────────────────────────────────────────
   useEffect(() => {
     if (activeNav !== "memory" || !viewWorkspaceId) return;
+    const ac = new AbortController();
     setMemoryLoading(true);
-    fetch(`/api/memory?workspaceId=${viewWorkspaceId}`)
+    fetch(`/api/memory?workspaceId=${viewWorkspaceId}`, { signal: ac.signal })
       .then(r => r.json())
       .then(data => {
+        if (ac.signal.aborted) return;
         setWorkspaceFacts(data.workspaceFacts ?? []);
-        setUserFacts(data.userFacts ?? []);
         setAllSessionSummaries(data.sessionSummaries ?? []);
         setMemoryStats(data.stats ?? null);
       })
       .catch(() => { /* silently ignore — in-session data is still shown */ })
-      .finally(() => setMemoryLoading(false));
+      .finally(() => { setMemoryLoading(false); });
+    return () => ac.abort();
   }, [activeNav, viewWorkspaceId]);
 
   // ── view bookmarks (per workspace) ──────────────────────────────────────────
   useEffect(() => {
     if (activeNav !== "bookmarks" || !viewWorkspaceId) return;
-    try {
-      const stored = localStorage.getItem(`sm_bm_${viewWorkspaceId}`);
-      setViewBookmarks(stored ? JSON.parse(stored) as BookmarkEntry[] : []);
-    } catch {
-      setViewBookmarks([]);
-    }
+    fetch(`/api/bookmarks?workspaceId=${viewWorkspaceId}`)
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then((data: { items?: BookmarkEntry[] }) => setViewBookmarks(data.items ?? []))
+      .catch(() => setViewBookmarks([]));
   }, [activeNav, viewWorkspaceId]);
 
   useEffect(() => { viewWorkspaceIdRef.current = viewWorkspaceId; }, [viewWorkspaceId]);
 
-  // Load persisted routing + PII history
+  // Load persisted routing + PII history; hydrate security policy from server
   useEffect(() => {
     // Must run before the archive is read so no legacy raw value reaches state.
     purgeLegacyPiiValues();
+    sweepOrphanedStorageKeys();
     try {
       const routes = localStorage.getItem(ROUTE_HISTORY_KEY);
       if (routes) {
@@ -2055,6 +2971,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
       }
       const pii = localStorage.getItem(PII_ARCHIVE_KEY);
       if (pii) setPiiArchive(JSON.parse(pii) as SessionScrubEntry[]);
+      // localStorage is a cache only — server InstanceConfig is source of truth when available
       const sensitivity = localStorage.getItem(PII_SENSITIVITY_KEY);
       if (sensitivity && ["low", "balanced", "high", "extreme"].includes(sensitivity)) {
         setPiiSensitivityState(sensitivity as PiiSensitivityTier);
@@ -2065,13 +2982,41 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
       if (dismissed) setDismissedPiiIds(new Set(JSON.parse(dismissed) as string[]));
       const baseline = localStorage.getItem(SAVINGS_BASELINE_KEY);
       if (baseline && GROQ_MODEL_PRICING[baseline]) setSavingsBaselineModel(baseline);
-      if (localStorage.getItem(GROQ_BYOK_KEY)) setGroqByokSaved(true);
       const savedSettingsSection = localStorage.getItem(SETTINGS_SECTION_KEY);
       if (savedSettingsSection && isSettingsSection(savedSettingsSection)) {
         setSettingsSectionState(savedSettingsSection);
+      } else {
+        setSettingsSectionState(defaultSettingsSection);
       }
     } catch { /* ignore malformed storage */ }
-  }, []);
+
+    void (async () => {
+      try {
+        const res = await fetch("/api/settings/security");
+        if (!res.ok) return;
+        const data = await res.json() as {
+          piiSensitivity?: PiiSensitivityTier;
+          safeTerms?: SafeTerm[];
+          canEdit?: boolean;
+          pending?: null | {
+            piiSensitivity: PiiSensitivityTier;
+            note: string | null;
+            stricterThanActive: boolean;
+          };
+        };
+        if (data.piiSensitivity) {
+          setPiiSensitivityState(data.piiSensitivity);
+          try { localStorage.setItem(PII_SENSITIVITY_KEY, data.piiSensitivity); } catch { /* quota */ }
+        }
+        if (Array.isArray(data.safeTerms)) {
+          setSafeTerms(data.safeTerms.length ? data.safeTerms : DEFAULT_SAFE_TERMS);
+          persistSafeTerms(data.safeTerms.length ? data.safeTerms : DEFAULT_SAFE_TERMS);
+        }
+        setCanEditSecurity(Boolean(data.canEdit));
+        setSecurityPending(data.pending ?? null);
+      } catch { /* offline / first boot */ }
+    })();
+  }, [defaultSettingsSection]);
 
   // Drop routing stats for deleted companions so All stays equal to the sum of individuals
   useEffect(() => {
@@ -2091,11 +3036,15 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
   const [docUploading,       setDocUploading]       = useState(false);
   const [docError,           setDocError]           = useState<string | null>(null);
   const [selectedDoc,   setSelectedDoc]   = useState<DocDetail | null>(null);
+  const [knowledgeFilter, setKnowledgeFilter] = useState<KnowledgeLibraryFilter>("all");
   const [docDragOver,   setDocDragOver]   = useState(false);
   const docFileRef = useRef<HTMLInputElement>(null);
   const docDragCounterRef = useRef(0);
 
   const bottomRef    = useRef<HTMLDivElement>(null);
+  /** When true, keep the thread pinned to the latest tokens (ChatGPT-style). */
+  const stickToBottomRef = useRef(true);
+  const streamScrollRafRef = useRef<number | null>(null);
   // Tracks whether the first post-load scroll has happened (instant vs smooth)
   const sessionLoadedRef = useRef(false);
   // Mirrors activeNav for use inside callbacks without stale closures
@@ -2121,6 +3070,10 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
   const threadRef    = useRef<HTMLDivElement>(null);
   const [floatingDate, setFloatingDate] = useState<string | null>(null);
   const abortRef     = useRef<AbortController | null>(null);
+  const streamReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
+  const docsAbortRef = useRef<AbortController | null>(null);
+  const pollTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const pollAttemptsRef = useRef(new Map<string, number>());
 
   // ── Load workspaces then session on mount ────────────────────────────────────────
   useEffect(() => {
@@ -2222,31 +3175,61 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
       .finally(() => setSessionLoading(false));
   };
 
-  // Auto-scroll to bottom on new messages.
-  // First scroll after load is instant (no animation from top).
-  // Subsequent scrolls on new messages are smooth.
+  // Pin thread to bottom while streaming (instant scrollTop — never smooth-per-token).
+  // Smooth scrollIntoView on every delta fights new layout and feels rocky.
+  const pinThreadToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    const el = threadRef.current;
+    if (!el) return;
+    if (behavior === "smooth") {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, []);
+
   useEffect(() => {
     if (sessionLoading) {
-      // Reset flag whenever a new session starts loading so agent-switching
-      // also gets an instant jump rather than a slow scroll.
       sessionLoadedRef.current = false;
+      stickToBottomRef.current = true;
       return;
     }
     if (!sessionLoadedRef.current) {
       sessionLoadedRef.current = true;
-      // Jump instantly — avoids the jarring "scroll from top" animation on load
-      const el = threadRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-    } else {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      stickToBottomRef.current = true;
+      pinThreadToBottom("auto");
+      return;
     }
-  }, [messages, sessionLoading]);
+    if (!stickToBottomRef.current) return;
 
-  // Floating date pill: track which date section is at the top of the visible chat
+    if (isStreaming) {
+      if (streamScrollRafRef.current != null) return;
+      streamScrollRafRef.current = requestAnimationFrame(() => {
+        streamScrollRafRef.current = null;
+        if (stickToBottomRef.current) pinThreadToBottom("auto");
+      });
+      return;
+    }
+
+    pinThreadToBottom("smooth");
+  }, [messages, sessionLoading, isStreaming, pinThreadToBottom]);
+
+  useEffect(() => () => {
+    if (streamScrollRafRef.current != null) {
+      cancelAnimationFrame(streamScrollRafRef.current);
+      streamScrollRafRef.current = null;
+    }
+  }, []);
+
+  // Floating date pill + stick-to-bottom detection
   useEffect(() => {
     const container = threadRef.current;
     if (!container) return;
+    const NEAR_BOTTOM_PX = 96;
     const update = () => {
+      const distance =
+        container.scrollHeight - container.scrollTop - container.clientHeight;
+      stickToBottomRef.current = distance <= NEAR_BOTTOM_PX;
+
       const containerTop = container.getBoundingClientRect().top;
       const dividers = container.querySelectorAll<HTMLElement>("[data-date-divider]");
       let current: string | null = null;
@@ -2263,6 +3246,11 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
 
   useEffect(() => () => {
     abortRef.current?.abort();
+    void streamReaderRef.current?.cancel().catch(() => {});
+    docsAbortRef.current?.abort();
+    for (const timer of pollTimersRef.current.values()) clearTimeout(timer);
+    pollTimersRef.current.clear();
+    pollAttemptsRef.current.clear();
     mediaRecRef.current?.stop();
     mediaStreamRef.current?.getTracks().forEach(t => t.stop());
     cancelAnimationFrame(animFrameRef.current);
@@ -2276,9 +3264,12 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
   // summary so the context window stays small regardless of conversation length.
   const WORKING_MEMORY  = 10; // raw turns always sent verbatim
   const SUMMARIZE_EVERY = 6;  // compress when overflow exceeds this
+  const MAX_SUMMARIZE_BATCH = 40;
+  const summarizeInFlightRef = useRef(false);
 
   useEffect(() => {
     if (isStreaming) return; // wait for response to finish
+    if (summarizeInFlightRef.current) return;
 
     const msgs      = messagesRef.current.filter(m => m.role !== "assistant" || m.content);
     const sumCount  = summarizedCountRef.current;
@@ -2286,8 +3277,9 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
 
     if (overflow.length <= WORKING_MEMORY + SUMMARIZE_EVERY) return;
 
-    const toSummarize = overflow.slice(0, -WORKING_MEMORY);
+    const toSummarize = overflow.slice(0, -WORKING_MEMORY).slice(0, MAX_SUMMARIZE_BATCH);
     const newCount    = sumCount + toSummarize.length;
+    summarizeInFlightRef.current = true;
 
     fetch("/api/summarize", {
       method:  "POST",
@@ -2308,7 +3300,8 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
         setSummarizedCount(newCount);
         summarizedCountRef.current = newCount;
       })
-      .catch(err => console.error("[memory] summarization failed:", err));
+      .catch(err => console.error("[memory] summarization failed:", err))
+      .finally(() => { summarizeInFlightRef.current = false; });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isStreaming]);
 
@@ -2623,32 +3616,125 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
 
   // ── send ─────────────────────────────────────────────────────────────────────
   const cancelStream = useCallback(() => {
+    void streamReaderRef.current?.cancel().catch(() => {});
+    streamReaderRef.current = null;
     abortRef.current?.abort();
   }, []);
 
-  const setPiiSensitivity = useCallback((tier: PiiSensitivityTier) => {
-    setPiiSensitivityState(tier);
+  const setPiiSensitivity = useCallback(async (tier: PiiSensitivityTier) => {
+    setSecurityNotice(null);
+    if (!canEditSecurity) {
+      setSecurityNotice("Only an Admin can apply sensitivity. Use Propose instead.");
+      return;
+    }
+    if (tier === piiSensitivity) return;
+    const ok = window.confirm(
+      `Change detection sensitivity to “${tier}”?\n\n` +
+      `This applies going forward only:\n` +
+      `• New chat messages and new Knowledge uploads use the new tier\n` +
+      `• Existing messages and documents are NOT re-scanned or rewritten\n` +
+      `• Already-redacted text stays redacted (nothing can be restored)`,
+    );
+    if (!ok) return;
+
+    const res = await fetch("/api/settings/security", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ piiSensitivity: tier, safeTerms }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({})) as { error?: string };
+      setSecurityNotice(err.error || "Could not update security policy.");
+      return;
+    }
+    const data = await res.json() as {
+      piiSensitivity?: PiiSensitivityTier;
+      safeTerms?: SafeTerm[];
+      pending?: null;
+    };
+    if (data.piiSensitivity) setPiiSensitivityState(data.piiSensitivity);
     try { localStorage.setItem(PII_SENSITIVITY_KEY, tier); } catch { /* quota */ }
+    if (Array.isArray(data.safeTerms)) {
+      setSafeTerms(data.safeTerms);
+      persistSafeTerms(data.safeTerms);
+    }
+    setSecurityPending(null);
+    setSecurityNotice(
+      `Sensitivity set to ${tier}. Applies to new chat and Knowledge only — history was not re-scanned.`,
+    );
+  }, [canEditSecurity, piiSensitivity, safeTerms]);
+
+  const proposeSecurity = useCallback(async (tier: PiiSensitivityTier) => {
+    setSecurityNotice(null);
+    const res = await fetch("/api/settings/security", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ piiSensitivity: tier, note: `Proposed ${tier} from Settings` }),
+    });
+    if (!res.ok) {
+      setSecurityNotice("Could not submit proposal.");
+      return;
+    }
+    const data = await res.json() as {
+      pending?: null | {
+        piiSensitivity: PiiSensitivityTier;
+        note: string | null;
+        stricterThanActive: boolean;
+      };
+    };
+    setSecurityPending(data.pending ?? null);
+    setSecurityNotice(`Proposed ${tier}. An Admin must accept before it applies.`);
+  }, []);
+
+  const acceptPendingSecurity = useCallback(async () => {
+    if (!securityPending) return;
+    await setPiiSensitivity(securityPending.piiSensitivity);
+  }, [securityPending, setPiiSensitivity]);
+
+  const dismissPendingSecurity = useCallback(async () => {
+    const res = await fetch("/api/settings/security", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clearPending: true }),
+    });
+    if (res.ok) {
+      setSecurityPending(null);
+      setSecurityNotice("Pending proposal dismissed.");
+    }
   }, []);
 
   const addSafeTerm = useCallback((kind: SafeTermKind, value: string, label?: string) => {
     const check = validateSafeTerm(value, kind);
     if (!check.ok) return check;
+    if (!canEditSecurity) return { ok: false as const, reason: "Only an Admin can edit safe terms." };
     setSafeTerms(prev => {
       const next = [...prev, { id: crypto.randomUUID(), kind, value: value.trim(), label }];
       persistSafeTerms(next);
+      void fetch("/api/settings/security", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ piiSensitivity, safeTerms: next }),
+      }).then(async (res) => {
+        if (!res.ok) setSecurityNotice("Safe term saved locally; server sync failed.");
+      });
       return next;
     });
     return { ok: true } as const;
-  }, []);
+  }, [canEditSecurity, piiSensitivity]);
 
   const removeSafeTerm = useCallback((termId: string) => {
+    if (!canEditSecurity) return;
     setSafeTerms(prev => {
       const next = prev.filter(t => t.id !== termId);
       persistSafeTerms(next);
+      void fetch("/api/settings/security", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ piiSensitivity, safeTerms: next }),
+      });
       return next;
     });
-  }, []);
+  }, [canEditSecurity, piiSensitivity]);
 
   const deliverMessage = useCallback(async ({
     raw,
@@ -2663,6 +3749,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
   }: DeliverPayload) => {
     const turn = turnCount + 1;
     setTurnCount(turn);
+    stickToBottomRef.current = true;
 
     if (hadRedactions) {
       const scrubAgentId = activeWorkspaceId ?? undefined;
@@ -2727,6 +3814,9 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
       },
       { id: asstId, role: "assistant", content: "", createdAt: now },
     ]);
+    const startedAt = Date.now();
+    setStreamStartedAt(startedAt);
+    setStreamingMessageId(asstId);
     setIsStreaming(true);
 
     try {
@@ -2737,6 +3827,8 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
       setSessionSaveError("Message could not be saved. Check your connection and try again.");
       setMessages(p => p.filter(m => m.id !== userId && m.id !== asstId));
       setIsStreaming(false);
+      setStreamingMessageId(null);
+      setStreamStartedAt(null);
       composerRef.current?.setValue(raw);
       return;
     }
@@ -2747,10 +3839,17 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
     let ttftCaptured = false;
     let asstContent = "";
 
+    // Pre-wake local Node or remote Lambda before the heavy chat request.
+    warmChatConnection();
+
     try {
-      const res = await fetch("/api/chat", {
+      const res = await fetch(apiUrl("/api/chat"), {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...apiAuthHeaders(),
+        },
+        credentials: usesRemoteApi() ? "omit" : "same-origin",
         body: JSON.stringify({
           // Plain user ask for this turn; attachment bodies load via IDs server-side.
           message:           baseText || "Please review the attached file(s).",
@@ -2761,12 +3860,11 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
           sessionId:         sessionIdRef.current ?? "local",
           sessionSummary:    sessionSummaryRef.current,
           facts:             extractedFactsRef.current,
-          modelOverrides:    modelSelectionMode === "fixed"
-            ? Object.fromEntries(MODES.map(m => [m, fixedModelId]))
-            : modeModelOverrides,
+          modelOverrides: postedModelOverrides,
           history: messages
             .filter(m => m.role !== "assistant" || m.content)
             .slice(summarizedCountRef.current)
+            .slice(-40)
             .map(m => ({ role: m.role, content: m.content })),
           lastTier: lastRouteInfo?.mode ?? null,
           priorTurnHadCitations: Boolean(
@@ -2784,13 +3882,37 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
       });
 
       if (res.status === 503) {
-        const { error } = await res.json() as { error: string };
-        setMessages(p => p.map(m => m.id === asstId ? { ...m, error: `Setup needed: ${error}` } : m));
+        const body = await res.json() as {
+          error: string;
+          code?: string;
+          settingsSection?: SettingsSection;
+        };
+        setMessages(p => p.map(m => m.id === asstId ? {
+          ...m,
+          error: body.code === "VENDOR_RISK_REQUIRED" ||
+            body.code === "GROQ_NOT_CONFIGURED" ||
+            body.code === "BEDROCK_NOT_CONFIGURED" ||
+            body.code === "MODEL_PROVIDER_REQUIRED" ||
+            body.code === "OLLAMA_EMBED_MODEL"
+            ? body.error
+            : body.code === "OLLAMA_MODEL_MISSING"
+              ? body.error
+              : `Setup needed: ${body.error}`,
+          errorCode: body.code,
+          errorSettingsSection: body.settingsSection ??
+            (body.code === "VENDOR_RISK_REQUIRED" ||
+              body.code === "GROQ_NOT_CONFIGURED" ||
+              body.code === "BEDROCK_NOT_CONFIGURED" ||
+              body.code === "MODEL_PROVIDER_REQUIRED"
+              ? "providers"
+              : undefined),
+        } : m));
         return;
       }
       if (!res.ok || !res.body) throw new Error(`Server error: ${res.status}`);
 
       const reader  = res.body.getReader();
+      streamReaderRef.current = reader;
       const decoder = new TextDecoder();
       let buf = "";
 
@@ -2809,6 +3931,8 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
             const parsed = JSON.parse(data) as {
               delta?: string;
               error?: string;
+              code?: string;
+              settingsSection?: SettingsSection;
               route?: RouteInfo;
               citations?: CitationRef[];
               citationAudit?: CitationAuditRef;
@@ -2851,11 +3975,15 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
               const hit: RouteHit = {
                 tier:    parsed.route!.mode,
                 model:   parsed.route!.model,
+                provider: parsed.route!.provider,
                 at:      new Date().toISOString(),
-                workspaceId: activeWorkspaceId ?? undefined,
+                workspaceId:
+                  activeWorkspaceId
+                  ?? viewWorkspaceIdRef.current
+                  ?? undefined,
               };
               setRouteHistory(prev => {
-                const next = taggedRouteHits([...prev, hit]).slice(-500);
+                const next = [...prev, hit].slice(-500);
                 persistRouteHistory(next);
                 return next;
               });
@@ -2865,15 +3993,22 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
               const target = messagesRef.current.find(m => m.id === asstId);
               if (target?.routeInfo) {
                 const baseline = savingsBaselineModelRef.current;
-                const { costUsd, savedUsd } = calcTurnCost(
-                  target.routeInfo.model, u.promptTokens, u.completionTokens, baseline,
+                const priced = calcTurnCost(
+                  target.routeInfo.provider,
+                  target.routeInfo.model,
+                  u.promptTokens,
+                  u.completionTokens,
+                  baseline,
                 );
+                const costUsd = priced?.costUsd;
+                const savedUsd = priced?.savedUsd;
                 setRouteHistory(rh => {
                   const next = [...rh];
                   const idx = next.length - 1;
                   if (idx >= 0 && next[idx].model === target.routeInfo!.model) {
                     next[idx] = {
                       ...next[idx],
+                      provider: target.routeInfo!.provider,
                       promptTokens: u.promptTokens,
                       completionTokens: u.completionTokens,
                       costUsd,
@@ -2891,7 +4026,13 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
               }
             }
             if (parsed.error) {
-              setMessages(p => p.map(m => m.id === asstId ? { ...m, error: parsed.error } : m));
+              setMessages(p => p.map(m => m.id === asstId ? {
+                ...m,
+                error: parsed.error,
+                errorCode: parsed.code,
+                errorSettingsSection: parsed.settingsSection ??
+                  (parsed.code === "VENDOR_RISK_REQUIRED" ? "providers" : undefined),
+              } : m));
               break;
             }
             if (parsed.delta) {
@@ -2927,15 +4068,18 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
         m.id === asstId
           ? {
             ...m,
-            error: msg.includes("Ollama")
-              ? msg
-              : "Connection issue — check your GROQ_API_KEY and that the dev server is running, then try again.",
+            error: msg.includes("Failed to fetch")
+              ? "Could not reach the chat API. Confirm the dev server is running, then try again."
+              : msg,
           }
           : m,
       ));
     } finally {
       setIsStreaming(false);
+      setStreamingMessageId(null);
+      setStreamStartedAt(null);
       abortRef.current = null;
+      streamReaderRef.current = null;
       setTimeout(() => composerRef.current?.focus(), 30);
 
       if (sessionIdRef.current) {
@@ -2951,11 +4095,12 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
       }
     }
   }, [
-    turnCount, mode, workspaceName, activeWorkspace, activeWorkspaceId, modelSelectionMode,
-    fixedModelId, modeModelOverrides, messages, lastRouteInfo, piiSensitivity,
+    turnCount, mode, workspaceName, activeWorkspace, activeWorkspaceId,
+    postedModelOverrides, messages, lastRouteInfo, piiSensitivity,
   ]);
 
   const handleSend = useCallback(async (textOverride?: string) => {
+    if (runtimeStatus && !runtimeStatus.chatReady) return;
     const raw = (textOverride ?? composerRef.current?.getValue() ?? "").trim();
     if (!raw && attachments.length === 0) return;
     if (isStreaming) return;
@@ -3020,7 +4165,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
     });
   }, [
     attachments, isStreaming, sessionLoading, voiceState, cancelVoice,
-    piiSensitivity, safeTerms, deliverMessage,
+    piiSensitivity, safeTerms, deliverMessage, runtimeStatus,
   ]);
 
   /** User accepted the redacted form. Only the sanitized text is delivered. */
@@ -3054,6 +4199,11 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
   const switchWorkspace = useCallback((agent: Workspace) => {
     if (agent.id === activeWorkspaceId) return;
     abortRef.current?.abort();
+    void streamReaderRef.current?.cancel().catch(() => {});
+    streamReaderRef.current = null;
+    for (const timer of pollTimersRef.current.values()) clearTimeout(timer);
+    pollTimersRef.current.clear();
+    pollAttemptsRef.current.clear();
     try { localStorage.setItem(ACTIVE_WORKSPACE_KEY, agent.id); } catch { /* private browsing */ }
     setActiveWorkspaceId(agent.id);
     setViewWorkspaceId(agent.id);
@@ -3142,8 +4292,11 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
   const downloadWorkspaceBackup = useCallback(async (agent: Workspace) => {
     let bookmarks: unknown[] = [];
     try {
-      const bm = localStorage.getItem(`sm_bm_${agent.id}`);
-      if (bm) bookmarks = JSON.parse(bm) as unknown[];
+      const res = await fetch(`/api/bookmarks?workspaceId=${agent.id}`);
+      if (res.ok) {
+        const data = await res.json() as { items?: unknown[] };
+        bookmarks = data.items ?? [];
+      }
     } catch { /* ignore */ }
     const payload = {
       exportedAt: new Date().toISOString(),
@@ -3180,11 +4333,14 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
 
   const fetchDocuments = useCallback(async (workspaceId?: string | null) => {
     const id = workspaceId ?? viewWorkspaceIdRef.current;
+    docsAbortRef.current?.abort();
+    const ac = new AbortController();
+    docsAbortRef.current = ac;
     setDocLoading(true);
     setDocError(null);
     try {
       const url = id ? `/api/documents?workspaceId=${id}` : "/api/documents";
-      const res = await fetch(url);
+      const res = await fetch(url, { signal: ac.signal });
       if (res.ok) {
         setDocuments(await res.json() as DocRecord[]);
       } else {
@@ -3192,17 +4348,22 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
         setDocError(body?.error ?? `Could not load documents (HTTP ${res.status}). Try restarting the dev server.`);
         setDocuments([]);
       }
-    } catch {
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      if (err instanceof Error && err.name === "AbortError") return;
       setDocError("Could not load documents — check your connection and try again.");
       setDocuments([]);
     } finally {
-      setDocLoading(false);
+      if (docsAbortRef.current === ac) setDocLoading(false);
     }
   }, []);
 
   // Refetch documents when the viewed companion or Documents tab changes
   useEffect(() => {
     if (viewWorkspaceId && activeNav === "documents") fetchDocuments(viewWorkspaceId);
+    return () => {
+      docsAbortRef.current?.abort();
+    };
   }, [viewWorkspaceId, activeNav, fetchDocuments]);
 
   // Switch which companion's content is shown in the current section
@@ -3218,9 +4379,8 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
       if (workspaceId !== activeWorkspaceId) switchWorkspace(agent);
     } else if (activeNav === "documents") {
       setSelectedDoc(null);
-      fetchDocuments(workspaceId);
     }
-  }, [workspaces, activeNav, activeWorkspaceId, switchWorkspace, fetchDocuments]);
+  }, [workspaces, activeNav, activeWorkspaceId, switchWorkspace]);
 
   /**
    * Workspace nav takes priority over Insights. On analytics routes we navigate
@@ -3248,8 +4408,6 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
     if (nav === "thread") {
       const full = workspaces.find(w => w.id === agent.id);
       if (full && full.id !== activeWorkspaceId) switchWorkspace(full);
-    } else if (nav === "documents") {
-      fetchDocuments(agent.id);
     }
   }, [
     analyticsView,
@@ -3257,12 +4415,29 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
     workspaces,
     activeWorkspaceId,
     switchWorkspace,
-    fetchDocuments,
   ]);
 
-  // Restore Chat/Knowledge/etc. after leaving an Insights dashboard.
+  /** Brand mark → product Home in the center pane (not Chat). */
+  const goHome = useCallback(() => {
+    setOpenWorkspacePickerId(null);
+    lastWorkNavRef.current = "home";
+    const id = viewWorkspaceId || activeWorkspaceId || workspaces[0]?.id;
+    if (analyticsView) {
+      try {
+        sessionStorage.setItem(
+          PENDING_WORK_NAV_KEY,
+          JSON.stringify({ nav: "home", workspaceId: id ?? "" }),
+        );
+      } catch { /* private browsing */ }
+      router.push("/");
+      return;
+    }
+    setActiveNav("home");
+  }, [analyticsView, router, viewWorkspaceId, activeWorkspaceId, workspaces]);
+
+  // Restore Chat/Knowledge/Home/etc. after leaving an Insights dashboard.
   useEffect(() => {
-    if (analyticsView || workspaces.length === 0) return;
+    if (analyticsView) return;
     let pending: { nav?: string; workspaceId?: string } | null = null;
     try {
       const raw = sessionStorage.getItem(PENDING_WORK_NAV_KEY);
@@ -3272,39 +4447,63 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
     } catch {
       return;
     }
-    if (!pending?.nav || !pending.workspaceId) return;
+    if (!pending?.nav) return;
+    const nav = pending.nav as NavId;
+    if (nav === "home") {
+      setActiveNav("home");
+      lastWorkNavRef.current = "home";
+      return;
+    }
+    if (workspaces.length === 0 || !pending.workspaceId) return;
     const agent = workspaces.find(w => w.id === pending!.workspaceId);
     if (!agent) return;
-    const nav = pending.nav as NavId;
     setViewWorkspaceId(agent.id);
     setExpandedWorkspaceId(agent.id);
     setActiveNav(nav);
     lastWorkNavRef.current =
       nav === "settings" || nav === "security-dashboard" ? "thread" : nav;
     if (nav === "thread" && agent.id !== activeWorkspaceId) switchWorkspace(agent);
-    else if (nav === "documents") fetchDocuments(agent.id);
-  }, [analyticsView, workspaces, activeWorkspaceId, switchWorkspace, fetchDocuments]);
+  }, [analyticsView, workspaces, activeWorkspaceId, switchWorkspace]);
 
-  // Poll a single document until it leaves "processing"
+  // Poll status only (?meta=1) so we never download chunks on a timer.
   const pollDocument = useCallback((id: string, ms = 3000) => {
+    const existing = pollTimersRef.current.get(id);
+    if (existing) clearTimeout(existing);
+    const attempts = (pollAttemptsRef.current.get(id) ?? 0) + 1;
+    if (attempts > 40) {
+      pollAttemptsRef.current.delete(id);
+      return;
+    }
+    pollAttemptsRef.current.set(id, attempts);
     const timer = setTimeout(async () => {
+      pollTimersRef.current.delete(id);
       try {
-        const res = await fetch(`/api/documents/${id}`);
+        const res = await fetch(`/api/documents/${id}?meta=1`);
         if (!res.ok) return;
-        const updated = await res.json() as DocDetail;
+        const updated = await res.json() as {
+          status: DocRecord["status"];
+          chunkCount: number;
+          processingError?: string | null;
+        };
         setDocuments(prev =>
           prev.map(d =>
             d.id === id
-              ? { ...d, status: updated.status, chunkCount: updated.chunkCount }
+              ? { ...d, status: updated.status, chunkCount: updated.chunkCount, processingError: updated.processingError }
               : d,
           ),
         );
+        setSelectedDoc(prev =>
+          prev?.id === id
+            ? { ...prev, status: updated.status, chunkCount: updated.chunkCount, processingError: updated.processingError }
+            : prev,
+        );
         if (updated.status === "processing") pollDocument(id, ms);
+        else pollAttemptsRef.current.delete(id);
       } catch {
         // ignore — let the user refresh manually
       }
     }, ms);
-    return timer;
+    pollTimersRef.current.set(id, timer);
   }, []);
 
   const handleDocumentUpload = useCallback(async (
@@ -3389,25 +4588,38 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
   /** Chat attachments → Knowledge + return scrubbed content for this turn. */
   const ingestChatAttachmentsToKnowledge = useCallback(async (files: File[]) => {
     if (!files.length || !activeWorkspaceId) return [];
+    const batch = files.slice(0, MAX_ATTACHMENTS_PER_TURN);
     const uploaded: { id: string; name: string; content: string }[] = [];
-    for (const file of files) {
+    let reused = 0;
+    let created = 0;
+    for (const file of batch) {
       const doc = await handleDocumentUpload(file, {
         workspaceId: activeWorkspaceId,
         quiet: true,
       });
-      if (doc?.content?.trim()) {
-        uploaded.push({ id: doc.id, name: doc.name, content: doc.content });
-      } else if (doc) {
-        // Upload succeeded but content omitted — still pass the id; chat loads from DB.
-        uploaded.push({ id: doc.id, name: doc.name, content: doc.contentPreview ?? "" });
-      }
+      if (!doc) continue;
+      if (doc.reused) reused++;
+      else created++;
+      uploaded.push({
+        id: doc.id,
+        name: doc.name,
+        content: doc.content?.trim() ? doc.content : (doc.contentPreview ?? ""),
+      });
     }
     if (uploaded.length > 0) {
-      setKnowledgeIngestNote(
-        uploaded.length === 1
+      let note: string;
+      if (created === 0 && reused > 0) {
+        note = reused === 1
+          ? "Already in Knowledge — using the existing copy for this chat."
+          : `Already in Knowledge — using ${reused} existing files for this chat.`;
+      } else if (reused === 0) {
+        note = created === 1
           ? "Added to Knowledge — reviewing in this chat."
-          : `Added ${uploaded.length} files to Knowledge — reviewing in this chat.`,
-      );
+          : `Added ${created} files to Knowledge — reviewing in this chat.`;
+      } else {
+        note = `Knowledge updated (${created} new, ${reused} existing) — reviewing in this chat.`;
+      }
+      setKnowledgeIngestNote(note);
       window.setTimeout(() => setKnowledgeIngestNote(null), 4000);
     }
     return uploaded;
@@ -3492,6 +4704,15 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
     if (selectedDoc?.id === id) setSelectedDoc(null);
   }, [selectedDoc]);
 
+  const reprocessDocument = useCallback(async (id: string) => {
+    setDocuments(prev => prev.map(d => d.id === id ? { ...d, status: "processing" } : d));
+    if (selectedDoc?.id === id) {
+      setSelectedDoc({ ...selectedDoc, status: "processing", processingError: null });
+    }
+    const res = await fetch(`/api/documents/${id}/reprocess`, { method: "POST" });
+    if (res.ok) pollDocument(id);
+  }, [selectedDoc, pollDocument]);
+
   // ── emoji + attachments ──────────────────────────────────────────────────────
   // Close emoji picker when clicking outside both the picker and the toggle button
   useEffect(() => {
@@ -3541,17 +4762,17 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
   // ── bookmarks ────────────────────────────────────────────────────────────────
   const toggleBookmark = useCallback((messageId: string) => {
     const msg = messages.find(m => m.id === messageId);
-    if (!msg) return;
+    if (!msg || !activeWorkspaceId) return;
     const already = bookmarks.some(b => b.messageId === messageId);
     if (already) {
       setBookmarks(p => p.filter(b => b.messageId !== messageId));
       setMessages(p => p.map(m => m.id === messageId ? { ...m, bookmarked: false } : m));
-      // Remove from unseen if it was there
       setUnseenBookmarkIds(prev => { const s = new Set(prev); s.delete(messageId); return s; });
+      void fetch(`/api/bookmarks?workspaceId=${activeWorkspaceId}&messageId=${messageId}`, { method: "DELETE" });
     } else {
       const t = msg.content.trim();
       const preview = t.length > 200 ? t.slice(0, 200) + "…" : t;
-      setBookmarks(p => [...p, {
+      const entry: BookmarkEntry = {
         messageId,
         label:     msg.role === "assistant" ? workspaceName : "You",
         role:      msg.role,
@@ -3560,14 +4781,26 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
         read:      false,
         createdAt: msg.createdAt ?? new Date().toISOString(),
         emojis:    extractEmojis(t),
-      }]);
+      };
+      setBookmarks(p => [...p, entry]);
       setMessages(p => p.map(m => m.id === messageId ? { ...m, bookmarked: true } : m));
-      // Mark as unseen — only if the user is not already on the Bookmarks tab
       setUnseenBookmarkIds(prev =>
         activeNavRef.current === "bookmarks" ? prev : new Set([...prev, messageId]),
       );
+      void fetch("/api/bookmarks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workspaceId: activeWorkspaceId,
+          messageId,
+          label: entry.label,
+          preview: entry.preview,
+          role: entry.role,
+          heavy: entry.heavy,
+        }),
+      });
     }
-  }, [bookmarks, workspaceName, messages]);
+  }, [bookmarks, workspaceName, messages, activeWorkspaceId]);
 
   const removeBookmark = useCallback((workspaceId: string, messageId: string) => {
     const applyRemove = (list: BookmarkEntry[]) => list.filter(b => b.messageId !== messageId);
@@ -3585,13 +4818,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
       return s;
     });
 
-    try {
-      const stored = localStorage.getItem(`sm_bm_${workspaceId}`);
-      if (stored) {
-        const parsed = JSON.parse(stored) as BookmarkEntry[];
-        localStorage.setItem(`sm_bm_${workspaceId}`, JSON.stringify(applyRemove(parsed)));
-      }
-    } catch { /* ignore */ }
+    void fetch(`/api/bookmarks?workspaceId=${workspaceId}&messageId=${messageId}`, { method: "DELETE" });
   }, [activeWorkspaceId, viewWorkspaceId]);
 
   const dismissPiiRecord = useCallback((recordId: string) => {
@@ -3635,18 +4862,6 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
     setActiveNav("thread");
     setBookmarks(prev => prev.map(b => b.messageId === id ? { ...b, read: true } : b));
     setViewBookmarks(prev => prev.map(b => b.messageId === id ? { ...b, read: true } : b));
-    if (viewWorkspaceId) {
-      try {
-        const stored = localStorage.getItem(`sm_bm_${viewWorkspaceId}`);
-        if (stored) {
-          const parsed = JSON.parse(stored) as BookmarkEntry[];
-          localStorage.setItem(
-            `sm_bm_${viewWorkspaceId}`,
-            JSON.stringify(parsed.map(b => b.messageId === id ? { ...b, read: true } : b)),
-          );
-        }
-      } catch { /* ignore */ }
-    }
   }, [viewWorkspaceId, activeWorkspaceId, workspaces, switchWorkspace]);
 
   const groupedViewBookmarks = useMemo(
@@ -3671,55 +4886,132 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
     });
   }, [activeNav]);
 
-  // ── memory helpers (no-ops until Phase B persistence is wired) ──────────────
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const approveMemory = (_id: string) => { /* Phase B */ };
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const deleteMemory  = (_id: string) => { /* Phase B */ };
-
   // ── derived ──────────────────────────────────────────────────────────────────
   const totalRedactions = scrubLog.reduce((s, e) => s + e.events.reduce((ss, ev) => ss + ev.count, 0), 0);
 
-  const filteredRouteHits = (() => {
-    const known = new Set(workspaces.map(a => a.id));
-    const tagged = taggedRouteHits(filterByRange(routeHistory, routeStatsRange), known);
-    if (routeStatsWorkspaceId === "all") return tagged;
-    return tagged.filter(h => h.workspaceId === routeStatsWorkspaceId);
-  })();
+  const knownWorkspaceIds = useMemo(
+    () => new Set(workspaces.map(a => a.id)),
+    [workspaces],
+  );
+  const rangedRouteHits = useMemo(
+    () => taggedRouteHits(filterByRange(routeHistory, routeStatsRange), knownWorkspaceIds),
+    [routeHistory, routeStatsRange, knownWorkspaceIds],
+  );
+  const filteredRouteHits = useMemo(
+    () =>
+      routeStatsWorkspaceId === "all"
+        ? rangedRouteHits
+        : rangedRouteHits.filter(h => h.workspaceId === routeStatsWorkspaceId),
+    [rangedRouteHits, routeStatsWorkspaceId],
+  );
   const tierUsageCounts = MODES.map(tier => ({
     tier,
-    count: filteredRouteHits.filter(h => h.tier === tier).length,
-    modelId: modeModelOverrides[tier] ?? DEFAULT_MODE_MODELS[tier] ?? "llama-3.3-70b-versatile",
+    count: filteredRouteHits.filter(h => {
+      const t = h.tier === "High" ? "Max" : h.tier === "Fast" ? "Light" : h.tier;
+      return t === tier;
+    }).length,
+    modelId: displayModelForTier({
+      tier,
+      overrides: modeModelOverrides,
+      cloudDefaultsWillRun,
+      localFallbackModel,
+    }),
   }));
   const totalRouteCalls = filteredRouteHits.length;
 
-  const savingsStats = useMemo(() => {
+  const complexityTiersBind: ComplexityTiersBind = {
+    modelSelectionMode,
+    onModelSelectionModeChange: setModelSelectionMode,
+    modeModelOverrides,
+    onAssignTier: assignTierModel,
+    fixedModelId,
+    onFixedModelIdChange: setFixedModelId,
+    lastRoute: lastRouteInfo,
+    chatCatalogModels,
+    labelFor,
+    providerFor,
+    displayModelFor: displayModelIdForTier,
+    tierStatus: tierModelStatus,
+    usageCount: (tier) => tierUsageCounts.find(t => t.tier === tier)?.count ?? 0,
+    changedTiers,
+    cloudDefaultsWillRun,
+    groqCatalogReady,
+    ollamaCatalogReady,
+    localFallbackModel,
+    onNeedCatalog: () => { void ensureLoaded(); },
+  };
+
+  const localSavingsStats = useMemo(() => {
     let totalCost = 0;
     let totalSaved = 0;
+    let pricedCount = 0;
     const byModel: Record<string, { count: number; cost: number }> = {};
-    const byTier: Record<string, { count: number; cost: number }> = {};
     for (const hit of filteredRouteHits) {
-      const { costUsd, savedUsd } = turnCostForHit(hit, savingsBaselineModel);
-      totalCost += costUsd;
-      totalSaved += savedUsd;
+      const priced = turnCostForHit(hit, savingsBaselineModel);
+      if (!priced) continue;
+      pricedCount += 1;
+      totalCost += priced.costUsd;
+      totalSaved += priced.savedUsd;
       if (!byModel[hit.model]) byModel[hit.model] = { count: 0, cost: 0 };
       byModel[hit.model].count += 1;
-      byModel[hit.model].cost += costUsd;
-      if (!byTier[hit.tier]) byTier[hit.tier] = { count: 0, cost: 0 };
-      byTier[hit.tier].count += 1;
-      byTier[hit.tier].cost += costUsd;
+      byModel[hit.model].cost += priced.costUsd;
     }
     const modelRows = Object.entries(byModel)
       .map(([modelId, v]) => ({ modelId, ...v }))
       .sort((a, b) => b.cost - a.cost);
-    const tierRows = MODES.map(tier => ({
-      tier,
-      count: byTier[tier]?.count ?? 0,
-      cost: byTier[tier]?.cost ?? 0,
-      modelId: modeModelOverrides[tier] ?? DEFAULT_MODE_MODELS[tier] ?? DEFAULT_SAVINGS_BASELINE,
-    }));
-    return { totalCost, totalSaved, modelRows, tierRows, responseCount: filteredRouteHits.length };
-  }, [filteredRouteHits, savingsBaselineModel, modeModelOverrides]);
+    return {
+      totalCost,
+      totalSaved,
+      modelRows,
+      responseCount: filteredRouteHits.length,
+      pricedCount,
+    };
+  }, [filteredRouteHits, savingsBaselineModel]);
+
+  // Prefer durable server inference events (same as full Cost view); fall back to this browser.
+  const savingsStats = useMemo(() => {
+    const serverCount = serverCost
+      ? serverCost.kpis.pricedRequests + serverCost.kpis.unpricedRequests
+      : 0;
+    if (serverCost && serverCount > 0) {
+      return {
+        totalCost: serverCost.kpis.estimatedCostUsd,
+        totalSaved: serverCost.kpis.routingSavingsUsd,
+        modelRows: serverCost.byModel.map(m => ({
+          modelId: m.model,
+          count: 0,
+          cost: m.costUsd,
+        })),
+        responseCount: serverCount,
+        pricedCount: serverCost.kpis.pricedRequests,
+        source: "server" as const,
+      };
+    }
+    return { ...localSavingsStats, source: "local" as const };
+  }, [serverCost, localSavingsStats]);
+
+  // Hydrate Insights → Cost from /api/analytics/cost whenever filters change.
+  useEffect(() => {
+    if (insightsTab !== "savings") return;
+    let cancelled = false;
+    setServerCostLoading(true);
+    fetchAnalyticsJson<InsightsCostPayload>("cost", {
+      range: statsRangeToAnalytics(routeStatsRange),
+      workspaceId: routeStatsWorkspaceId,
+    })
+      .then(data => {
+        if (!cancelled) setServerCost(data);
+      })
+      .catch(() => {
+        if (!cancelled) setServerCost(null);
+      })
+      .finally(() => {
+        if (!cancelled) setServerCostLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [insightsTab, routeStatsRange, routeStatsWorkspaceId]);
 
   const mergedPiiEntries = (() => {
     const sessionIds = new Set(scrubLog.map(e => `${e.turn}-${e.at}`));
@@ -3779,594 +5071,413 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
   // ── intelligence panel ───────────────────────────────────────────────────────
   const IntelligencePanel = (
     <div className="flex flex-col h-full gap-0">
-      {/* Header */}
-      <div className="flex items-center gap-3 pb-4 mb-4 border-b border-white/[0.07] shrink-0">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-xl
-                        bg-gradient-to-br from-indigo-500/25 to-violet-600/25
-                        border border-indigo-400/20 shadow-[0_2px_12px_rgba(99,102,241,0.25)]">
-          <Sparkles className="size-4 text-indigo-400" aria-hidden />
-        </div>
-        <div>
-          <p className="text-[0.95rem] font-bold text-white/85 leading-none tracking-tight">Insights</p>
-          <p className="text-[0.62rem] text-indigo-400/50 mt-0.5 font-medium">Security · Usage · Cost</p>
-        </div>
-      </div>
-
-      <Tabs defaultValue="security" className="flex flex-1 min-h-0 flex-col">
-        <TabsList className="grid grid-cols-3 shrink-0 bg-white/4 border border-white/6">
-          <TabsTrigger value="security" className="text-xs">
-            Security
-            {totalRedactions > 0 && (
-              <span className="ml-1 inline-flex size-4 items-center justify-center rounded-full bg-primary text-[0.55rem] text-primary-foreground font-bold">
-                {totalRedactions}
-              </span>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="context" className="text-xs">Usage</TabsTrigger>
-          <TabsTrigger value="savings" className="text-xs">Cost</TabsTrigger>
-        </TabsList>
-
-        {/* Scrollable tab body */}
-        <div className="flex-1 min-h-0 overflow-y-auto mt-3">
-          <TabsContent value="context" className="mt-0 space-y-2 pb-8">
-            <IntelCard label="Last 30 days">
-              <div className="space-y-1.5 text-xs text-white/70">
-                <div className="flex justify-between gap-2">
-                  <span className="text-white/45">Requests</span>
-                  <span className="font-mono tabular-nums">{railSummary?.usage.requests ?? 0}</span>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <span className="text-white/45">Tokens</span>
-                  <span className="font-mono tabular-nums">{railSummary?.usage.tokens ?? 0}</span>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <span className="text-white/45">Grounded answers</span>
-                  <span className="font-mono tabular-nums">{fmtPct(railSummary?.usage.groundedRate)}</span>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <span className="text-white/45">Most-used model</span>
-                  <span className="truncate">{shortModel(railSummary?.usage.topModel)}</span>
-                </div>
-              </div>
-              <Link
-                href="/analytics/usage"
-                className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-indigo-400/35 bg-indigo-500/15 py-2.5 text-[0.72rem] font-semibold text-indigo-200/95 hover:bg-indigo-500/25 transition-colors"
-              >
-                <BarChart2 className="size-3.5 shrink-0" aria-hidden />
-                Open full usage view
-                <ChevronRight className="size-3.5 shrink-0 opacity-70" aria-hidden />
-              </Link>
-            </IntelCard>
-
-            {/* Complexity usage — how often each tier was called */}
-            <IntelCard label="Complexity usage">
-              <WorkspaceStatsFilter
-                workspaces={workspaces}
-                value={routeStatsWorkspaceId}
-                onChange={setRouteStatsWorkspaceId}
-              />
-              <StatsRangePicker value={routeStatsRange} onChange={setRouteStatsRange} />
-              <p className="text-[0.62rem] text-white/30 mt-2 mb-2">
-                {totalRouteCalls === 0
-                  ? routeStatsWorkspaceId === "all"
-                    ? "No AI responses yet for this range."
-                    : "No responses for this workspace in this range."
-                  : `${totalRouteCalls} response${totalRouteCalls !== 1 ? "s" : ""} routed`}
+      <Tabs
+        value={insightsTab}
+        onValueChange={v => {
+          if (v === "security" || v === "context" || v === "savings") setInsightsTab(v);
+        }}
+        className="flex flex-1 min-h-0 flex-col gap-0"
+      >
+        {/* Header + section tabs — tabs are the primary chrome; drag to reorder */}
+        <div className="shrink-0 pb-3 mb-3 border-b border-border">
+          <div className="flex items-start gap-3 mb-3.5">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl
+                            bg-[var(--primary-soft)] border border-[var(--primary-border)]
+                            shadow-[var(--shadow-sm)]">
+              <Sparkles className="size-5 text-[var(--primary-soft-foreground)]" aria-hidden />
+            </div>
+            <div className="min-w-0 flex-1 pt-0.5">
+              <p className="text-section leading-none">Insights</p>
+              <p className="text-meta mt-2 leading-[var(--leading-body)] max-w-[36ch]">
+                Models, cost, and detected sensitive-data risk for this account. Drag tabs or section headers to reorder.
               </p>
-              <div className="space-y-1">
-                {tierUsageCounts.map(({ tier, count, modelId }) => (
-                  <div
-                    key={tier}
-                    className={cn(
-                      "flex items-center justify-between gap-2 rounded-lg px-2 py-1.5",
-                      count > 0 ? "bg-white/[0.04]" : "opacity-45",
-                    )}
-                  >
-                    <div className="min-w-0">
-                      <span className="text-xs font-medium text-white/70">{tier}</span>
-                      <p className="text-[0.62rem] text-white/35 truncate">{displayModelLabel(modelId)}</p>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      {count > 0 && Array.from({ length: Math.min(count, 8) }).map((_, i) => (
-                        <span key={i} className="size-1.5 rounded-full bg-indigo-400/70" aria-hidden />
-                      ))}
-                      <span className={cn(
-                        "min-w-[1.25rem] text-center text-[0.7rem] font-mono font-semibold tabular-nums rounded-md px-1.5 py-0.5",
-                        count > 0 ? "bg-indigo-500/20 text-indigo-300" : "bg-white/5 text-white/25",
-                      )}>
-                        {count}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </IntelCard>
+            </div>
+          </div>
 
-            {/* Last response routing */}
-            {lastRouteInfo && (
-              <IntelCard label="Last response">
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={cn(
-                      "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[0.6rem] font-mono font-semibold uppercase tracking-wide",
-                      lastRouteInfo.provider === "groq"
-                        ? "text-indigo-400/80 bg-indigo-400/10 border border-indigo-400/15"
-                        : "text-emerald-400/70 bg-emerald-400/8 border border-emerald-400/15",
-                    )}>
-                      <Zap className="size-2.5 shrink-0" aria-hidden />
-                      {lastRouteInfo.provider === "ollama" ? "local" : lastRouteInfo.provider}
-                    </span>
-                    <code className="text-[0.65rem] font-mono text-white/50">{displayModelLabel(lastRouteInfo.model)}</code>
-                    {lastRouteInfo.wasAutoRouted && (
-                      <span className="text-[0.55rem] text-indigo-400/50 font-mono uppercase tracking-wide">auto</span>
-                    )}
-                  </div>
-                  {lastRouteInfo.latencyMs !== undefined && (
-                    <p className="text-[0.65rem] text-white/30 tabular-nums">
-                      TTFT:{" "}
-                      <span className="text-white/50 font-mono">
-                        {lastRouteInfo.latencyMs < 1000
-                          ? `${lastRouteInfo.latencyMs}ms`
-                          : `${(lastRouteInfo.latencyMs / 1000).toFixed(1)}s`}
-                      </span>
-                    </p>
-                  )}
-                </div>
-              </IntelCard>
-            )}
+          <InsightsTabsList
+            order={insightsTabOrder}
+            onReorder={setInsightsTabOrder}
+            securityBadge={totalRedactions}
+          />
+        </div>
 
-            {/* ── Model selection mode ─────────────────────────────────────────── */}
-            <IntelCard label="Model">
-              {/* Toggle: Auto vs Fixed — mutually exclusive modes */}
-              <div className="flex gap-1 p-0.5 bg-white/5 rounded-lg mb-2 border border-white/6">
-                <button
-                  type="button"
-                  onClick={() => setModelSelectionMode("auto")}
-                  className={cn(
-                    "flex-1 text-[0.7rem] font-medium rounded-md py-1.5 transition-all duration-150 cursor-pointer",
-                    modelSelectionMode === "auto"
-                      ? "bg-indigo-500/25 text-indigo-200 shadow-sm ring-1 ring-indigo-400/30"
-                      : "text-white/35 hover:text-white/60",
-                  )}
-                >
-                  Complexity tiers
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setModelSelectionMode("fixed")}
-                  className={cn(
-                    "flex-1 text-[0.7rem] font-medium rounded-md py-1.5 transition-all duration-150 cursor-pointer",
-                    modelSelectionMode === "fixed"
-                      ? "bg-indigo-500/25 text-indigo-200 shadow-sm ring-1 ring-indigo-400/30"
-                      : "text-white/35 hover:text-white/60",
-                  )}
-                >
-                  Fixed model
-                </button>
-              </div>
-
-              {modelSelectionMode === "auto" ? (
-                <p className="text-[0.65rem] leading-relaxed text-indigo-300/75 bg-indigo-500/10 border border-indigo-500/20 rounded-lg px-2.5 py-2 mb-3">
-                  <span className="font-semibold text-indigo-200">Complexity tiers active.</span>{" "}
-                  Each message is auto-classified, then routed to the model mapped below for that tier.
-                </p>
-              ) : (
-                <p className="text-[0.65rem] leading-relaxed text-amber-300/75 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2.5 py-2 mb-3">
-                  <span className="font-semibold text-amber-200">Fixed model active.</span>{" "}
-                  Every message uses one model — complexity tiers are not used for routing.
-                </p>
-              )}
-
-              {/* Fixed model picker */}
-              {modelSelectionMode === "fixed" && (
-                <div className="space-y-1 mb-1">
-                  <p className="text-[0.65rem] text-white/35 mb-2">
-                    Every message uses this model regardless of complexity.
-                  </p>
-                  <div className="rounded-xl bg-black/30 border border-white/8 overflow-hidden">
-                    {SELECTABLE_MODELS.map(opt => {
-                      const isSel = fixedModelId === opt.id;
-                      return (
-                        <button
-                          key={opt.id}
-                          onClick={() => setFixedModelId(opt.id)}
-                          className={cn(
-                            "w-full flex items-center justify-between px-3 py-2 text-xs transition-all",
-                            isSel
-                              ? "bg-indigo-500/15 text-white/85"
-                              : "text-white/40 hover:bg-white/5 hover:text-white/70",
-                          )}
-                        >
-                          <div className="flex items-center gap-2">
-                            {isSel
-                              ? <Check className="size-3 text-indigo-400 shrink-0" />
-                              : <span className="size-3 shrink-0" />}
-                            <span className="font-medium">{opt.label}</span>
+        {/* Tab body — each tab is a VS Code–style collapsible/resizable stack */}
+        <div className="flex-1 min-h-0 flex flex-col">
+          <TabsContent value="context" className="mt-0 flex-1 min-h-0 data-[state=inactive]:hidden flex flex-col">
+            <IntelPanelStack
+              storageKey="sm_intel_panels_usage_v6"
+              defaultOrder={["model", "last-response"]}
+              panels={[
+                {
+                  id: "model",
+                  label: "Models",
+                  defaultOpen: true,
+                  defaultHeight: INTEL_HEIGHT.routing,
+                  children: (
+                    <>
+                      <ComplexityTiersEditor
+                        variant="rail"
+                        {...complexityTiersBind}
+                        onOpenSettings={() => openSettings("inference")}
+                        beforeList={(
+                          <div className="mb-2 space-y-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <div className="min-w-0 flex-1">
+                                <WorkspaceStatsFilter
+                                  workspaces={workspaces}
+                                  value={routeStatsWorkspaceId}
+                                  onChange={setRouteStatsWorkspaceId}
+                                />
+                              </div>
+                            </div>
+                            <StatsRangePicker value={routeStatsRange} onChange={setRouteStatsRange} />
+                            <p className="text-[0.62rem] text-foreground/30 px-0.5">
+                              {totalRouteCalls === 0
+                                ? routeStatsWorkspaceId === "all"
+                                  ? "No AI responses yet for this range."
+                                  : "No responses for this workspace in this range."
+                                : `${totalRouteCalls} response${totalRouteCalls !== 1 ? "s" : ""} routed`}
+                            </p>
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-[0.6rem] text-white/20 font-mono">{opt.speed}</span>
-                            <span className={cn(
-                              "text-[0.55rem] font-mono px-1 py-0.5 rounded",
-                              opt.tier === "$"
-                                ? "text-emerald-400/55 bg-emerald-400/8"
-                                : opt.tier === "$$"
-                                  ? "text-yellow-400/55 bg-yellow-400/8"
-                                  : "text-orange-400/55 bg-orange-400/8",
-                            )}>
-                              {opt.tier}
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Complexity tier table — shown in auto mode */}
-              {modelSelectionMode === "auto" && (
-              <>
-              <div className="space-y-0.5">
-                {MODES.map((m) => {
-                  const defaultModelId = DEFAULT_MODE_MODELS[m] ?? "llama-3.3-70b-versatile";
-                  const activeModelId  = modeModelOverrides[m] ?? defaultModelId;
-                  const isPickerOpen   = openPickerMode === m;
-                  const hasOverride    = !!modeModelOverrides[m];
-
-                  return (
-                    <div key={m}>
-                      <button
-                        onClick={() => setOpenPickerMode(isPickerOpen ? null : m)}
-                        className={cn(
-                          "w-full flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 -mx-0.5 group",
-                          "hover:bg-white/6 active:bg-white/8 transition-all duration-150 cursor-pointer",
-                          isPickerOpen && "bg-white/5",
                         )}
+                      />
+                      <Link
+                        href="/analytics/usage"
+                        className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary py-2.5 text-[0.72rem] font-semibold text-primary-foreground hover:bg-[var(--primary-hover)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-medium text-white/35 group-hover:text-white/60 transition-colors">
-                            {m}
+                        <BarChart2 className="size-3.5 shrink-0" aria-hidden />
+                        Open full usage view
+                        <ChevronRight className="size-3.5 shrink-0 opacity-80" aria-hidden />
+                      </Link>
+                    </>
+                  ),
+                },
+                {
+                  id: "last-response",
+                  label: "Last response",
+                  visible: Boolean(lastRouteInfo),
+                  defaultHeight: INTEL_HEIGHT.snug,
+                  children: lastRouteInfo ? (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={cn(
+                          "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[0.6rem] font-mono font-semibold uppercase tracking-wide",
+                          lastRouteInfo.provider === "groq"
+                            ? "text-indigo-400/80 bg-indigo-400/10 border border-indigo-400/15"
+                            : "text-emerald-400/70 bg-emerald-400/8 border border-emerald-400/15",
+                        )}>
+                          <Zap className="size-2.5 shrink-0" aria-hidden />
+                          {lastRouteInfo.provider === "ollama" ? "Ollama" : lastRouteInfo.provider}
+                        </span>
+                        <code className="text-[0.65rem] font-mono text-foreground/50">{labelFor(lastRouteInfo.model)}</code>
+                        {lastRouteInfo.wasAutoRouted && (
+                          <span className="text-[0.55rem] text-indigo-400/50 font-mono uppercase tracking-wide">auto</span>
+                        )}
+                      </div>
+                      {lastRouteInfo.latencyMs !== undefined && (
+                        <p className="text-[0.65rem] text-foreground/30 tabular-nums">
+                          TTFT:{" "}
+                          <span className="text-foreground/50 font-mono">
+                            {lastRouteInfo.latencyMs < 1000
+                              ? `${lastRouteInfo.latencyMs}ms`
+                              : `${(lastRouteInfo.latencyMs / 1000).toFixed(1)}s`}
                           </span>
-                          {hasOverride && (
-                            <span className="text-[0.5rem] uppercase tracking-wider text-amber-400/60 bg-amber-400/8 border border-amber-400/15 px-1 py-0.5 rounded">
-                              custom
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <code className={cn(
-                            "text-[0.62rem] font-mono px-1.5 py-0.5 rounded transition-colors truncate max-w-[9rem]",
-                            hasOverride
-                              ? "text-amber-400/80 bg-amber-400/10"
-                              : "text-white/35 bg-white/4",
-                          )}>
-                            {displayModelLabel(activeModelId)}
-                          </code>
-                          <ChevronRight className={cn(
-                            "size-3 transition-all duration-200",
-                            isPickerOpen
-                              ? "text-white/40 rotate-90"
-                              : "text-transparent group-hover:text-white/20",
-                          )} />
-                        </div>
-                      </button>
-
-                      {/* Inline model picker */}
-                      {isPickerOpen && (
-                        <div className="mt-1 mb-1.5 rounded-xl bg-black/30 border border-white/8 overflow-hidden">
-                          {SELECTABLE_MODELS.map(opt => {
-                            const isSel = activeModelId === opt.id;
-                            return (
-                              <button
-                                key={opt.id}
-                                onClick={() => {
-                                  setModeModelOverrides(prev => {
-                                    const next = { ...prev };
-                                    if (opt.id === DEFAULT_MODE_MODELS[m]) {
-                                      delete next[m];
-                                    } else {
-                                      next[m] = opt.id;
-                                    }
-                                    return next;
-                                  });
-                                  setOpenPickerMode(null);
-                                }}
-                                className={cn(
-                                  "w-full flex items-center justify-between px-3 py-2 text-xs transition-all",
-                                  isSel
-                                    ? "bg-indigo-500/15 text-white/85"
-                                    : "text-white/40 hover:bg-white/5 hover:text-white/70",
-                                )}
-                              >
-                                <div className="flex items-center gap-2">
-                                  {isSel
-                                    ? <Check className="size-3 text-indigo-400 shrink-0" />
-                                    : <span className="size-3 shrink-0" />}
-                                  <span className="font-medium">{opt.label}</span>
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                  <span className="text-[0.6rem] text-white/20 font-mono">{opt.speed}</span>
-                                  <span className={cn(
-                                    "text-[0.55rem] font-mono px-1 py-0.5 rounded",
-                                    opt.tier === "$"
-                                      ? "text-emerald-400/55 bg-emerald-400/8"
-                                      : opt.tier === "$$"
-                                        ? "text-yellow-400/55 bg-yellow-400/8"
-                                        : "text-orange-400/55 bg-orange-400/8",
-                                  )}>
-                                    {opt.tier}
-                                  </span>
-                                </div>
-                              </button>
-                            );
-                          })}
-                          {hasOverride && (
-                            <button
-                              onClick={() => {
-                                setModeModelOverrides(prev => {
-                                  const next = { ...prev };
-                                  delete next[m];
-                                  return next;
-                                });
-                                setOpenPickerMode(null);
-                              }}
-                              className="w-full py-1.5 text-center text-[0.6rem] text-white/20 hover:text-white/50 border-t border-white/6 transition-colors"
-                            >
-                              Reset to default
-                            </button>
-                          )}
-                        </div>
+                        </p>
                       )}
                     </div>
-                  );
-                })}
-              </div>
-              </>
-              )}
-            </IntelCard>
+                  ) : null,
+                },
+              ]}
+            />
           </TabsContent>
 
-
-          <TabsContent value="security" className="mt-0 space-y-2 pb-8">
-            <IntelCard label="Last 30 days">
-              <div className="space-y-1.5 text-xs text-white/70">
-                <div className="flex justify-between gap-2">
-                  <span className="text-white/45">Findings</span>
-                  <span className="font-mono tabular-nums">{railSummary?.security.findings ?? 0}</span>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <span className="text-white/45">High-risk blocked</span>
-                  <span className="font-mono tabular-nums">{railSummary?.security.highRiskBlocked ?? 0}</span>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <span className="text-white/45">Most common</span>
-                  <span className="truncate">{railSummary?.security.topCategory ?? "—"}</span>
-                </div>
-              </div>
-              <Link
-                href="/analytics/security"
-                className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-indigo-400/35 bg-indigo-500/15 py-2.5 text-[0.72rem] font-semibold text-indigo-200/95 hover:bg-indigo-500/25 transition-colors"
-              >
-                <Shield className="size-3.5 shrink-0" aria-hidden />
-                Open full security view
-                <ChevronRight className="size-3.5 shrink-0 opacity-70" aria-hidden />
-              </Link>
-            </IntelCard>
-
-            <IntelCard label="PII protection">
-              <div className="flex gap-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 px-3 py-2.5">
-                <ShieldCheck className="size-4 text-emerald-400 shrink-0 mt-0.5" aria-hidden />
-                <div>
-                  <p className="text-xs font-semibold text-emerald-200/90">
-                    {activePiiCategories.length} pattern type{activePiiCategories.length !== 1 ? "s" : ""} active
-                  </p>
-                  <p className="text-[0.62rem] text-white/40 leading-relaxed mt-0.5">
-                    Detection runs in your browser before send. Anything found is shown for review,
-                    and only the redacted text is transmitted.
-                  </p>
-                </div>
-              </div>
-            </IntelCard>
-
-            <IntelCard label="PII detected">
-              <StatsRangePicker value={piiStatsRange} onChange={setPiiStatsRange} />
-              <div className="mt-3 flex items-baseline gap-2">
-                <span className="text-3xl font-bold tabular-nums text-white/90">{totalPiiFiltered}</span>
-                <span className="text-xs text-white/40">
-                  item{totalPiiFiltered !== 1 ? "s" : ""} scrubbed
-                </span>
-              </div>
-              {piiCategoryCounts.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-3">
-                  {piiCategoryCounts.map(([label, count]) => (
-                    <span
-                      key={label}
-                      className="inline-flex items-center gap-1 rounded-full bg-red-400/10 border border-red-400/20 px-2 py-0.5 text-[0.62rem] text-red-300/80"
-                    >
-                      {label}
-                      <span className="font-mono font-semibold tabular-nums">{count}</span>
-                    </span>
-                  ))}
-                </div>
-              )}
-              {recentPiiItems.length > 0 && (
-                <div className="mt-3 space-y-1.5">
-                  <p className="text-[0.58rem] uppercase tracking-wider text-white/30 font-semibold">
-                    Recent
-                  </p>
-                  <ul className="space-y-1">
-                    {recentPiiItems.map(({ entry, rec }) => {
-                      const ag = workspaceDisplay(workspaces, entry.workspaceId);
-                      return (
-                        <li key={rec.id}>
-                          <button
-                            type="button"
-                            onClick={() => openPiiRecord(rec.id, entry.workspaceId)}
-                            className="w-full text-left rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-2 hover:bg-white/[0.06] hover:border-indigo-500/25 transition-colors cursor-pointer group"
-                          >
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-[0.62rem] font-medium text-red-300/80 truncate">
-                                {categoryLabel(rec.category)}
-                              </span>
-                              <span className="text-[0.58rem] text-white/25 tabular-nums shrink-0">
-                                {formatDateDivider(entry.at) === "Today"
-                                  ? formatMsgTime(entry.at)
-                                  : formatDateDivider(entry.at)}
-                              </span>
-                            </div>
-                            <p className="text-[0.6rem] text-white/35 font-mono truncate mt-0.5 group-hover:text-white/50">
-                              {rec.context}
-                            </p>
-                            <p className="text-[0.55rem] text-white/25 mt-0.5 truncate">
-                              {ag.emoji && <span aria-hidden>{ag.emoji} </span>}
-                              {ag.name}
-                            </p>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              )}
-              {totalPiiFiltered > 0 && (
-                <p className="mt-2.5 flex items-center gap-1.5 text-[0.62rem] text-amber-400/70">
-                  <ShieldAlert className="size-3 shrink-0" aria-hidden />
-                  Sensitive data was blocked before send
-                </p>
-              )}
-            </IntelCard>
+          <TabsContent value="security" className="mt-0 flex-1 min-h-0 data-[state=inactive]:hidden flex flex-col">
+            <IntelPanelStack
+              storageKey="sm_intel_panels_security_v2"
+              panels={[
+                {
+                  id: "pii-detected",
+                  label: "Detections",
+                  defaultHeight: INTEL_HEIGHT.paired,
+                  children: (
+                    <>
+                      <StatsRangePicker value={piiStatsRange} onChange={setPiiStatsRange} />
+                      <div className="mt-3 flex items-baseline gap-2">
+                        <span className="text-3xl font-bold tabular-nums text-foreground/90">{totalPiiFiltered}</span>
+                        <span className="text-xs text-foreground/40">
+                          detection{totalPiiFiltered !== 1 ? "s" : ""} recorded
+                        </span>
+                      </div>
+                      {piiCategoryCounts.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-3">
+                          {piiCategoryCounts.map(([label, count]) => (
+                            <span
+                              key={label}
+                              className="inline-flex items-center gap-1 rounded-full bg-red-400/10 border border-red-400/20 px-2 py-0.5 text-[0.62rem] text-red-300/80"
+                            >
+                              {label}
+                              <span className="font-mono font-semibold tabular-nums">{count}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {recentPiiItems.length > 0 && (
+                        <div className="mt-3 space-y-1.5">
+                          <p className="text-[0.58rem] uppercase tracking-wider text-foreground/30 font-semibold">
+                            Recent
+                          </p>
+                          <ul className="space-y-1">
+                            {recentPiiItems.map(({ entry, rec }) => {
+                              const ag = workspaceDisplay(workspaces, entry.workspaceId);
+                              return (
+                                <li key={rec.id}>
+                                  <button
+                                    type="button"
+                                    onClick={() => openPiiRecord(rec.id, entry.workspaceId)}
+                                    className="w-full text-left rounded-lg border border-border bg-elevated px-2.5 py-2 hover:bg-muted hover:border-indigo-500/25 transition-colors cursor-pointer group"
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="text-[0.62rem] font-medium text-red-300/80 truncate">
+                                        {categoryLabel(rec.category)}
+                                      </span>
+                                      <span className="text-[0.58rem] text-foreground/25 tabular-nums shrink-0">
+                                        {formatDateDivider(entry.at) === "Today"
+                                          ? formatMsgTime(entry.at)
+                                          : formatDateDivider(entry.at)}
+                                      </span>
+                                    </div>
+                                    <p className="text-[0.6rem] text-foreground/35 font-mono truncate mt-0.5 group-hover:text-foreground/50">
+                                      {rec.context}
+                                    </p>
+                                    <p className="text-[0.55rem] text-foreground/25 mt-0.5 truncate">
+                                      {ag.emoji && <span aria-hidden>{ag.emoji} </span>}
+                                      {ag.name}
+                                    </p>
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
+                      )}
+                      {totalPiiFiltered > 0 && (
+                        <p className="mt-2.5 flex items-center gap-1.5 text-[0.62rem] text-amber-400/70">
+                          <ShieldAlert className="size-3 shrink-0" aria-hidden />
+                          Sensitive data was blocked before send
+                        </p>
+                      )}
+                      <Link
+                        href="/analytics/security"
+                        className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary py-2.5 text-[0.72rem] font-semibold text-primary-foreground hover:bg-[var(--primary-hover)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <Shield className="size-3.5 shrink-0" aria-hidden />
+                        Open full security view
+                        <ChevronRight className="size-3.5 shrink-0 opacity-80" aria-hidden />
+                      </Link>
+                    </>
+                  ),
+                },
+                {
+                  id: "pii-protection",
+                  label: "Detection policy",
+                  defaultHeight: INTEL_HEIGHT.normal,
+                  children: (
+                    <>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-[0.62rem] text-foreground/40">Sensitivity</span>
+                        <span className="rounded-md bg-indigo-500/15 border border-indigo-400/25 px-2 py-0.5 text-[0.65rem] font-semibold capitalize text-indigo-200/90">
+                          {piiSensitivity}
+                        </span>
+                      </div>
+                      <p className="text-[0.58rem] text-foreground/32 mb-2.5 leading-relaxed">
+                        Scanned in your browser before send. Detected values are replaced — the scan can miss some.
+                      </p>
+                      <p className="text-[0.58rem] uppercase tracking-wider text-foreground/30 font-semibold mb-1.5">
+                        Detecting ({activePiiCategories.length})
+                      </p>
+                      <ul className="space-y-1 mb-2.5">
+                        {activePiiCategories.map(label => {
+                          const CatIcon = PII_SCAN_ICONS[label] ?? Shield;
+                          return (
+                            <li key={label} className="flex items-center gap-2 text-[0.65rem] text-foreground/55">
+                              <CatIcon className="size-3 shrink-0 text-foreground/35" aria-hidden />
+                              <span className="truncate">{label}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      {inactivePiiCategories.length > 0 && (
+                        <p className="text-[0.58rem] text-foreground/28 mb-2.5 leading-relaxed">
+                          Off at this tier:{" "}
+                          <span className="text-foreground/35">
+                            {inactivePiiCategories.join(", ")}
+                          </span>
+                        </p>
+                      )}
+                      <div className="flex items-center justify-between gap-2 rounded-lg bg-foreground/[0.04] border border-foreground/8 px-2.5 py-2 mb-2">
+                        <span className="text-[0.62rem] text-foreground/40">Safe terms</span>
+                        <span className="text-[0.65rem] font-medium tabular-nums text-foreground/65">
+                          {safeTerms.length} exemption{safeTerms.length !== 1 ? "s" : ""}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => openSettings("workspace")}
+                        className="w-full py-1.5 text-center text-[0.62rem] text-foreground/40 hover:text-foreground/70 transition-colors cursor-pointer"
+                      >
+                        Adjust sensitivity & safe terms
+                      </button>
+                    </>
+                  ),
+                },
+              ]}
+            />
           </TabsContent>
 
           {/* ── Savings tab ─────────────────────────────────────────────────── */}
-          <TabsContent value="savings" className="mt-0 space-y-2 pb-8">
-            <IntelCard label="Last 30 days">
-              <div className="space-y-1.5 text-xs text-white/70">
-                <div className="flex justify-between gap-2">
-                  <span className="text-white/45">Estimated cost</span>
-                  <span className="font-mono tabular-nums">{fmtAnalyticsUsd(railSummary?.cost.estimatedCostUsd)}</span>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <span className="text-white/45">Avg / request</span>
-                  <span className="font-mono tabular-nums">{fmtAnalyticsUsd(railSummary?.cost.avgCostPerRequest)}</span>
-                </div>
-                <div className="flex justify-between gap-2">
-                  <span className="text-white/45">Routing savings (est.)</span>
-                  <span className="font-mono tabular-nums">{fmtAnalyticsUsd(railSummary?.cost.routingSavingsUsd)}</span>
-                </div>
-              </div>
-              <p className="text-[0.58rem] text-white/30 mt-2 leading-relaxed">
-                Estimated AI inference cost only — not AWS or infrastructure spend.
-              </p>
-              <Link
-                href="/analytics/cost"
-                className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 py-2.5 text-[0.72rem] font-semibold text-emerald-200/90 hover:bg-emerald-500/20 transition-colors"
-              >
-                <BarChart2 className="size-3.5 shrink-0" aria-hidden />
-                Open full cost view
-                <ChevronRight className="size-3.5 shrink-0 opacity-70" aria-hidden />
-              </Link>
-            </IntelCard>
-
-            <IntelCard label="Session cost (this browser)">
-              <WorkspaceStatsFilter
-                workspaces={workspaces}
-                value={routeStatsWorkspaceId}
-                onChange={setRouteStatsWorkspaceId}
-              />
-              <StatsRangePicker value={routeStatsRange} onChange={setRouteStatsRange} />
-              {savingsStats.responseCount === 0 ? (
-                <p className="text-[0.62rem] text-white/30 mt-2 py-4 text-center">
-                  No routed responses in this range — send a message to start tracking.
-                </p>
-              ) : (
-                <>
-                  <div className="mt-3 flex items-baseline justify-between gap-2">
-                    <span className="text-xs text-white/45">Total cost</span>
-                    <span className="text-2xl font-bold font-mono tabular-nums text-white/90">
-                      {fmtUsd(savingsStats.totalCost)}
-                    </span>
-                  </div>
-                  <p className="text-[0.58rem] text-white/28 mt-1 tabular-nums">
-                    {savingsStats.responseCount} response{savingsStats.responseCount !== 1 ? "s" : ""} · Groq list pricing
-                  </p>
-                </>
-              )}
-            </IntelCard>
-
-            {savingsStats.responseCount > 0 && (
-              <>
-                <IntelCard label="Compare vs">
-                  <p className="text-[0.58rem] text-white/32 mb-2 leading-relaxed">
-                    Pick a baseline model — savings show what you avoided by not using it for every response.
-                  </p>
-                  <SavingsBaselinePicker
-                    value={savingsBaselineModel}
-                    onChange={setSavingsBaseline}
-                  />
-                  <div className="flex items-baseline justify-between gap-2 mt-1">
-                    <span className="text-xs text-white/45">
-                      Saved vs {displayModelLabel(savingsBaselineModel)}
-                    </span>
-                    <span className={cn(
-                      "text-lg font-bold font-mono tabular-nums",
-                      savingsStats.totalSaved > 0 ? "text-emerald-400/90" : "text-white/35",
-                    )}>
-                      {fmtUsd(savingsStats.totalSaved)}
-                    </span>
-                  </div>
-                </IntelCard>
-
-                <IntelCard label="By model">
-                  <p className="text-[0.58rem] text-white/32 mb-2 leading-relaxed">
-                    Actual model billed per response — each row is real spend on that Groq model.
-                  </p>
-                  <div className="space-y-1">
-                    {savingsStats.modelRows.map(({ modelId, count, cost }) => (
-                      <div
-                        key={modelId}
-                        className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 bg-white/[0.04]"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-xs font-medium text-white/70 truncate">{displayModelLabel(modelId)}</p>
-                          <p className="text-[0.6rem] text-white/30 tabular-nums">
-                            {count} call{count !== 1 ? "s" : ""} · {fmtUsd(cost / count)} avg
+          <TabsContent value="savings" className="mt-0 flex-1 min-h-0 data-[state=inactive]:hidden flex flex-col">
+            <IntelPanelStack
+              storageKey="sm_intel_panels_cost_v3"
+              panels={[
+                {
+                  id: "session-cost",
+                  label: "Estimated total cost",
+                  defaultHeight: INTEL_HEIGHT.costTotal,
+                  children: (
+                    <>
+                      <WorkspaceStatsFilter
+                        workspaces={workspaces}
+                        value={routeStatsWorkspaceId}
+                        onChange={setRouteStatsWorkspaceId}
+                      />
+                      <StatsRangePicker value={routeStatsRange} onChange={setRouteStatsRange} />
+                      {serverCostLoading && savingsStats.responseCount === 0 ? (
+                        <p className="text-[0.65rem] text-[var(--text-secondary)] mt-2 py-4 text-center">
+                          Loading cost estimates…
+                        </p>
+                      ) : savingsStats.responseCount === 0 ? (
+                        <div className="mt-2 py-3 space-y-2 text-center">
+                          <p className="text-[0.65rem] text-[var(--text-secondary)] leading-relaxed">
+                            {routeStatsWorkspaceId !== "all" && rangedRouteHits.length > 0
+                              ? "No routed responses for this workspace in the selected range."
+                              : "No routed responses in this range — send a chat message to start tracking."}
+                          </p>
+                          {routeStatsWorkspaceId !== "all" && rangedRouteHits.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setRouteStatsWorkspaceId("all")}
+                              className="text-[0.65rem] font-medium text-[var(--primary)] hover:underline cursor-pointer"
+                            >
+                              Show all workspaces ({rangedRouteHits.length})
+                            </button>
+                          )}
+                          {routeStatsRange !== "all" && (
+                            <button
+                              type="button"
+                              onClick={() => setRouteStatsRange("all")}
+                              className="block mx-auto text-[0.65rem] font-medium text-[var(--primary)] hover:underline cursor-pointer"
+                            >
+                              Try All time
+                            </button>
+                          )}
+                          <p className="text-[0.58rem] text-[var(--text-muted)] leading-relaxed px-1">
+                            Combines Groq, Bedrock, and Ollama list-rate estimates from recorded usage.
                           </p>
                         </div>
-                        <span className="text-xs font-mono font-semibold tabular-nums text-white/55 shrink-0">
-                          {fmtUsd(cost)}
+                      ) : (
+                        <>
+                          <div className="mt-3 flex items-baseline justify-between gap-2">
+                            <span className="text-xs text-[var(--text-secondary)]">Estimated total</span>
+                            <span className="text-2xl font-bold font-mono tabular-nums text-foreground">
+                              {fmtUsd(savingsStats.totalCost)}
+                            </span>
+                          </div>
+                          <p className="text-[0.58rem] text-[var(--text-muted)] mt-1 tabular-nums leading-relaxed">
+                            {savingsStats.responseCount} response{savingsStats.responseCount !== 1 ? "s" : ""}
+                            {savingsStats.pricedCount < savingsStats.responseCount
+                              ? ` · ${savingsStats.pricedCount} priced`
+                              : ""}
+                            {savingsStats.source === "server"
+                              ? " · account · Groq / Bedrock / Ollama list-rate estimate"
+                              : " · this browser · Groq / Bedrock / Ollama list-rate estimate"}
+                          </p>
+                        </>
+                      )}
+                      <Link
+                        href="/analytics/cost"
+                        className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary py-2.5 text-[0.72rem] font-semibold text-primary-foreground hover:bg-[var(--primary-hover)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <BarChart2 className="size-3.5 shrink-0" aria-hidden />
+                        Open full cost view
+                        <ChevronRight className="size-3.5 shrink-0 opacity-80" aria-hidden />
+                      </Link>
+                    </>
+                  ),
+                },
+                {
+                  id: "by-model",
+                  label: "By model",
+                  visible: savingsStats.responseCount > 0,
+                  defaultHeight: INTEL_HEIGHT.tall,
+                  children: (
+                    <>
+                      <p className="text-[0.58rem] text-foreground/32 mb-2 leading-relaxed">
+                        Estimated list-rate spend per model (not an invoice). Unknown rates are omitted.
+                      </p>
+                      <div className="space-y-1">
+                        {savingsStats.modelRows.map(({ modelId, count, cost }) => (
+                          <div
+                            key={modelId}
+                            className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 bg-foreground/[0.04]"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-xs font-medium text-foreground/70 truncate">{labelFor(modelId)}</p>
+                              <p className="text-[0.6rem] text-foreground/30 tabular-nums">
+                                {count > 0
+                                  ? `${count} call${count !== 1 ? "s" : ""} · ${fmtUsd(cost / count)} avg`
+                                  : "list-rate estimate"}
+                              </p>
+                            </div>
+                            <span className="text-xs font-mono font-semibold tabular-nums text-foreground/55 shrink-0">
+                              {fmtUsd(cost)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ),
+                },
+                {
+                  id: "compare-vs",
+                  label: "Compare vs",
+                  visible: savingsStats.responseCount > 0,
+                  defaultHeight: INTEL_HEIGHT.snug,
+                  children: (
+                    <>
+                      <p className="text-[0.58rem] text-foreground/32 mb-2 leading-relaxed">
+                        Pick a baseline model — savings show what you avoided by not using it for every response.
+                      </p>
+                      <SavingsBaselinePicker
+                        value={savingsBaselineModel}
+                        onChange={setSavingsBaseline}
+                        models={chatCatalogModels}
+                      />
+                      <div className="flex items-baseline justify-between gap-2 mt-1">
+                        <span className="text-xs text-foreground/45">
+                          Saved vs {labelFor(savingsBaselineModel)}
+                        </span>
+                        <span className={cn(
+                          "text-lg font-bold font-mono tabular-nums",
+                          savingsStats.totalSaved > 0 ? "text-emerald-400/90" : "text-foreground/35",
+                        )}>
+                          {fmtUsd(savingsStats.totalSaved)}
                         </span>
                       </div>
-                    ))}
-                  </div>
-                </IntelCard>
-
-                {modelSelectionMode === "auto" && (
-                  <IntelCard label="By complexity tier">
-                    <p className="text-[0.58rem] text-white/32 mb-2 leading-relaxed">
-                      * Auto-classified tier (Max, Micro, etc.) per message — not the model itself.
-                      Cost reflects whichever model that tier was mapped to at call time; change mappings in Context.
-                    </p>
-                    <div className="space-y-1">
-                      {savingsStats.tierRows.filter(t => t.count > 0).map(({ tier, count, cost, modelId }) => (
-                        <div
-                          key={tier}
-                          className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 bg-white/[0.04]"
-                        >
-                          <div className="min-w-0">
-                            <span className="text-xs font-medium text-white/70">{tier}</span>
-                            <p className="text-[0.62rem] text-white/35 truncate">{displayModelLabel(modelId)}</p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <p className="text-[0.65rem] font-mono tabular-nums text-white/50">{fmtUsd(cost)}</p>
-                            <p className="text-[0.58rem] text-white/25 tabular-nums">{count}×</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </IntelCard>
-                )}
-              </>
-            )}
+                    </>
+                  ),
+                },
+              ]}
+            />
           </TabsContent>
         </div>
       </Tabs>
@@ -4375,43 +5486,59 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
 
   // ── render ───────────────────────────────────────────────────────────────────
 
-  // On full Insights routes, keep the Settings → Insights sidebar open while the
-  // center pane shows the dashboard (not the Settings hub overlay).
+  // Analytics dashboards render in the center pane; the Settings sheet stays
+  // closed unless the user explicitly opens Settings.
   const onAnalytics = Boolean(analyticsView);
-  const settingsVisible = activeNav === "settings" || settingsAnimatingOut || onAnalytics;
-  const settingsExpanded = (activeNav === "settings" || onAnalytics) && !settingsAnimatingOut;
+  const settingsVisible =
+    activeNav === "settings"
+    || settingsAnimatingOut
+    || (onAnalytics && !settingsMenuCollapsed);
+  const settingsExpanded =
+    (activeNav === "settings" || onAnalytics)
+    && !settingsAnimatingOut
+    && !settingsMenuCollapsed;
   const settingsNavExpanded = settingsExpanded && !settingsEntering;
+
   const settingsContentShown =
     activeNav === "settings" && !settingsAnimatingOut && !settingsEntering && !onAnalytics;
+  /** Settings / admin Insights own the header — not the workspace Chat breadcrumb. */
+  const settingsHeaderShown =
+    (settingsContentShown || onAnalytics) && !settingsAnimatingOut && !settingsEntering;
   const workContentShown = onAnalytics || !settingsVisible || settingsAnimatingOut;
   const workNav: NavId = activeNav === "settings" ? lastWorkNavRef.current : activeNav;
   const headerWorkNav: NavId = workNav;
+
+  const analyticsTabLabel =
+    analyticsView === "usage" ? "Usage"
+      : analyticsView === "cost" ? "Cost"
+        : analyticsView === "security" ? "Security"
+          : null;
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
 
       {deleteConfirmWorkspace && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-2xl bg-[#0e0e14] border border-white/10 p-6 shadow-2xl space-y-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-overlay backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-2xl bg-popover border border-foreground/10 p-6 shadow-2xl space-y-4">
             <div className="flex items-start gap-3">
               <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-red-500/15 border border-red-500/25">
                 <Trash2 className="size-5 text-red-400" aria-hidden />
               </div>
               <div>
-                <h2 className="text-base font-bold text-white/90">Remove {deleteConfirmWorkspace.name}?</h2>
-                <p className="text-sm text-white/45 mt-1.5 leading-relaxed">
+                <h2 className="text-section">Remove {deleteConfirmWorkspace.name}?</h2>
+                <p className="text-ui text-[var(--text-muted)] mt-1.5 leading-[var(--leading-body)]">
                   All contents for this workspace will be permanently deleted — investigations, memory, knowledge, and saved conclusions.
                 </p>
               </div>
             </div>
-            <label className="flex items-start gap-2.5 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5 cursor-pointer">
+            <label className="flex items-start gap-2.5 rounded-xl border border-foreground/8 bg-foreground/[0.03] px-3 py-2.5 cursor-pointer">
               <input
                 type="checkbox"
                 checked={deleteWithBackup}
                 onChange={e => setDeleteWithBackup(e.target.checked)}
                 className="mt-0.5 accent-indigo-500"
               />
-              <span className="text-xs text-white/50 leading-relaxed">
+              <span className="text-xs text-foreground/50 leading-relaxed">
                 Download a backup file first (profile + saved conclusions). Investigation history in the database is not included in this export yet.
               </span>
             </label>
@@ -4419,7 +5546,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
               <Button
                 type="button"
                 variant="ghost"
-                className="text-white/50"
+                className="text-foreground/50"
                 disabled={deleteBusy}
                 onClick={() => setDeleteConfirmWorkspace(null)}
               >
@@ -4427,7 +5554,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
               </Button>
               <Button
                 type="button"
-                className="bg-red-600 hover:bg-red-500 text-white"
+                className="bg-red-600 hover:bg-red-500 text-foreground"
                 disabled={deleteBusy}
                 onClick={() => void confirmDeleteWorkspace()}
               >
@@ -4440,23 +5567,23 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
 
       {pendingSend && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-overlay backdrop-blur-sm p-4"
           role="dialog"
           aria-modal="true"
           aria-labelledby="presend-title"
         >
-          <div className="w-full max-w-lg rounded-2xl bg-[#0e0e14] border border-white/10 p-6 shadow-2xl space-y-4">
+          <div className="w-full max-w-lg rounded-2xl bg-popover border border-foreground/10 p-6 shadow-2xl space-y-4">
             <div className="flex items-start gap-3">
               <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/15 border border-amber-500/25">
                 <ShieldAlert className="size-5 text-amber-400" aria-hidden />
               </div>
               <div className="min-w-0">
-                <h2 id="presend-title" className="text-base font-bold text-white/90">
+                <h2 id="presend-title" className="text-section">
                   Review before sending
                 </h2>
-                <p className="text-sm text-white/45 mt-1.5 leading-relaxed">
+                <p className="text-sm text-foreground/45 mt-1.5 leading-relaxed">
                   These values were detected and will be replaced before your message leaves this
-                  device. The original text stays in the composer.
+                  device. Detection is best-effort — review the result. The original text stays in the composer.
                 </p>
               </div>
             </div>
@@ -4473,17 +5600,17 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
               ))}
             </ul>
 
-            <div className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5 max-h-48 overflow-y-auto">
-              <p className="text-[0.58rem] uppercase tracking-wider text-white/30 mb-1.5">
+            <div className="rounded-xl border border-foreground/8 bg-foreground/[0.03] px-3 py-2.5 max-h-48 overflow-y-auto">
+              <p className="text-[0.58rem] uppercase tracking-wider text-foreground/30 mb-1.5">
                 What will be sent
               </p>
-              <p className="text-xs text-white/65 font-mono leading-relaxed whitespace-pre-wrap break-words">
+              <p className="text-xs text-foreground/65 font-mono leading-relaxed whitespace-pre-wrap break-words">
                 {pendingSend.sanitized}
               </p>
             </div>
 
             {pendingSend.safeTermMatches.length > 0 && (
-              <p className="text-[0.65rem] text-white/35 leading-relaxed">
+              <p className="text-[0.65rem] text-foreground/35 leading-relaxed">
                 {pendingSend.safeTermMatches.reduce((n, m) => n + m.count, 0)} further match
                 {pendingSend.safeTermMatches.reduce((n, m) => n + m.count, 0) === 1 ? " was" : "es were"}
                 {" "}left in place by your safe terms.
@@ -4494,7 +5621,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
               <Button
                 type="button"
                 variant="ghost"
-                className="text-white/50"
+                className="text-foreground/50"
                 onClick={cancelPendingSend}
               >
                 Cancel and edit
@@ -4502,7 +5629,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
               <Button
                 type="button"
                 autoFocus
-                className="bg-indigo-600 hover:bg-indigo-500 text-white"
+                className="bg-indigo-600 hover:bg-indigo-500 text-foreground"
                 onClick={() => void confirmPendingSend()}
               >
                 Send redacted
@@ -4513,205 +5640,328 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
       )}
 
       {/* ── Left sidebar ─────────────────────────────────────────────────── */}
-      <aside className="hidden md:flex w-72 shrink-0 flex-col border-r border-white/6 bg-sidebar">
+      <aside
+        className="hidden md:flex shrink-0 flex-col border-r border-foreground/6 bg-sidebar relative"
+        style={{ width: leftSidebar.width }}
+      >
+        <SidebarResizeHandle
+          edge="right"
+          label="Resize workspaces sidebar"
+          active={leftSidebar.dragging}
+          onPointerDown={e => leftSidebar.startResize("right", e)}
+        />
 
-        {/* Brand header */}
-        <div className="px-4 pt-5 pb-4 border-b border-white/[0.07] shrink-0">
-          <div className="flex items-center gap-3">
+        {/* Brand header — home → Chat for the current workspace */}
+        <div className="px-4 pt-5 pb-4 border-b border-foreground/[0.07] shrink-0">
+          <button
+            type="button"
+            onClick={goHome}
+            aria-label="Go to Home"
+            title="Go to Home"
+            className="flex w-full items-center gap-3 rounded-xl text-left cursor-pointer
+                       transition-colors hover:bg-foreground/[0.04]
+                       focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
             <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl
                             bg-gradient-to-br from-indigo-500 to-violet-600
                             shadow-[0_4px_20px_rgba(99,102,241,0.45)]">
               <span className="text-sm font-extrabold tracking-tight text-white">SM</span>
             </div>
             <div className="min-w-0">
-              <p className="text-[0.95rem] font-bold text-white/90 leading-none tracking-tight">SecureMind</p>
-              <p className="text-[0.65rem] text-indigo-400/60 mt-0.5 font-medium">AI Workspace</p>
+              <p className="text-[length:var(--font-size-body)] font-semibold text-foreground leading-none tracking-[var(--tracking-ui)]">SecureMind</p>
+              <p className="text-meta mt-1 text-[var(--primary-soft-foreground)]">{PRODUCT_CHROME_TAGLINE}</p>
             </div>
-          </div>
+          </button>
         </div>
 
-        {/* Workspaces + optional settings nav */}
-        <div className="flex flex-col flex-1 min-h-0">
-          <div className="flex flex-col gap-1 px-2.5 py-3 overflow-y-auto flex-1 min-h-0">
+        {/* Workspaces (top). Settings opens as an elevated sheet above the bottom toggle. */}
+        <div className="flex flex-col flex-1 min-h-0 relative">
+          <div
+            className={cn(
+              "flex flex-col gap-1 px-2.5 py-3 overflow-y-auto flex-1 min-h-0 transition-[filter,opacity] duration-200",
+              settingsNavExpanded && "opacity-45",
+            )}
+          >
           <div className="flex items-center justify-between px-1.5 mb-2">
-            <p className="text-[0.58rem] uppercase tracking-[0.28em] text-white/35 font-semibold">Workspaces</p>
+            <p className="text-[0.58rem] uppercase tracking-[0.28em] text-foreground/35 font-semibold">Workspaces</p>
             <button
               onClick={() => { void createNewWorkspace(); }}
-              className="flex size-6 items-center justify-center rounded-lg text-white/35 hover:text-white/70 hover:bg-white/6 transition-colors cursor-pointer"
+              className="flex size-6 items-center justify-center rounded-lg text-foreground/35 hover:text-foreground/70 hover:bg-foreground/6 transition-colors cursor-pointer"
               title="New workspace"
             >
               <span className="text-base leading-none">+</span>
             </button>
           </div>
 
-          {workspaces.map(agent => {
-            const isViewing = agent.id === viewWorkspaceId;
-            const isExpanded = expandedWorkspaceId === agent.id;
+          {(() => {
+            const reorderingWorkspaces = dragWorkspaceId != null;
+            const updateWsDrop = (next: number | null) => {
+              workspaceDropIndexRef.current = next;
+              setWorkspaceDropIndex(prev => (prev === next ? prev : next));
+            };
+            const commitWsDrop = (e: DragEvent) => {
+              e.preventDefault();
+              const source =
+                dragWorkspaceId
+                ?? e.dataTransfer.getData("text/plain");
+              const at = workspaceDropIndexRef.current;
+              setDragWorkspaceId(null);
+              updateWsDrop(null);
+              if (!source || at == null) return;
+              suppressWorkspaceClick.current = true;
+              setWorkspaceListOrder(reorderIds(workspaceListOrder, source, at));
+            };
 
             return (
-              <div key={agent.id} className="rounded-xl">
-                {/* Workspace row — avatar customizes; name+chevron expand/switch */}
-                <div className={cn(
-                  "flex w-full items-center gap-1.5 px-1.5 py-1.5 rounded-xl transition-colors",
-                  isViewing ? "bg-white/[0.07]" : "hover:bg-white/[0.04]",
-                )}>
-                  <button
-                    type="button"
-                    onClick={e => {
-                      e.stopPropagation();
-                      goToWorkspaceNav("workspace-settings", agent);
-                    }}
-                    className="flex size-9 shrink-0 items-center justify-center rounded-xl text-base transition-all hover:ring-2 hover:ring-white/20 hover:scale-[1.06] active:scale-100 cursor-pointer"
-                    style={{ backgroundColor: agent.color + "28", border: `1px solid ${agent.color}55` }}
-                    title={`Workspace settings · ${agent.name}`}
-                  >
-                    {agent.emoji}
-                  </button>
+              <>
+                {orderedWorkspaces.map((agent, index) => {
+                  const isViewing = agent.id === viewWorkspaceId;
+                  const isExpanded = expandedWorkspaceId === agent.id;
+                  const dragging = dragWorkspaceId === agent.id;
+                  const showLineBefore = reorderingWorkspaces && workspaceDropIndex === index;
 
-                  <button
-                    type="button"
-                    onClick={() => handleWorkspaceClick(agent)}
-                    className="flex flex-1 min-w-0 items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left cursor-pointer"
-                  >
-                    <p className={cn(
-                      "flex-1 min-w-0 text-[0.875rem] font-semibold truncate leading-snug",
-                      isViewing ? "text-white/92" : "text-white/55",
-                    )}>{agent.name}</p>
-                    <ChevronRight className={cn(
-                      "size-4 shrink-0 transition-transform duration-200",
-                      isViewing ? "text-white/45" : "text-white/25",
-                      isExpanded && "rotate-90",
-                    )} aria-hidden />
-                  </button>
-                </div>
-
-                {/* Sub-nav — animated accordion */}
-                <div className={cn(
-                  "grid transition-all duration-300 ease-in-out",
-                  isExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
-                )}>
-                  <div className="overflow-hidden">
-                    <div className="ml-4 mt-1 mb-1.5 flex flex-col gap-0.5 border-l-2 border-white/[0.08] pl-2">
-                      {SUB_NAV_ITEMS.map(item => {
-                        const Icon = item.icon;
-                        const isNavActive = activeNav === item.id && viewWorkspaceId === agent.id;
-                        const badge = item.id === "bookmarks" && agent.id === activeWorkspaceId
-                          ? unseenBookmarkIds.size
-                          : 0;
-                        return (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => goToWorkspaceNav(item.id as NavId, agent)}
-                            className={cn(
-                              "group flex w-full items-center gap-2 rounded-lg px-1.5 py-2 text-left transition-all cursor-pointer",
-                              isNavActive
-                                ? "bg-white/[0.09] text-white/90 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]"
-                                : "text-white/42 hover:bg-white/[0.05] hover:text-white/72",
-                            )}
-                          >
-                            <span className={cn(
-                              "flex size-7 shrink-0 items-center justify-center rounded-lg border transition-colors",
-                              isNavActive ? item.iconWrap : "bg-white/[0.04] border-white/[0.06] group-hover:bg-white/[0.07]",
-                            )}>
-                              <Icon className={cn(
-                                "size-3.5",
-                                isNavActive ? item.iconColor : "text-white/38 group-hover:text-white/58",
-                              )} aria-hidden />
-                            </span>
-                            <span className="text-[0.8125rem] font-medium flex-1">{item.label}</span>
-                            {badge > 0 && (
-                              <span className="ml-auto inline-flex size-4 items-center justify-center rounded-full bg-primary text-[0.55rem] font-bold text-primary-foreground">
-                                {badge}
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-
-                      <div className="my-1 border-t border-white/[0.06]" />
-                      <button
-                        type="button"
-                        onClick={() => goToWorkspaceNav("workspace-settings", agent)}
+                  return (
+                    <div key={agent.id} className="contents">
+                      <div
                         className={cn(
-                          "group flex w-full items-center gap-2 rounded-lg px-1.5 py-2 text-left transition-all cursor-pointer",
-                          activeNav === "workspace-settings" && viewWorkspaceId === agent.id
-                            ? "bg-white/[0.09] text-white/90 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]"
-                            : "text-white/42 hover:bg-white/[0.05] hover:text-white/72",
+                          "relative shrink-0 transition-[height] duration-100",
+                          reorderingWorkspaces ? "h-3" : "h-0",
                         )}
+                        onDragOver={e => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                          updateWsDrop(index);
+                        }}
+                        onDrop={commitWsDrop}
                       >
-                        <span className={cn(
-                          "flex size-7 shrink-0 items-center justify-center rounded-lg border transition-colors",
-                          activeNav === "workspace-settings" && viewWorkspaceId === agent.id
-                            ? "bg-slate-500/20 border-slate-500/25"
-                            : "bg-white/[0.04] border-white/[0.06] group-hover:bg-white/[0.07]",
+                        {showLineBefore && (
+                          <div
+                            role="presentation"
+                            className="pointer-events-none absolute inset-x-1 top-1/2 z-30 flex -translate-y-1/2 items-center gap-1.5"
+                          >
+                            <span className="size-2 shrink-0 rounded-full bg-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.95)]" />
+                            <span className="h-[3px] flex-1 rounded-full bg-indigo-400 shadow-[0_0_12px_rgba(129,140,248,0.85)]" />
+                            <span className="size-2 shrink-0 rounded-full bg-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.95)]" />
+                          </div>
+                        )}
+                      </div>
+
+                      <div
+                        className={cn("rounded-xl", dragging && "opacity-40")}
+                        onDragOver={e => {
+                          const el =
+                            workspaceRowRefs.current[agent.id]
+                            ?? (e.currentTarget as HTMLElement);
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                          const rect = el.getBoundingClientRect();
+                          const ratio = rect.height > 0 ? (e.clientY - rect.top) / rect.height : 1;
+                          updateWsDrop(ratio < 0.35 ? index : index + 1);
+                        }}
+                        onDrop={commitWsDrop}
+                      >
+                        {/* Workspace row — drag name row to reorder; avatar → settings */}
+                        <div
+                          ref={el => {
+                            workspaceRowRefs.current[agent.id] = el;
+                          }}
+                          className={cn(
+                            "group/ws flex w-full items-center gap-2 px-1.5 py-1.5 rounded-xl transition-colors",
+                            isViewing ? "bg-foreground/[0.07]" : "hover:bg-foreground/[0.04]",
+                          )}
+                        >
+                          <button
+                            type="button"
+                            onClick={e => {
+                              e.stopPropagation();
+                              goToWorkspaceNav("workspace-settings", agent);
+                            }}
+                            className="workspace-avatar flex size-9 shrink-0 items-center justify-center rounded-xl text-base transition-all hover:ring-2 hover:ring-foreground/20 hover:scale-[1.06] active:scale-100 cursor-pointer"
+                            style={{ "--ws-accent": agent.color } as CSSProperties}
+                            title={`Workspace settings · ${agent.name}`}
+                          >
+                            {agent.emoji}
+                          </button>
+
+                          <button
+                            type="button"
+                            draggable
+                            title="Drag to reorder · click to expand"
+                            onDragStart={e => {
+                              setDragWorkspaceId(agent.id);
+                              updateWsDrop(null);
+                              e.dataTransfer.effectAllowed = "move";
+                              e.dataTransfer.setData("text/plain", agent.id);
+                            }}
+                            onDragEnd={() => {
+                              if (dragWorkspaceId) suppressWorkspaceClick.current = true;
+                              setDragWorkspaceId(null);
+                              updateWsDrop(null);
+                            }}
+                            onClick={() => {
+                              if (suppressWorkspaceClick.current) {
+                                suppressWorkspaceClick.current = false;
+                                return;
+                              }
+                              handleWorkspaceClick(agent);
+                            }}
+                            className="flex flex-1 min-w-0 items-center gap-1.5 rounded-lg px-1 py-1.5 text-left cursor-grab active:cursor-grabbing"
+                          >
+                    <p className={cn(
+                      "flex-1 min-w-0 text-[length:var(--font-size-ui)] truncate leading-[var(--leading-ui)]",
+                      isViewing
+                        ? "font-medium text-foreground"
+                        : "font-normal text-[var(--text-secondary)]",
+                    )}>{agent.name}</p>
+                            <GripVertical
+                              aria-hidden
+                              className="size-3.5 shrink-0 text-foreground/20 opacity-0 transition-opacity group-hover/ws:opacity-80"
+                            />
+                            <ChevronRight className={cn(
+                              "size-4 shrink-0 transition-transform duration-200",
+                              isViewing ? "text-foreground/45" : "text-foreground/25",
+                              isExpanded && "rotate-90",
+                            )} aria-hidden />
+                          </button>
+                        </div>
+
+                        {/* Sub-nav — animated accordion */}
+                        <div className={cn(
+                          "grid transition-all duration-300 ease-in-out",
+                          isExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
                         )}>
-                          <Pencil className={cn(
-                            "size-3.5",
-                            activeNav === "workspace-settings" && viewWorkspaceId === agent.id
-                              ? "text-slate-300"
-                              : "text-white/38 group-hover:text-white/58",
-                          )} aria-hidden />
-                        </span>
-                        <span className="text-[0.8125rem] font-medium flex-1">Workspace</span>
-                      </button>
+                          <div className="overflow-hidden">
+                            <div className="ml-5 mt-1.5 mb-1.5 border-l-2 border-foreground/[0.08] pl-3">
+                              <WorkspaceFeatureNav
+                                order={featureOrder}
+                                onReorder={setFeatureOrder}
+                                activeId={viewWorkspaceId === agent.id ? activeNav : null}
+                                onSelect={(id: WorkspaceFeatureId) => goToWorkspaceNav(id, agent)}
+                                badgeFor={id =>
+                                  id === "bookmarks" && agent.id === activeWorkspaceId
+                                    ? unseenBookmarkIds.size
+                                    : 0
+                                }
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  );
+                })}
+
+                <div
+                  className={cn(
+                    "relative shrink-0 transition-[height] duration-100",
+                    reorderingWorkspaces ? "h-3.5" : "h-0",
+                  )}
+                  onDragOver={e => {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    updateWsDrop(orderedWorkspaces.length);
+                  }}
+                  onDrop={commitWsDrop}
+                >
+                  {reorderingWorkspaces && workspaceDropIndex === orderedWorkspaces.length && (
+                    <div
+                      role="presentation"
+                      className="pointer-events-none absolute inset-x-1 top-1/2 z-30 flex -translate-y-1/2 items-center gap-1.5"
+                    >
+                      <span className="size-2 shrink-0 rounded-full bg-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.95)]" />
+                      <span className="h-[3px] flex-1 rounded-full bg-indigo-400 shadow-[0_0_12px_rgba(129,140,248,0.85)]" />
+                      <span className="size-2 shrink-0 rounded-full bg-indigo-400 shadow-[0_0_10px_rgba(129,140,248,0.95)]" />
+                    </div>
+                  )}
                 </div>
-              </div>
+              </>
             );
-          })}
+          })()}
           </div>
 
+        {/* Settings — bottom anchor; menu sheet sits in front of workspaces */}
+        <div ref={settingsChromeRef} className="relative shrink-0 border-t border-border bg-sidebar z-20">
           {settingsVisible && (
-            <div className={cn(
-              "grid ease-in-out",
-              viewTransition,
-              settingsNavExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
-            )}>
-              <div className="overflow-hidden min-h-0">
+            <div
+              className={cn(
+                "absolute bottom-full inset-x-0 z-30 flex flex-col overflow-hidden",
+                "rounded-t-xl border border-b-0 border-foreground/12",
+                "bg-card dark:bg-zinc-950",
+                "shadow-[0_-12px_40px_rgba(0,0,0,0.55)]",
+                viewTransition,
+                settingsNavExpanded
+                  ? "opacity-100 translate-y-0"
+                  : "opacity-0 translate-y-2 pointer-events-none",
+              )}
+              style={{
+                height: settingsNavExpanded ? settingsNavHeight.height : 0,
+                transition: settingsNavHeight.dragging
+                  ? "none"
+                  : "height 200ms ease-in-out, opacity 200ms ease-in-out, transform 200ms ease-in-out",
+              }}
+            >
+              {settingsNavExpanded && (
+                <PanelResizeHandle
+                  edge="top"
+                  label="Resize settings panel"
+                  active={settingsNavHeight.dragging}
+                  onPointerDown={e => settingsNavHeight.startResize("top", e)}
+                />
+              )}
+              <div
+                ref={settingsNavContentRef}
+                className="flex-1 min-h-0 overflow-y-auto px-2 pt-2.5 pb-2"
+              >
                 <SettingsSidebarNav
                   section={settingsSection}
                   onSectionChange={handleSettingsSectionChange}
                   onOpenInsightsDashboard={openInsightsDashboard}
-                  activeInsightsDashboard={analyticsView ?? null}
+                  activeInsightsDashboard={
+                    asUserParam || insightsSubject ? null : (analyticsView ?? null)
+                  }
+                  isAdmin={
+                    !authSession
+                    || authSession.role === "super_admin"
+                    || authSession.role === "admin"
+                  }
                 />
               </div>
             </div>
           )}
-        </div>
 
-        {/* Settings — bottom anchor (toggle) */}
-        <div className="px-3 pb-4 pt-2 border-t border-white/[0.06] shrink-0">
-          <button
-            type="button"
-            onClick={toggleSettings}
-            title={activeNav === "settings" || onAnalytics ? "Close settings" : "Open settings"}
-            aria-expanded={activeNav === "settings" || onAnalytics}
-            className={cn(
-              "w-full flex items-center gap-2.5 rounded-xl px-3 py-2 text-left cursor-pointer",
-              viewTransition,
-              activeNav === "settings" || onAnalytics
-                ? "bg-white/8"
-                : "hover:bg-white/5",
-            )}
-          >
-            <Settings className={cn(
-              "size-4 shrink-0",
-              viewTransition,
-              activeNav === "settings" || onAnalytics ? "text-white/70" : "text-white/30",
-            )} aria-hidden />
-            <span className={cn(
-              "text-sm font-medium flex-1",
-              viewTransition,
-              activeNav === "settings" || onAnalytics ? "text-white/80" : "text-white/45",
-            )}>Settings</span>
-            <ChevronDown className={cn(
-              "size-3.5 shrink-0 ease-in-out",
-              viewTransition,
-              settingsNavExpanded ? "rotate-180 text-white/35" : "rotate-0 text-white/20",
-            )} aria-hidden />
-          </button>
+          <div className="px-3 pb-4 pt-2">
+            <button
+              type="button"
+              onClick={toggleSettings}
+              title={settingsNavExpanded ? "Close settings" : "Open settings"}
+              aria-expanded={settingsNavExpanded}
+              className={cn(
+                "w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left cursor-pointer",
+                viewTransition,
+                (activeNav === "settings" && !onAnalytics) || settingsNavExpanded
+                  ? "bg-[var(--surface-selected)] text-[var(--primary-soft-foreground)] shadow-[inset_0_0_0_1px_var(--primary-border)] dark:bg-foreground/8 dark:text-foreground/80 dark:shadow-none"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-foreground dark:text-foreground/45 dark:hover:bg-foreground/5",
+              )}
+            >
+              <Settings className={cn(
+                "size-4 shrink-0",
+                viewTransition,
+                (activeNav === "settings" && !onAnalytics) || settingsNavExpanded
+                  ? "text-[var(--primary)] dark:text-foreground/80"
+                  : "text-foreground/55 dark:text-foreground/45",
+              )} aria-hidden />
+              <span className={cn(
+                "text-sm font-medium flex-1",
+                viewTransition,
+              )}>Settings</span>
+              <ChevronDown className={cn(
+                "size-3.5 shrink-0 ease-in-out",
+                viewTransition,
+                settingsNavExpanded ? "rotate-180" : "rotate-0",
+              )} aria-hidden />
+            </button>
+          </div>
+        </div>
         </div>
       </aside>
 
@@ -4719,16 +5969,18 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
       <main className="flex flex-1 min-w-0 flex-col">
 
         {/* Slim header bar */}
-        <div className="flex items-center gap-3 border-b border-white/6 px-5 py-3 shrink-0">
+        <div className="flex items-center gap-3 border-b border-foreground/6 px-5 py-3 shrink-0">
           <div className="relative flex flex-1 items-center gap-2.5 min-w-0 min-h-[1.75rem]">
             <div className={cn(
               "flex items-center gap-2.5 min-w-0 w-full ease-in-out",
               viewTransition,
-              workContentShown
+              workContentShown && !settingsHeaderShown
                 ? "opacity-100 translate-y-0"
                 : "opacity-0 translate-y-1 pointer-events-none absolute inset-0",
             )}>
-            {isWorkspaceNav(headerWorkNav) ? (
+            {headerWorkNav === "home" ? (
+              <h1 className="text-sm font-semibold text-foreground">Home</h1>
+            ) : isWorkspaceNav(headerWorkNav) ? (
               <>
                 <WorkspaceBreadcrumb
                   agent={viewWorkspace}
@@ -4743,7 +5995,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                   <button
                     type="button"
                     onClick={cancelStream}
-                    className="flex items-center gap-1.5 text-xs text-red-400/80 hover:text-red-400 transition-colors shrink-0"
+                    className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
                     aria-label="Stop response"
                   >
                     <Square className="size-3 fill-current" aria-hidden />
@@ -4751,31 +6003,104 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                   </button>
                 )}
                 {headerWorkNav === "thread" && totalRedactions > 0 && (
-                  <Badge variant="secondary" className="gap-1 h-5 text-[0.65rem] bg-white/5 text-white/45 border-white/8 shrink-0">
+                  <Badge variant="secondary" className="gap-1 h-5 text-[0.65rem] bg-foreground/5 text-foreground/45 border-foreground/8 shrink-0">
                     <ShieldCheck className="size-2.5" aria-hidden />
                     {totalRedactions} redacted
                   </Badge>
                 )}
               </>
             ) : (
-              <h1 className="text-sm font-semibold text-white/70">{navTitle(headerWorkNav)}</h1>
+              <h1 className="text-sm font-semibold text-foreground/70">{navTitle(headerWorkNav)}</h1>
             )}
             </div>
             <div className={cn(
               "flex items-center gap-1.5 min-w-0 text-sm ease-in-out",
               viewTransition,
-              settingsContentShown
+              settingsHeaderShown
                 ? "opacity-100 translate-y-0"
                 : "opacity-0 translate-y-1 pointer-events-none absolute inset-0",
             )}>
-              <span className="font-semibold text-white/85 shrink-0">Settings</span>
-              {settingsSection !== "overview" && (
+              <span className="font-semibold text-foreground/85 shrink-0">Settings</span>
+              {onAnalytics && insightsSubject ? (
                 <>
-                  <ChevronRight className="size-3.5 text-white/25 shrink-0" aria-hidden />
-                  <span className="text-white/45 truncate">{SETTINGS_SECTION_LABELS[settingsSection]}</span>
+                  <ChevronRight className="size-3.5 text-foreground/25 shrink-0" aria-hidden />
+                  <button
+                    type="button"
+                    onClick={backToAdminFromInsights}
+                    className="text-foreground/55 hover:text-foreground/85 truncate cursor-pointer"
+                  >
+                    Admin console
+                  </button>
+                  <ChevronRight className="size-3.5 text-foreground/25 shrink-0" aria-hidden />
+                  <span className="text-[var(--warning)] truncate font-medium">{insightsSubject.label}</span>
+                  {analyticsTabLabel && (
+                    <>
+                      <ChevronRight className="size-3.5 text-foreground/25 shrink-0" aria-hidden />
+                      <span className="text-foreground/45 truncate">{analyticsTabLabel}</span>
+                    </>
+                  )}
                 </>
-              )}
+              ) : onAnalytics && analyticsTabLabel ? (
+                <>
+                  <ChevronRight className="size-3.5 text-foreground/25 shrink-0" aria-hidden />
+                  <span className="text-foreground/45 truncate">{analyticsTabLabel}</span>
+                </>
+              ) : settingsSection !== "overview" ? (
+                <>
+                  <ChevronRight className="size-3.5 text-foreground/25 shrink-0" aria-hidden />
+                  <span className="text-foreground/45 truncate">{SETTINGS_SECTION_LABELS[settingsSection]}</span>
+                </>
+              ) : null}
             </div>
+          </div>
+
+          <div className="relative shrink-0 ml-2">
+            <details className="group">
+              <summary
+                className="list-none flex items-center gap-2 cursor-pointer rounded-lg border border-border bg-card px-2 py-1 hover:bg-secondary/80 [&::-webkit-details-marker]:hidden"
+                aria-label="Account menu"
+              >
+                <span
+                  className="size-7 rounded-full inline-flex items-center justify-center text-xs shrink-0 bg-indigo-500/20 text-indigo-200"
+                  aria-hidden
+                >
+                  {(authSession?.email ?? "SM").slice(0, 2).toUpperCase()}
+                </span>
+                <span className="hidden sm:inline text-[0.65rem] text-muted-foreground truncate max-w-[8rem]">
+                  {authSession?.email ?? "Local user"}
+                </span>
+                {authSession?.role && (
+                  <span
+                    className={cn(
+                      "text-[0.55rem] uppercase tracking-wide px-1.5 py-0.5 rounded border",
+                      authSession.role === "super_admin" || authSession.role === "admin"
+                        ? "text-[var(--primary-soft-foreground)] border-[var(--primary-border)] bg-[var(--primary-soft)]"
+                        : "text-muted-foreground border-border bg-secondary",
+                    )}
+                  >
+                    {authSession.role}
+                  </span>
+                )}
+              </summary>
+              <div className="absolute right-0 top-full mt-1 z-50 min-w-[11rem] rounded-xl border border-border bg-popover p-1 shadow-lg">
+                <button
+                  type="button"
+                  className="w-full text-left rounded-lg px-3 py-2 text-[0.75rem] text-foreground/80 hover:bg-secondary cursor-pointer"
+                  onClick={() => openSettings("profile")}
+                >
+                  My Profile
+                </button>
+                {authSession && (
+                  <button
+                    type="button"
+                    className="w-full text-left rounded-lg px-3 py-2 text-[0.75rem] text-foreground/80 hover:bg-secondary cursor-pointer"
+                    onClick={() => void authSession.logout()}
+                  >
+                    Sign out
+                  </button>
+                )}
+              </div>
+            </details>
           </div>
 
           {/* Mobile intelligence sheet — hidden on full analytics views */}
@@ -4783,15 +6108,15 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
           <Sheet>
             <SheetTrigger
               className={cn(
-                buttonVariants({ variant: "outline", size: "sm", className: "h-7 text-xs gap-1.5 lg:hidden shrink-0 border-white/10 bg-white/4" }),
+                buttonVariants({ variant: "outline", size: "sm", className: "h-7 text-xs gap-1.5 lg:hidden shrink-0 border-foreground/10 bg-foreground/4" }),
               )}
             >
               <Sparkles className="size-3.5" aria-hidden />
               Intel
             </SheetTrigger>
-            <SheetContent side="right" className="w-full sm:max-w-sm flex flex-col p-0 bg-sidebar border-white/8">
-              <SheetHeader className="px-5 pt-5 pb-4 border-b border-white/6 shrink-0">
-                <SheetTitle className="text-base font-bold tracking-tight">Insights</SheetTitle>
+            <SheetContent side="right" className="w-full sm:max-w-sm flex flex-col p-0 bg-sidebar border-foreground/8">
+              <SheetHeader className="px-5 pt-5 pb-4 border-b border-foreground/6 shrink-0">
+                <SheetTitle className="text-section tracking-tight">Insights</SheetTitle>
               </SheetHeader>
               <div className="flex-1 min-h-0 overflow-hidden px-4 py-4">
                 {IntelligencePanel}
@@ -4817,17 +6142,35 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
           <div className="flex-1 min-h-0 overflow-hidden">
             {analyticsView === "security" && (
               <SecurityAnalyticsView
-                workspaces={workspaces.map(w => ({ id: w.id, name: w.name }))}
+                workspaces={
+                  insightsSubject
+                    ? subjectWorkspaces
+                    : workspaces.map(w => ({ id: w.id, name: w.name }))
+                }
+                subject={insightsSubject}
+                onBackToAdmin={insightsSubject ? backToAdminFromInsights : undefined}
               />
             )}
             {analyticsView === "usage" && (
               <UsageAnalyticsView
-                workspaces={workspaces.map(w => ({ id: w.id, name: w.name }))}
+                workspaces={
+                  insightsSubject
+                    ? subjectWorkspaces
+                    : workspaces.map(w => ({ id: w.id, name: w.name }))
+                }
+                subject={insightsSubject}
+                onBackToAdmin={insightsSubject ? backToAdminFromInsights : undefined}
               />
             )}
             {analyticsView === "cost" && (
               <CostAnalyticsView
-                workspaces={workspaces.map(w => ({ id: w.id, name: w.name }))}
+                workspaces={
+                  insightsSubject
+                    ? subjectWorkspaces
+                    : workspaces.map(w => ({ id: w.id, name: w.name }))
+                }
+                subject={insightsSubject}
+                onBackToAdmin={insightsSubject ? backToAdminFromInsights : undefined}
               />
             )}
           </div>
@@ -4845,7 +6188,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                 onSelect={selectViewWorkspace}
                 subtitle={
                   viewBookmarks.length > 0 ? (
-                    <p className="text-[0.7rem] text-white/30 mt-0.5 px-1.5">
+                    <p className="text-[0.7rem] text-foreground/30 mt-0.5 px-1.5">
                       {viewBookmarks.length} pinned {viewBookmarks.length === 1 ? "message" : "messages"}
                       {viewBookmarks.some(b => !b.read) && (
                         <span className="text-indigo-400/70"> · {viewBookmarks.filter(b => !b.read).length} unread</span>
@@ -4860,9 +6203,6 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                       onClick={() => {
                         const updated = viewBookmarks.map(b => ({ ...b, read: true }));
                         setViewBookmarks(updated);
-                        if (viewWorkspaceId) {
-                          localStorage.setItem(`sm_bm_${viewWorkspaceId}`, JSON.stringify(updated));
-                        }
                         if (viewWorkspaceId === activeWorkspaceId) setBookmarks(updated);
                       }}
                       className="text-[0.7rem] text-indigo-400/60 hover:text-indigo-400 transition-colors flex items-center gap-1 shrink-0"
@@ -4874,28 +6214,28 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                 }
               />
 
-              <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
-                <p className="text-sm text-white/50 leading-relaxed">
+              <div className="rounded-xl border border-foreground/[0.06] bg-foreground/[0.02] px-4 py-3">
+                <p className="text-sm text-foreground/50 leading-relaxed">
                   Saved conclusions and pinned answers from investigations in{" "}
-                  <span className="text-white/70 font-medium">{viewWorkspace?.name ?? "this workspace"}</span>.
+                  <span className="text-foreground/70 font-medium">{viewWorkspace?.name ?? "this workspace"}</span>.
                   {" "}Open one to jump back to that moment in the thread.
                 </p>
               </div>
 
               {viewBookmarks.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-white/10 px-5 py-10 text-center space-y-3">
+                <div className="rounded-2xl border border-dashed border-foreground/10 px-5 py-10 text-center space-y-3">
                   <Bookmark className="size-8 text-amber-400/25 mx-auto" aria-hidden />
-                  <p className="text-sm font-medium text-white/50">No saved conclusions yet</p>
-                  <p className="text-xs text-white/30 leading-relaxed max-w-sm mx-auto">
+                  <p className="text-sm font-medium text-foreground/50">No saved conclusions yet</p>
+                  <p className="text-xs text-foreground/30 leading-relaxed max-w-sm mx-auto">
                     Open Chat, hover any answer, and tap the bookmark icon to save it here.
                   </p>
                 </div>
               ) : (
                 groupedViewBookmarks.map(group => (
                   <section key={group.dayKey}>
-                    <h3 className="sticky top-0 z-[1] -mx-1 mb-2.5 px-1 py-1.5 text-[0.65rem] uppercase tracking-[0.22em] text-white/30 font-semibold backdrop-blur-sm bg-[#0d0d11]/80">
+                    <h3 className="sticky top-0 z-[1] -mx-1 mb-2.5 px-1 py-1.5 text-[0.65rem] uppercase tracking-[0.22em] text-foreground/30 font-semibold backdrop-blur-sm bg-card/80">
                       {group.label}
-                      <span className="ml-2 normal-case tracking-normal text-white/20 font-normal">
+                      <span className="ml-2 normal-case tracking-normal text-foreground/20 font-normal">
                         · {group.items.length} saved
                       </span>
                     </h3>
@@ -4930,20 +6270,19 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                 onSelect={selectViewWorkspace}
                 subtitle={
                   !memoryLoading ? (
-                    <p className="text-[0.7rem] text-white/30 mt-0.5 px-1.5">
+                    <p className="text-[0.7rem] text-foreground/30 mt-0.5 px-1.5">
                       {viewWorkspaceId === activeWorkspaceId
                         ? "Live profile for this workspace"
                         : `Viewing ${viewWorkspaceName}'s learned profile`}
                     </p>
                   ) : (
-                    <p className="text-[0.7rem] text-white/30 mt-0.5 px-1.5 animate-pulse">Syncing…</p>
+                    <p className="text-[0.7rem] text-foreground/30 mt-0.5 px-1.5 animate-pulse">Syncing…</p>
                   )
                 }
               />
               <MemoryDashboard
                 workspaceName={viewWorkspaceName}
                 workspaceFacts={workspaceFacts}
-                userFacts={userFacts}
                 sessionSummaries={allSessionSummaries}
                 liveSessionSummary={viewWorkspaceId === activeWorkspaceId ? sessionSummary : ""}
                 liveFacts={viewWorkspaceId === activeWorkspaceId ? extractedFacts : {}}
@@ -4952,6 +6291,26 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                 isActiveWorkspace={viewWorkspaceId === activeWorkspaceId}
                 messageCount={messages.length}
                 summarizedCount={summarizedCount}
+                onFactPatch={async (factId, patch) => {
+                  if (!viewWorkspaceId) return;
+                  const res = await fetch(`/api/memory/facts/${factId}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ workspaceId: viewWorkspaceId, ...patch }),
+                  });
+                  if (!res.ok) return;
+                  const updated = await res.json() as WorkspaceFactRecord;
+                  setWorkspaceFacts(prev => prev.map(f => f.id === factId ? { ...f, ...updated } : f));
+                }}
+                onFactDelete={async (factId) => {
+                  if (!viewWorkspaceId) return;
+                  const res = await fetch(`/api/memory/facts/${factId}?workspaceId=${viewWorkspaceId}`, {
+                    method: "DELETE",
+                  });
+                  if (res.ok || res.status === 204) {
+                    setWorkspaceFacts(prev => prev.filter(f => f.id !== factId));
+                  }
+                }}
               />
             </div>
           </div>
@@ -4965,33 +6324,33 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                   <button
                     type="button"
                     onClick={exitSecurityDashboard}
-                    className="flex items-center gap-1.5 text-sm text-white/45 hover:text-white/70 transition-colors mb-3 cursor-pointer"
+                    className="flex items-center gap-1.5 text-sm text-foreground/45 hover:text-foreground/70 transition-colors mb-3 cursor-pointer"
                   >
                     <ChevronLeft className="size-4" aria-hidden />
                     {securityBackLabel}
                   </button>
-                  <h2 className="text-lg font-bold text-white/90 tracking-tight">Security</h2>
-                  <p className="text-sm text-white/40 mt-1 max-w-lg">
-                    Detection history for this account. False positives are handled with sensitivity
-                    tiers and safe terms — there is no way to restore a redacted value.
+                  <h2 className="text-lg font-bold text-foreground/90 tracking-tight">Security</h2>
+                  <p className="text-sm text-foreground/40 mt-1 max-w-lg">
+                    Detection history for this account. Sensitivity tiers and safe terms reduce false
+                    positives. Replacements cannot be restored. This is risk reduction, not a guarantee.
                   </p>
                 </div>
                 <div className="text-right shrink-0">
-                  <p className="text-2xl font-bold tabular-nums text-white/90">{totalPiiFiltered}</p>
-                  <p className="text-[0.65rem] text-white/35">active in range</p>
+                  <p className="text-2xl font-bold tabular-nums text-foreground/90">{totalPiiFiltered}</p>
+                  <p className="text-[0.65rem] text-foreground/35">active in range</p>
                 </div>
               </div>
 
-              <div className="rounded-2xl bg-white/[0.03] border border-white/8 px-4 py-3">
-                <p className="text-[0.58rem] uppercase tracking-wider text-white/30 font-semibold mb-2">
+              <div className="rounded-2xl bg-foreground/[0.03] border border-foreground/8 px-4 py-3">
+                <p className="text-[0.58rem] uppercase tracking-wider text-foreground/30 font-semibold mb-2">
                   Scanned at {piiSensitivity} sensitivity
                 </p>
                 <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1">
                   {activePiiCategories.map(label => {
                     const CatIcon = PII_SCAN_ICONS[label] ?? Shield;
                     return (
-                      <li key={label} className="flex items-center gap-2 text-[0.65rem] text-white/50">
-                        <CatIcon className="size-3 shrink-0 text-white/35" aria-hidden />
+                      <li key={label} className="flex items-center gap-2 text-[0.65rem] text-foreground/50">
+                        <CatIcon className="size-3 shrink-0 text-foreground/35" aria-hidden />
                         {label}
                       </li>
                     );
@@ -4999,15 +6358,15 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                 </ul>
                 {inactivePiiCategories.length > 0 && (
                   <>
-                    <p className="text-[0.58rem] uppercase tracking-wider text-white/25 font-semibold mt-3 mb-2">
+                    <p className="text-[0.58rem] uppercase tracking-wider text-foreground/25 font-semibold mt-3 mb-2">
                       Not scanned at this level
                     </p>
                     <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1">
                       {inactivePiiCategories.map(label => {
                         const CatIcon = PII_SCAN_ICONS[label] ?? Shield;
                         return (
-                          <li key={label} className="flex items-center gap-2 text-[0.65rem] text-white/28">
-                            <CatIcon className="size-3 shrink-0 text-white/20" aria-hidden />
+                          <li key={label} className="flex items-center gap-2 text-[0.65rem] text-foreground/28">
+                            <CatIcon className="size-3 shrink-0 text-foreground/20" aria-hidden />
                             <span className="line-through decoration-white/20">{label}</span>
                           </li>
                         );
@@ -5032,7 +6391,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                     onChange={e => setShowDismissedPii(e.target.checked)}
                     className="accent-indigo-500"
                   />
-                  <span className="text-[0.65rem] text-white/40">Show dismissed</span>
+                  <span className="text-[0.65rem] text-foreground/40">Show dismissed</span>
                 </label>
               </div>
 
@@ -5041,29 +6400,29 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                   {piiCategoryCounts.map(([label, count]) => (
                     <span
                       key={label}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-white/[0.04] border border-white/8 px-2.5 py-1 text-[0.68rem] text-white/55"
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-foreground/[0.04] border border-foreground/8 px-2.5 py-1 text-[0.68rem] text-foreground/55"
                     >
                       {label}
-                      <span className="font-mono font-semibold text-white/80 tabular-nums">{count}</span>
+                      <span className="font-mono font-semibold text-foreground/80 tabular-nums">{count}</span>
                     </span>
                   ))}
                 </div>
               )}
 
               {piiGroupedByDate.length === 0 ? (
-                <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-6 py-14 text-center">
-                  <ShieldCheck className="size-8 text-white/15 mx-auto mb-3" aria-hidden />
-                  <p className="text-sm text-white/40">No PII detected for this time range.</p>
+                <div className="rounded-2xl border border-foreground/8 bg-foreground/[0.03] px-6 py-14 text-center">
+                  <ShieldCheck className="size-8 text-foreground/15 mx-auto mb-3" aria-hidden />
+                  <p className="text-sm text-foreground/40">No detections recorded for this time range.</p>
                 </div>
               ) : (
                 piiGroupedByDate.map(({ dayKey, label, items }) => (
                   <section key={dayKey}>
                     <div className="flex items-center gap-3 mb-3">
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-white/45 shrink-0">{label}</h3>
-                      <div className="flex-1 h-px bg-white/[0.06]" />
-                      <span className="text-[0.65rem] text-white/25 tabular-nums">{items.length} event{items.length !== 1 ? "s" : ""}</span>
+                      <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground/45 shrink-0">{label}</h3>
+                      <div className="flex-1 h-px bg-foreground/[0.06]" />
+                      <span className="text-[0.65rem] text-foreground/25 tabular-nums">{items.length} event{items.length !== 1 ? "s" : ""}</span>
                     </div>
-                    <ul className="space-y-2 border-l-2 border-white/[0.08] ml-2 pl-4">
+                    <ul className="space-y-2 border-l-2 border-foreground/[0.08] ml-2 pl-4">
                       {items.map(({ entry, rec }) => {
                         const isDismissed = dismissedPiiIds.has(rec.id);
                         const ag = workspaceDisplay(workspaces, entry.workspaceId);
@@ -5075,8 +6434,8 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                               "rounded-xl border px-4 py-3 space-y-2 scroll-mt-24 transition-shadow duration-500",
                               highlightedPiiRecordId === rec.id && "ring-2 ring-indigo-500/60 shadow-lg shadow-indigo-500/10",
                               isDismissed
-                                ? "bg-white/[0.02] border-white/[0.06] opacity-60"
-                                : "bg-white/[0.04] border-white/[0.08]",
+                                ? "bg-foreground/[0.02] border-foreground/[0.06] opacity-60"
+                                : "bg-foreground/[0.04] border-foreground/[0.08]",
                             )}
                           >
                             <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -5085,15 +6444,15 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                                   {categoryLabel(rec.category)}
                                 </span>
                                 {isDismissed && (
-                                  <span className="text-[0.6rem] text-white/30">Dismissed</span>
+                                  <span className="text-[0.6rem] text-foreground/30">Dismissed</span>
                                 )}
                               </div>
                               <div className="flex flex-col items-end gap-0.5 shrink-0">
-                                <span className="inline-flex items-center gap-1 text-[0.62rem] text-white/40">
+                                <span className="inline-flex items-center gap-1 text-[0.62rem] text-foreground/40">
                                   {ag.emoji && <span aria-hidden>{ag.emoji}</span>}
                                   {ag.name}
                                 </span>
-                                <span className="text-[0.65rem] text-white/30 tabular-nums">
+                                <span className="text-[0.65rem] text-foreground/30 tabular-nums">
                                   {formatMsgTime(entry.at)}
                                   {entry.source === "document"
                                     ? ` · Document${entry.documentName ? `: ${entry.documentName}` : ""}`
@@ -5101,14 +6460,14 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                                 </span>
                               </div>
                             </div>
-                            <p className="text-[0.75rem] text-white/50 font-mono leading-relaxed break-all">{rec.context}</p>
+                            <p className="text-[0.75rem] text-foreground/50 font-mono leading-relaxed break-all">{rec.context}</p>
                             {(
                               <div className="flex flex-wrap items-center gap-2 pt-0.5">
                                 {!isDismissed && (
                                   <button
                                     type="button"
                                     onClick={() => dismissPiiRecord(rec.id)}
-                                    className="text-[0.65rem] text-white/35 hover:text-white/60 transition-colors cursor-pointer"
+                                    className="text-[0.65rem] text-foreground/35 hover:text-foreground/60 transition-colors cursor-pointer"
                                   >
                                     Dismiss
                                   </button>
@@ -5131,13 +6490,14 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                 ))
               )}
 
-              <div className="rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-[0.62rem] text-white/35 leading-relaxed">
-                <p className="text-white/50 font-medium mb-1">How detection works</p>
-                Client-side patterns scan every message before send. Raw values are never stored.
-                Matches become placeholders like <code className="font-mono text-white/45">[phone redacted]</code>.
-                Reduce false positives with sensitivity tiers and safe terms in App settings.
-                API keys and private-key blocks are hard-blocked (always scanned, never safe-listed).
-                Answers cite retrieved Knowledge and memory as numbered sources when available.
+              <div className="rounded-xl border border-foreground/8 bg-foreground/[0.02] px-4 py-3 text-[0.62rem] text-foreground/35 leading-relaxed">
+                <p className="text-foreground/50 font-medium mb-1">How detection works</p>
+                Client-side patterns scan messages before send and replace matches with placeholders
+                like <code className="font-mono text-foreground/45">[phone redacted]</code>.
+                Detected values are not stored. The scan can miss values — you still review content.
+                Reduce false positives with sensitivity tiers and safe terms in Settings.
+                Detected API keys and private-key blocks cannot be safe-listed.
+                Answers cite retrieved Knowledge as numbered sources when available.
               </div>
             </div>
           </div>
@@ -5156,7 +6516,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                 onSelect={selectViewWorkspace}
                 subtitle={
                   viewWorkspace ? (
-                    <p className="text-[0.7rem] text-white/30 mt-0.5 px-1.5">
+                    <p className="text-[0.7rem] text-foreground/30 mt-0.5 px-1.5">
                       Icon, color, description, and operational context for this workspace
                     </p>
                   ) : undefined
@@ -5204,145 +6564,12 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
             />
 
             {selectedDoc ? (
-              /* ── Detail view ── */
-              <div className="max-w-2xl mx-auto flex flex-col gap-5">
-
-                {/* Header */}
-                <div className="flex items-center justify-between gap-3">
-                  <button
-                    onClick={() => setSelectedDoc(null)}
-                    className="flex items-center gap-1.5 text-sm text-white/45 hover:text-white/70 transition-colors"
-                  >
-                    <ChevronLeft className="size-4" aria-hidden />
-                    Knowledge
-                  </button>
-                  <button
-                    onClick={() => deleteDocument(selectedDoc.id)}
-                    className="flex items-center gap-1.5 text-[0.72rem] text-red-400/60 hover:text-red-400 transition-colors px-2 py-1 rounded-lg hover:bg-red-500/10"
-                  >
-                    <Trash2 className="size-3.5" aria-hidden />
-                    Delete
-                  </button>
-                </div>
-
-                {/* Document header card */}
-                <div className="rounded-2xl bg-white/[0.04] border border-white/[0.07] p-5">
-                  <div className="flex items-start gap-3">
-                    <span className={cn(
-                      "shrink-0 rounded-lg border px-2.5 py-1 text-[0.65rem] font-bold tracking-wider font-mono",
-                      docTypeInfo(selectedDoc.mimeType).cls,
-                    )}>
-                      {docTypeInfo(selectedDoc.mimeType).label}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-base font-semibold text-white/90 break-all leading-snug">
-                        {selectedDoc.name}
-                      </p>
-                      {selectedDoc.description && (
-                        <p className="mt-0.5 text-sm text-white/45">{selectedDoc.description}</p>
-                      )}
-                      <p className="mt-2 text-[0.72rem] text-white/35 leading-relaxed">
-                        Only sanitized text is stored and indexed. Chunks are retrieved automatically during investigations when your questions match.
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 flex flex-wrap gap-3 text-[0.72rem] text-white/40">
-                    <span>{fmtBytes(selectedDoc.sizeBytes)}</span>
-                    <span>·</span>
-                    <span>{selectedDoc.chunkCount} chunks indexed</span>
-                    <span>·</span>
-                    <span>Uploaded {timeSince(selectedDoc.createdAt)}</span>
-                    <span>·</span>
-                    <span className={cn(
-                      "flex items-center gap-1",
-                      selectedDoc.status === "ready" && selectedDoc.chunkCount > 0 ? "text-emerald-400" :
-                      selectedDoc.status === "ready"      ? "text-amber-400" :
-                      selectedDoc.status === "processing" ? "text-yellow-400" :
-                                                            "text-red-400",
-                    )}>
-                      <span className={cn(
-                        "size-1.5 rounded-full inline-block",
-                        selectedDoc.status === "ready" && selectedDoc.chunkCount > 0 ? "bg-emerald-400" :
-                        selectedDoc.status === "ready"      ? "bg-amber-400" :
-                        selectedDoc.status === "processing" ? "bg-yellow-400 animate-pulse" :
-                                                              "bg-red-400",
-                      )} />
-                      {selectedDoc.status === "ready" && selectedDoc.chunkCount > 0 ? "Indexed" :
-                       selectedDoc.status === "ready" ? "Stored · start Ollama to index" :
-                       selectedDoc.status === "processing" ? "Embedding…" :
-                       "Failed"}
-                    </span>
-                  </div>
-                </div>
-
-                {(selectedDoc.redactionCount ?? 0) > 0 && (
-                  <div className="rounded-xl bg-amber-500/[0.07] border border-amber-500/20 px-4 py-3 space-y-2">
-                    <p className="text-sm font-medium text-amber-200/90 flex items-center gap-2">
-                      <Shield className="size-4 shrink-0" aria-hidden />
-                      {selectedDoc.redactionCount} PII {selectedDoc.redactionCount === 1 ? "item" : "items"} scrubbed at upload
-                    </p>
-                    <p className="text-[0.72rem] text-white/40 leading-relaxed">
-                      Raw values were replaced with typed placeholders before this file was saved or embedded.
-                      Only the sanitized text below is stored and sent to the model.
-                    </p>
-                    {selectedDoc.scrubEvents && selectedDoc.scrubEvents.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5 pt-0.5">
-                        {selectedDoc.scrubEvents.map(ev => (
-                          <span
-                            key={ev.category}
-                            className="text-[0.62rem] rounded-md border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-amber-200/70"
-                          >
-                            {categoryLabel(ev.category)} ×{ev.count}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Content preview */}
-                <div>
-                  <p className="text-[0.65rem] uppercase tracking-[0.25em] text-white/25 mb-2">
-                    Extracted content
-                  </p>
-                  <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] px-4 py-3 max-h-52 overflow-y-auto">
-                    <p className="text-[0.8rem] text-white/55 leading-relaxed whitespace-pre-wrap font-mono">
-                      {selectedDoc.content.slice(0, 1500)}
-                      {selectedDoc.content.length > 1500 && (
-                        <span className="text-white/25"> … [{(selectedDoc.content.length - 1500).toLocaleString()} more chars]</span>
-                      )}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Chunk list */}
-                {selectedDoc.fragments.length > 0 && (
-                  <div>
-                    <p className="text-[0.65rem] uppercase tracking-[0.25em] text-white/25 mb-2">
-                      Embedded chunks ({selectedDoc.fragments.length})
-                    </p>
-                    <div className="flex flex-col gap-1.5">
-                      {selectedDoc.fragments.map((frag, i) => (
-                        <div
-                          key={frag.id}
-                          className="rounded-xl bg-white/[0.03] border border-white/[0.05] px-4 py-2.5"
-                        >
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="text-[0.6rem] font-mono text-white/20">#{i + 1}</span>
-                            <span className="text-[0.6rem] text-white/20">{timeSince(frag.createdAt)}</span>
-                          </div>
-                          <p className="text-[0.78rem] text-white/50 leading-relaxed line-clamp-2">
-                            {frag.content.slice(0, 160)}
-                            {frag.content.length > 160 && <span className="text-white/25">…</span>}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-
+              <KnowledgeDetail
+                doc={selectedDoc}
+                onBack={() => setSelectedDoc(null)}
+                onDelete={() => deleteDocument(selectedDoc.id)}
+                onReprocess={() => reprocessDocument(selectedDoc.id)}
+              />
             ) : (
               /* ── Library grid ── */
               <div className="max-w-2xl mx-auto flex flex-col gap-5 relative">
@@ -5369,7 +6596,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                   onSelect={selectViewWorkspace}
                   subtitle={
                     documents.length > 0 ? (
-                      <p className="text-[0.7rem] text-white/30 mt-0.5 px-1.5">
+                      <p className="text-[0.7rem] text-foreground/30 mt-0.5 px-1.5">
                         {documents.length} {documents.length === 1 ? "document" : "documents"} ·{" "}
                         {documents.filter(d => d.status === "ready").reduce((s, d) => s + d.chunkCount, 0)} chunks indexed
                         {documents.some(d => d.status === "processing") && (
@@ -5397,20 +6624,21 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                   }
                 />
 
-                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3.5 space-y-2.5">
-                  <p className="text-sm text-white/50 leading-relaxed">
-                    Build a reference library for{" "}
-                    <span className="text-white/75 font-medium">{viewWorkspace?.name ?? "this workspace"}</span>.
-                    Uploaded files are stored in your database, scrubbed for PII, split into searchable chunks, and
-                    automatically retrieved during investigations when your questions match.
-                  </p>
-                  <ol className="text-[0.72rem] text-white/35 space-y-1 list-decimal list-inside leading-relaxed">
-                    <li>Text is extracted from your file (PDFs included)</li>
-                    <li>PII is redacted using the same patterns as Chat — only sanitized text is stored or embedded</li>
-                    <li>Content is chunked and embedded with vector search (pgvector)</li>
-                    <li>Relevant passages surface in investigations — scoped to this workspace only</li>
-                  </ol>
-                </div>
+                <p className="text-sm text-foreground/45 px-1">
+                  Files for {viewWorkspace?.name ?? "this workspace"} — originals kept; extracted text is scanned, then indexed.
+                </p>
+                {documents.length > 0 && (
+                  <KnowledgeLibraryFilters
+                    value={knowledgeFilter}
+                    onChange={setKnowledgeFilter}
+                    counts={{
+                      all: documents.length,
+                      documents: documents.filter(d => knowledgeLibraryKind(d.mimeType) === "documents").length,
+                      spreadsheets: documents.filter(d => knowledgeLibraryKind(d.mimeType) === "spreadsheets").length,
+                      images: documents.filter(d => knowledgeLibraryKind(d.mimeType) === "images").length,
+                    }}
+                  />
+                )}
 
                 {docError && (
                   <div className="flex items-center justify-between gap-3 rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-2.5">
@@ -5426,7 +6654,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                 )}
 
                 {docLoading && (
-                  <div className="flex items-center gap-2 text-sm text-white/30 animate-pulse">
+                  <div className="flex items-center gap-2 text-sm text-foreground/30 animate-pulse">
                     <Loader2 className="size-4 animate-spin shrink-0" aria-hidden />
                     Loading documents…
                   </div>
@@ -5446,14 +6674,14 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                     "grid gap-3",
                     documents.length > 0 ? "grid-cols-2" : "grid-cols-1 max-w-sm mx-auto w-full",
                   )}>
-                    <div className="rounded-2xl bg-white/[0.04] border border-indigo-500/20 p-4 animate-pulse flex flex-col gap-2">
-                      <div className="h-4 w-12 rounded bg-white/10" />
-                      <div className="h-3 w-3/4 rounded bg-white/8 mt-1" />
-                      <div className="h-3 w-1/2 rounded bg-white/6" />
+                    <div className="rounded-2xl bg-foreground/[0.04] border border-indigo-500/20 p-4 animate-pulse flex flex-col gap-2">
+                      <div className="h-4 w-12 rounded bg-foreground/10" />
+                      <div className="h-3 w-3/4 rounded bg-foreground/8 mt-1" />
+                      <div className="h-3 w-1/2 rounded bg-foreground/6" />
                       {documents.length === 0 && (
                         <>
-                          <div className="h-8 w-full rounded bg-white/4 mt-2" />
-                          <div className="h-3 w-1/3 rounded bg-white/5 mt-1" />
+                          <div className="h-8 w-full rounded bg-foreground/4 mt-2" />
+                          <div className="h-3 w-1/3 rounded bg-foreground/5 mt-1" />
                         </>
                       )}
                     </div>
@@ -5462,21 +6690,25 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
 
                 {!docLoading && !docUploading && documents.length === 0 && (
                   <div className="text-center pb-4">
-                    <p className="text-xs text-white/25 leading-relaxed max-w-md mx-auto">
-                      No documents yet — drop a file above or use Upload file. PII in uploads is scrubbed before
-                      storage and embedding, same as investigation messages.
+                    <p className="text-xs text-foreground/25 leading-relaxed max-w-md mx-auto">
+                      Drop a file or use Upload. Max {MAX_FILE_MB} MB. Text is extracted, scanned for known patterns, then indexed.
                     </p>
                   </div>
                 )}
 
                 {documents.length > 0 && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {documents.map(doc => (
+                    {documents
+                      .filter(doc =>
+                        knowledgeFilter === "all" || knowledgeLibraryKind(doc.mimeType) === knowledgeFilter,
+                      )
+                      .map(doc => (
                       <DocumentCard
                         key={doc.id}
                         doc={doc}
                         onOpen={() => openDocDetail(doc.id)}
                         onDelete={() => deleteDocument(doc.id)}
+                        onRetry={() => reprocessDocument(doc.id)}
                       />
                     ))}
                   </div>
@@ -5485,32 +6717,118 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
             )}
           </div>
 
+        ) : workNav === "home" ? (
+          <div className="flex-1 overflow-y-auto px-5 py-8">
+            <div className="max-w-2xl mx-auto space-y-6">
+              <div>
+                <p className="text-[0.65rem] uppercase tracking-[0.2em] text-[var(--primary-soft-foreground)] font-semibold">
+                  SecureMind
+                </p>
+                <h2 className="text-display mt-1.5 tracking-tight">
+                  Home
+                </h2>
+                <p className="text-body mt-2.5 text-[var(--text-muted)]">
+                  {PRODUCT_POSITIONING} Pick up where you left off
+                  {viewWorkspace ? (
+                    <>
+                      {" "}in{" "}
+                      <span className="text-foreground font-medium">{viewWorkspace.name}</span>
+                    </>
+                  ) : null}
+                  .
+                </p>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                {([
+                  {
+                    id: "thread" as const,
+                    label: "Chat",
+                    hint: "Investigate with citations from Knowledge",
+                    icon: MessageSquare,
+                  },
+                  {
+                    id: "documents" as const,
+                    label: "Knowledge",
+                    hint: "Upload and search workspace documents",
+                    icon: FileText,
+                  },
+                  {
+                    id: "memory" as const,
+                    label: "Memory",
+                    hint: "Facts and summaries you authored",
+                    icon: Brain,
+                  },
+                  {
+                    id: "bookmarks" as const,
+                    label: "Saved",
+                    hint: "Pinned conclusions from the thread",
+                    icon: Bookmark,
+                  },
+                ]).map(item => {
+                  const Icon = item.icon;
+                  const agent =
+                    workspaces.find(w => w.id === (viewWorkspaceId || activeWorkspaceId))
+                    ?? workspaces[0];
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      disabled={!agent}
+                      onClick={() => agent && goToWorkspaceNav(item.id, agent)}
+                      className={cn(
+                        "rounded-xl border border-border bg-card p-4 text-left shadow-[var(--shadow-sm)]",
+                        "hover:border-[var(--primary-border)] hover:bg-[var(--surface-selected)]",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        "cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-colors",
+                      )}
+                    >
+                      <span className="flex size-9 items-center justify-center rounded-lg bg-[var(--primary-soft)] border border-[var(--primary-border)]">
+                        <Icon className="size-4 text-[var(--primary-soft-foreground)]" aria-hidden />
+                      </span>
+                      <p className="mt-3 text-sm font-semibold text-foreground">{item.label}</p>
+                      <p className="mt-1 text-[0.72rem] text-muted-foreground leading-relaxed">
+                        {item.hint}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="rounded-xl border border-border bg-secondary/70 px-4 py-3">
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Insights (Models, Security, Cost) stay in the right rail. Open Settings anytime from the
+                  sidebar for appearance, providers, and workspace preferences.
+                </p>
+              </div>
+            </div>
+          </div>
         ) : (
           /* Thread view */
           <div className="flex flex-1 min-h-0 flex-col">
             {/* Scrollable thread — ChatGPT-style */}
             <div
               ref={threadRef}
-              className="flex-1 overflow-y-auto relative"
+              className="flex-1 overflow-y-auto overflow-x-hidden relative"
             >
               {/* Floating date pill — appears when scrolled into historical messages */}
               {floatingDate && (
                 <div className="sticky top-3 z-10 flex justify-center pointer-events-none">
-                  <span className="rounded-full bg-[#1a1a2e]/90 border border-white/10 text-[0.65rem] text-white/50 px-3 py-1 backdrop-blur-sm shadow-lg">
+                  <span className="rounded-full bg-popover/95 border border-foreground/10 text-[0.65rem] text-foreground/50 px-3 py-1 backdrop-blur-sm shadow-lg">
                     {floatingDate}
                   </span>
                 </div>
               )}
               <div className="max-w-4xl mx-auto px-5 py-8 flex flex-col gap-6">
                 {sessionLoading && messages.length === 0 ? (
-                  <div className="flex items-center gap-2 text-white/30 text-sm">
+                  <div className="flex items-center gap-2 text-foreground/30 text-sm">
                     <Loader2 className="size-4 animate-spin shrink-0" aria-hidden />
                     <span>Loading conversation…</span>
                   </div>
                 ) : (
                   <>
                     {sessionLoading && (
-                      <div className="flex items-center gap-2 text-white/25 text-xs -mb-3">
+                      <div className="flex items-center gap-2 text-foreground/25 text-xs -mb-3">
                         <Loader2 className="size-3 animate-spin shrink-0" aria-hidden />
                         <span>Syncing…</span>
                       </div>
@@ -5529,11 +6847,11 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                             data-date-divider={dividerLabel}
                             className="flex items-center gap-3 mb-2 -mt-2"
                           >
-                            <div className="flex-1 h-px bg-white/[0.06]" />
-                            <span suppressHydrationWarning className="text-[0.65rem] text-white/30 px-1 shrink-0 select-none">
+                            <div className="flex-1 h-px bg-foreground/[0.06]" />
+                            <span suppressHydrationWarning className="text-[0.65rem] text-foreground/30 px-1 shrink-0 select-none">
                               {dividerLabel}
                             </span>
-                            <div className="flex-1 h-px bg-white/[0.06]" />
+                            <div className="flex-1 h-px bg-foreground/[0.06]" />
                           </div>
                         )}
                         <MessageBubble
@@ -5542,7 +6860,17 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                           workspaceEmoji={activeWorkspace?.emoji}
                           workspaceColor={activeWorkspace?.color}
                           onBookmark={toggleBookmark}
+                          onOpenSettings={openSettings}
                           highlighted={highlightedMessageId === msg.id}
+                          isThinking={
+                            isStreaming &&
+                            msg.id === streamingMessageId &&
+                            msg.role === "assistant" &&
+                            !msg.content &&
+                            !msg.error
+                          }
+                          thinkingStartedAt={streamStartedAt ?? undefined}
+                          onStopThinking={cancelStream}
                         />
                       </div>
                     );
@@ -5555,7 +6883,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
 
             {/* Composer — sticky at bottom, centered */}
             <div
-              className="shrink-0 px-5 pt-3 pb-9 border-t border-white/5"
+              className="shrink-0 px-5 pt-3 pb-9 border-t border-foreground/5"
               onDragEnter={handleComposerDragEnter}
               onDragLeave={handleComposerDragLeave}
               onDragOver={handleComposerDragOver}
@@ -5565,6 +6893,42 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                 onSubmit={e => { e.preventDefault(); handleSend(); setAttachments([]); }}
                 className="max-w-4xl mx-auto relative"
               >
+                {vendorRiskBlocked && activeNav === "thread" && runtimeStatus?.chatReady && (
+                  <div
+                    role="status"
+                    className="mb-2 flex flex-wrap items-start justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-100/90"
+                  >
+                    <div className="min-w-0 space-y-1">
+                      <p className="font-medium text-amber-50/95">
+                        Vendor APIs are off — tier models (Groq) will not run
+                      </p>
+                      <p className="text-[0.7rem] text-amber-100/70 leading-relaxed">
+                        A Groq key is configured, but the risk acknowledgment in Settings is unchecked.
+                        Chat falls back to Ollama/Bedrock only; multi-tier Groq routing stays disabled
+                        until you accept vendor API terms.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openSettings("providers")}
+                      className="shrink-0 rounded-lg border border-amber-400/35 bg-amber-500/15 px-2.5 py-1.5 text-[0.7rem] font-medium text-amber-50 hover:bg-amber-500/25 cursor-pointer"
+                    >
+                      Open Providers
+                    </button>
+                  </div>
+                )}
+
+                {runtimeStatus && (
+                  <>
+                    <RuntimeStatusBar status={runtimeStatus} inUseLabel={composerInUseLabel} />
+                    <ModelSetupPanel
+                      status={runtimeStatus}
+                      onOpenSettings={openSettings}
+                      onPulled={() => void refreshRuntimeStatus()}
+                    />
+                  </>
+                )}
+
                 {sessionSaveError && (
                   <div className="mb-2 flex items-center justify-between gap-3 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200/90">
                     <span>{sessionSaveError}</span>
@@ -5597,12 +6961,12 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                 {attachments.length > 0 && (
                   <div className="flex flex-wrap gap-2 mb-2 px-1">
                     {attachments.map(f => (
-                      <div key={f.name + f.size} className="flex items-center gap-1.5 rounded-lg bg-white/6 border border-white/8 px-2.5 py-1 text-xs text-white/60">
+                      <div key={f.name + f.size} className="flex items-center gap-1.5 rounded-lg bg-foreground/6 border border-foreground/8 px-2.5 py-1 text-xs text-foreground/60">
                         <span className="truncate max-w-[140px]">{f.name}</span>
-                        <span className="text-white/25 text-[0.6rem]">
+                        <span className="text-foreground/25 text-[0.6rem]">
                           {f.type.startsWith("image/") ? "vision + knowledge" : "→ knowledge"}
                         </span>
-                        <button type="button" onClick={() => removeAttachment(f.name)} className="text-white/30 hover:text-white/60">✕</button>
+                        <button type="button" onClick={() => removeAttachment(f.name)} className="text-foreground/30 hover:text-foreground/60">✕</button>
                       </div>
                     ))}
                   </div>
@@ -5612,7 +6976,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                 {showEmoji && (
                   <div ref={emojiPickerRef} className="absolute bottom-24 left-1/2 -translate-x-1/2 z-50 shadow-2xl rounded-2xl overflow-hidden">
                     <EmojiPicker
-                      theme={Theme.DARK}
+                      theme={appearanceTheme === "dark" ? Theme.DARK : Theme.LIGHT}
                       onEmojiClick={onEmojiClick}
                       lazyLoadEmojis
                       searchPlaceholder="Search emoji…"
@@ -5623,18 +6987,18 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                 )}
 
                 <div className={cn(
-                  "rounded-2xl border transition-all shadow-xl shadow-black/20 overflow-hidden relative",
+                  "rounded-2xl border transition-all shadow-[var(--shadow-md)] overflow-hidden relative",
                   composerDragOver
-                    ? "bg-indigo-500/[0.08] border-indigo-400/45 ring-2 ring-indigo-400/20"
+                    ? "bg-[var(--primary-soft)] border-[var(--primary-border)] ring-2 ring-[var(--primary-border)]"
                     : listening
-                      ? "bg-white/[0.06] border-indigo-400/25"
-                      : "bg-white/[0.08] border-white/[0.11] focus-within:border-white/20 focus-within:bg-white/[0.10]",
+                      ? "bg-secondary border-[var(--primary-border)]"
+                      : "bg-secondary border-foreground/32 focus-within:border-[var(--primary-border)] focus-within:ring-2 focus-within:ring-ring/30",
                 )}>
                   {composerDragOver && (
-                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 bg-[#0d0d12]/90 pointer-events-none">
-                      <Upload className="size-6 text-indigo-300/80" aria-hidden />
-                      <p className="text-sm font-medium text-indigo-100">Drop to attach</p>
-                      <p className="text-[0.65rem] text-white/40">Saved to Knowledge when you send</p>
+                    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 bg-overlay pointer-events-none">
+                      <Upload className="size-6 text-primary-foreground" aria-hidden />
+                      <p className="text-sm font-medium text-primary-foreground">Drop to attach</p>
+                      <p className="text-[0.65rem] text-primary-foreground/80">Saved to Knowledge when you send</p>
                     </div>
                   )}
                   {/* Text input row — or voice bar when recording */}
@@ -5649,22 +7013,26 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                       onConfirm={confirmVoice}
                     />
                   ) : (
+                    <>
                     <ComposerInput
                       ref={composerRef}
                       workspaceName={workspaceName}
                       sessionLoading={sessionLoading}
                       sessionReady={sessionReady}
                       isStreaming={isStreaming}
+                      inferenceReady={!runtimeStatus || runtimeStatus.chatReady}
                       voiceInsert={voiceComposerInsert}
                       onVoiceInsertApplied={() => setVoiceComposerInsert(null)}
                       onSend={() => { handleSend(); setAttachments([]); }}
                       onCancelStream={cancelStream}
                       onStartVoice={startVoice}
+                      onComposerFocus={() => warmChatConnection()}
                     />
+                    </>
                   )} {/* end of non-listening branch */}
 
                   {/* Toolbar row */}
-                  <div className="flex items-center gap-1 px-3 pb-2.5 border-t border-white/5 pt-2">
+                  <div className="flex items-center gap-1 px-3 pb-2.5 border-t border-foreground/5 pt-2">
                     {/* Emoji */}
                     <button
                       ref={emojiBtnRef}
@@ -5673,7 +7041,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                       title="Emoji"
                       className={cn(
                         "flex items-center justify-center size-7 rounded-lg text-base transition-colors",
-                        showEmoji ? "bg-white/10 text-white/80" : "text-white/30 hover:text-white/70 hover:bg-white/6",
+                        showEmoji ? "bg-foreground/10 text-foreground/80" : "text-foreground/30 hover:text-foreground/70 hover:bg-foreground/6",
                       )}
                     >
                       😊
@@ -5684,7 +7052,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
                       title="Attach file or image"
-                      className="flex items-center justify-center size-7 rounded-lg text-white/30 hover:text-white/70 hover:bg-white/6 transition-colors"
+                      className="flex items-center justify-center size-7 rounded-lg text-foreground/30 hover:text-foreground/70 hover:bg-foreground/6 transition-colors"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4">
                         <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
@@ -5704,7 +7072,7 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                       type="button"
                       onClick={() => { if (fileInputRef.current) { fileInputRef.current.accept = "image/*"; fileInputRef.current.click(); fileInputRef.current.accept = COMPOSER_ACCEPT_ATTR; } }}
                       title="Attach image"
-                      className="flex items-center justify-center size-7 rounded-lg text-white/30 hover:text-white/70 hover:bg-white/6 transition-colors"
+                      className="flex items-center justify-center size-7 rounded-lg text-foreground/30 hover:text-foreground/70 hover:bg-foreground/6 transition-colors"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4">
                         <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>
@@ -5715,8 +7083,9 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                   </div>
                 </div>
 
-                <p className="mt-2.5 text-center text-[0.65rem] leading-relaxed text-white/20 select-none px-2">
-                  Drop files here or use the paperclip — files are read in this chat and saved to Knowledge. PII is scrubbed first.
+                <p className="mt-2.5 text-center text-[0.65rem] leading-relaxed text-[var(--text-secondary)] select-none px-2">
+                  Drop files or use the paperclip — read in this chat and saved to Knowledge (duplicates reused). Detected sensitive text is replaced first (best-effort).
+                  <span className="block text-[var(--text-muted)] mt-0.5">{ATTACHMENT_LIMITS_HINT}</span>
                 </p>
 
               </form>
@@ -5740,36 +7109,32 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
                 section={settingsSection}
                 onSectionChange={handleSettingsSectionChange}
                 onOpenInsightsDashboard={openInsightsDashboard}
+                onOpenUserInsights={(subject) => openInsightsDashboard("usage", subject)}
                 safeTerms={safeTerms}
                 onAddSafeTerm={addSafeTerm}
                 onRemoveSafeTerm={removeSafeTerm}
                 piiSensitivity={piiSensitivity}
-                onPiiSensitivityChange={setPiiSensitivity}
+                onPiiSensitivityChange={(tier) => { void setPiiSensitivity(tier); }}
+                canEditSecurity={canEditSecurity || !authSession}
+                securityPending={securityPending}
+                onProposeSecurity={(tier) => { void proposeSecurity(tier); }}
+                onAcceptPendingSecurity={() => { void acceptPendingSecurity(); }}
+                onDismissPendingSecurity={() => { void dismissPendingSecurity(); }}
+                securityNotice={securityNotice}
                 savingsStats={savingsStats}
-                savingsBaselineLabel={displayModelLabel(savingsBaselineModel)}
                 totalRouteCalls={totalRouteCalls}
                 totalPiiActive={totalPiiFiltered}
                 lastRouteLabel={lastRouteInfo
-                  ? `${displayModelLabel(lastRouteInfo.model)} via ${lastRouteInfo.provider === "ollama" ? "local" : lastRouteInfo.provider}`
+                  ? `${labelFor(lastRouteInfo.model)} via ${lastRouteInfo.provider === "ollama" ? "Ollama" : lastRouteInfo.provider}`
                   : ""}
                 activeMode={mode}
-                groqKeyDraft={groqByokDraft}
-                onGroqKeyDraftChange={setGroqByokDraft}
-                groqKeySaved={groqByokSaved}
-                onSaveGroqKey={() => {
-                  const trimmed = groqByokDraft.trim();
-                  if (!trimmed) return;
-                  try {
-                    localStorage.setItem(GROQ_BYOK_KEY, trimmed);
-                    setGroqByokSaved(true);
-                    setGroqByokDraft("");
-                  } catch { /* quota */ }
-                }}
-                onClearGroqKey={() => {
-                  try { localStorage.removeItem(GROQ_BYOK_KEY); } catch { /* ignore */ }
-                  setGroqByokSaved(false);
-                  setGroqByokDraft("");
-                }}
+                complexityTiers={complexityTiersBind}
+                isAdmin={
+                  !authSession
+                  || authSession.role === "super_admin"
+                  || authSession.role === "admin"
+                }
+                actorRole={authSession?.role ?? "super_admin"}
               />
             )}
           </div>
@@ -5779,19 +7144,33 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
       {/* ── Intel panel separator + collapse toggle (desktop) ───────────── */}
       {!isAnalytics && (
       <div className="hidden lg:flex items-stretch relative shrink-0 z-20">
-        <div className="w-px bg-white/6 h-full" />
+        <div
+          className={cn(
+            "w-px h-full transition-colors",
+            rightSidebar.dragging ? "bg-indigo-400/60" : "bg-foreground/6",
+          )}
+        />
+        {/* Drag the separator edge to widen/narrow the Insights rail */}
+        {isIntelOpen && (
+          <SidebarResizeHandle
+            edge="left"
+            label="Resize insights sidebar"
+            active={rightSidebar.dragging}
+            onPointerDown={e => rightSidebar.startResize("left", e)}
+          />
+        )}
         {/* Button anchored to the LEFT of the separator — always fully visible */}
         <button
           onClick={() => setIsIntelOpen(p => !p)}
           title={isIntelOpen ? "Collapse panel" : "Expand panel"}
           aria-label={isIntelOpen ? "Collapse intelligence panel" : "Expand intelligence panel"}
           className={cn(
-            "absolute top-1/2 -translate-y-1/2",
+            "absolute top-1/2 -translate-y-1/2 z-40",
             "flex size-10 items-center justify-center",
-            "rounded-full border-2 bg-[#0d0d11]",
+            "rounded-full border-2 bg-card",
             "transition-all duration-300",
             isIntelOpen
-              ? "right-0 translate-x-1/2 border-white/10 text-white/30 hover:border-white/25 hover:text-white/70 hover:bg-white/8"
+              ? "right-0 translate-x-1/2 border-foreground/10 text-foreground/30 hover:border-foreground/25 hover:text-foreground/70 hover:bg-foreground/8"
               : "right-0 -translate-x-[calc(100%+6px)] border-indigo-500/40 text-indigo-400/80 hover:border-indigo-400/60 hover:text-indigo-400 hover:bg-indigo-400/10 shadow-xl shadow-indigo-900/40",
           )}
         >
@@ -5806,16 +7185,22 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
 
       {/* ── Intelligence panel (desktop) ─────────────────────────────────── */}
       {!isAnalytics && (
-      <aside className={cn(
-        "hidden lg:flex shrink-0 flex-col bg-sidebar overflow-hidden",
-        "transition-[width,opacity] duration-300 ease-in-out",
-        isIntelOpen ? "w-72 xl:w-80 opacity-100" : "w-0 opacity-0",
-      )}>
-        <div className={cn(
-          "flex-1 min-h-0 px-4 py-5 overflow-hidden flex flex-col w-72 xl:w-80",
-          "transition-opacity duration-200",
-          !isIntelOpen && "pointer-events-none",
-        )}>
+      <aside
+        className={cn(
+          "hidden lg:flex shrink-0 flex-col bg-secondary border-l border-[var(--border-strong)] dark:bg-sidebar dark:border-transparent overflow-hidden",
+          !rightSidebar.dragging && "transition-[width,opacity] duration-300 ease-in-out",
+          isIntelOpen ? "opacity-100" : "opacity-0",
+        )}
+        style={{ width: isIntelOpen ? rightSidebar.width : 0 }}
+      >
+        <div
+          className={cn(
+            "flex-1 min-h-0 px-4 py-5 overflow-hidden flex flex-col",
+            "transition-opacity duration-200",
+            !isIntelOpen && "pointer-events-none",
+          )}
+          style={{ width: rightSidebar.width }}
+        >
           {IntelligencePanel}
         </div>
       </aside>
@@ -5824,13 +7209,3 @@ export function AppShell({ analyticsView }: AppShellProps = {}) {
   );
 }
 
-// ─── Helper component ─────────────────────────────────────────────────────────
-
-function IntelCard({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-xl bg-white/4 border border-white/6 px-3 py-3 space-y-1.5">
-      <p className="text-[0.6rem] uppercase tracking-[0.25em] text-white/30 font-semibold">{label}</p>
-      <div className="text-sm text-white/70">{children}</div>
-    </div>
-  );
-}

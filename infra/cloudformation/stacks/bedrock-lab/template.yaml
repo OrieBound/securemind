@@ -1,0 +1,108 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  SecureMind Bedrock lab stack — local Next.js talks to Bedrock via SSO/profile.
+  Does NOT create Amplify, Lambda, Cognito, or a database.
+
+Parameters:
+  EnvName:
+    Type: String
+    Default: lab
+    Description: Suffix for resource names (e.g. lab, dev).
+  CreateDashboard:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+  BedrockRegion:
+    Type: String
+    Default: us-east-1
+    Description: Region where Bedrock model access is enabled (informational for dashboard).
+  GuardrailId:
+    Type: String
+    Default: ""
+    Description: Optional Bedrock Guardrail ID to scope ApplyGuardrail (leave empty for invoke-only).
+
+Conditions:
+  HasDashboard: !Equals [!Ref CreateDashboard, "true"]
+  HasGuardrail: !Not [!Equals [!Ref GuardrailId, ""]]
+
+Resources:
+  BedrockLabManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "SecureMind-BedrockLab-${EnvName}"
+      Description: Least-privilege Bedrock invoke for local SecureMind (attach to your SSO/permission set or IAM user).
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: InvokeFoundationModels
+            Effect: Allow
+            Action:
+              - bedrock:InvokeModel
+              - bedrock:InvokeModelWithResponseStream
+              - bedrock:ListFoundationModels
+              - bedrock:GetFoundationModel
+              - bedrock:ListInferenceProfiles
+            Resource: "*"
+          - Sid: ApplyGuardrail
+            Effect: Allow
+            Action:
+              - bedrock:ApplyGuardrail
+            Resource: !If
+              - HasGuardrail
+              - !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:guardrail/${GuardrailId}"
+              - !Sub "arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:guardrail/*"
+
+  BedrockLabDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Condition: HasDashboard
+    Properties:
+      DashboardName: !Sub "SecureMind-Bedrock-${EnvName}"
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "text",
+              "x": 0, "y": 0, "width": 24, "height": 2,
+              "properties": {
+                "markdown": "## SecureMind Bedrock (${EnvName})\nService metrics for Bedrock in `${AWS::Region}`. Prompt/response **content** logging is NOT enabled by this stack — configure Model Invocation Logging separately and only with explicit opt-in."
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0, "y": 2, "width": 12, "height": 6,
+              "properties": {
+                "region": "${AWS::Region}",
+                "title": "Bedrock Invocations",
+                "metrics": [
+                  ["AWS/Bedrock", "Invocations", { "stat": "Sum" }]
+                ],
+                "period": 300,
+                "view": "timeSeries"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12, "y": 2, "width": 12, "height": 6,
+              "properties": {
+                "region": "${AWS::Region}",
+                "title": "Bedrock Invocation Errors",
+                "metrics": [
+                  ["AWS/Bedrock", "InvocationClientErrors", { "stat": "Sum" }],
+                  [".", "InvocationServerErrors", { "stat": "Sum" }]
+                ],
+                "period": 300,
+                "view": "timeSeries"
+              }
+            }
+          ]
+        }
+
+Outputs:
+  ManagedPolicyArn:
+    Description: Attach this managed policy to your IAM Identity Center permission set or IAM user for local Bedrock.
+    Value: !Ref BedrockLabManagedPolicy
+  DashboardName:
+    Condition: HasDashboard
+    Value: !Ref BedrockLabDashboard
+  StackMode:
+    Value: local-bedrock

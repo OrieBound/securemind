@@ -10,8 +10,12 @@ import {
   InitiateAuthCommand,
   SignUpCommand,
   ConfirmSignUpCommand,
+  ChangePasswordCommand,
+  ForgotPasswordCommand,
+  ConfirmForgotPasswordCommand,
   AuthFlowType,
 } from "@aws-sdk/client-cognito-identity-provider";
+import { LOCAL_AWS_CREDENTIALS, LOCAL_AWS_ENDPOINT } from "@/lib/aws-endpoint";
 
 function region(): string {
   return (
@@ -32,19 +36,39 @@ function poolId(): string | undefined {
   return process.env.COGNITO_USER_POOL_ID;
 }
 
+/**
+ * Floci / local Cognito endpoint.
+ *
+ * Prefer the origin of COGNITO_ISSUER — that var is never cleared by
+ * withRealAwsEndpoints(), so HMR (or a first import during a real-AWS window)
+ * cannot pin this client to production Cognito. Fall back to the module-load
+ * AWS_ENDPOINT_URL snapshot for older env layouts.
+ */
+function cognitoEndpoint(): string | undefined {
+  const issuer = process.env.COGNITO_ISSUER?.trim();
+  if (issuer) {
+    try {
+      return new URL(issuer).origin;
+    } catch {
+      /* fall through */
+    }
+  }
+  return LOCAL_AWS_ENDPOINT;
+}
+
 let _client: CognitoIdentityProviderClient | null = null;
+let _clientEndpoint: string | undefined;
 
 function cip(): CognitoIdentityProviderClient {
-  if (!_client) {
-    const endpoint = process.env.AWS_ENDPOINT_URL || undefined;
+  const endpoint = cognitoEndpoint();
+  // Rebuild if the resolved endpoint changed (dev HMR / env reload).
+  if (!_client || _clientEndpoint !== endpoint) {
     _client = new CognitoIdentityProviderClient({
       region: region(),
       ...(endpoint ? { endpoint } : {}),
-      credentials: {
-        accessKeyId: process.env.AWS_ACCESS_KEY_ID || "test",
-        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "test",
-      },
+      credentials: LOCAL_AWS_CREDENTIALS,
     });
+    _clientEndpoint = endpoint;
   }
   return _client;
 }
@@ -116,4 +140,47 @@ export async function cognitoLogin(email: string, password: string): Promise<Aut
 
 export function cognitoConfigured(): boolean {
   return Boolean(process.env.COGNITO_CLIENT_ID && (process.env.COGNITO_ISSUER || poolId()));
+}
+
+/** Authenticated user changes password (requires current access token). */
+export async function cognitoChangePassword(
+  accessToken: string,
+  previousPassword: string,
+  proposedPassword: string,
+): Promise<void> {
+  await cip().send(
+    new ChangePasswordCommand({
+      AccessToken: accessToken,
+      PreviousPassword: previousPassword,
+      ProposedPassword: proposedPassword,
+    }),
+  );
+}
+
+/**
+ * Start forgot-password. Callers must not reveal whether the user exists —
+ * swallow UserNotFoundException at the route layer.
+ */
+export async function cognitoForgotPassword(username: string): Promise<void> {
+  await cip().send(
+    new ForgotPasswordCommand({
+      ClientId: clientId(),
+      Username: username,
+    }),
+  );
+}
+
+export async function cognitoConfirmForgotPassword(
+  username: string,
+  code: string,
+  newPassword: string,
+): Promise<void> {
+  await cip().send(
+    new ConfirmForgotPasswordCommand({
+      ClientId: clientId(),
+      Username: username,
+      ConfirmationCode: code,
+      Password: newPassword,
+    }),
+  );
 }

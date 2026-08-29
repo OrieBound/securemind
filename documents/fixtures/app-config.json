@@ -1,0 +1,18 @@
+{
+  "app": "northwind-synth",
+  "user": {
+    "email": "jordan.hale@northwind-synth.test",
+    "ssn": "123-45-6789",
+    "dob": "1978-04-12"
+  },
+  "credentials": {
+    "aws_access_key_id": "AKIAIOSFODNN7EXAMPLE",
+    "github_token": "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+    "postgres_url": "postgres://appuser:Winter-Lake-94!@db.internal:5432/securemind"
+  },
+  "control": {
+    "ticket": "INC-1042",
+    "note": "the deploy finished and the queue drained normally",
+    "trace": "1234567890123456"
+  }
+}

@@ -1,0 +1,4 @@
+ticket_id,reporter,description,control
+INC-1042,jordan.hale@northwind-synth.test,"API token ghp_abcdefghijklmnopqrstuvwxyz0123456789 posted in thread",the deploy finished and the queue drained normally
+INC-1043,jordan.hale@northwind-synth.test,"repeat reporter same inbox",ok
+INC-1999,ops-bot,"trace 1234567890123456 is not a card",the deploy finished and the queue drained normally

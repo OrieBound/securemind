@@ -1,10 +1,11 @@
 import { db } from "@/lib/db";
 import {
+  COST_ESTIMATE_DISCLAIMER,
   DEFAULT_COST_BASELINE_MODEL,
   estimateBaselineCostUsd,
-  GROQ_PRICING_EFFECTIVE,
-  GROQ_PRICING_VERSION,
-} from "@/lib/pricing/groq";
+  PRICING_BUNDLE_EFFECTIVE,
+  PRICING_BUNDLE_VERSION,
+} from "@/lib/pricing";
 import { resolveDateRange, type AnalyticsRange } from "./types";
 
 export type AnalyticsFilter = {
@@ -125,6 +126,36 @@ export async function getSecuritySummary(filter: AnalyticsFilter) {
   });
   const nameById = new Map(workspaces.map(w => [w.id, w.name]));
 
+  // Resolve Knowledge document names for events that already store resourceId.
+  const documentIds = [
+    ...new Set(
+      events
+        .filter(e => e.resourceKind === "document" && e.resourceId)
+        .map(e => e.resourceId as string),
+    ),
+  ];
+  const docNameById = new Map<string, string>();
+  if (documentIds.length > 0) {
+    const docs = await db.document.findMany({
+      where: { userId: filter.userId, id: { in: documentIds } },
+      select: { id: true, name: true },
+    });
+    for (const d of docs) docNameById.set(d.id, d.name);
+  }
+
+  const byDocument = new Map<string, { documentId: string; name: string; count: number }>();
+  for (const e of events) {
+    if (e.resourceKind !== "document" || !e.resourceId) continue;
+    const name = docNameById.get(e.resourceId) ?? "Deleted or unavailable document";
+    const row = byDocument.get(e.resourceId) ?? {
+      documentId: e.resourceId,
+      name,
+      count: 0,
+    };
+    row.count += e.count;
+    byDocument.set(e.resourceId, row);
+  }
+
   return {
     kpis: {
       totalFindings,
@@ -140,6 +171,7 @@ export async function getSecuritySummary(filter: AnalyticsFilter) {
       .sort((a, b) => b.count - a.count),
     byOutcome: [...byOutcome.entries()].map(([outcome, count]) => ({ outcome, count })),
     bySource: [...bySource.entries()].map(([source, count]) => ({ source, count })),
+    byDocument: [...byDocument.values()].sort((a, b) => b.count - a.count),
     byWorkspace: [...byWorkspace.entries()].map(([workspaceId, count]) => ({
       workspaceId,
       name: nameById.get(workspaceId) ?? workspaceId,
@@ -151,7 +183,15 @@ export async function getSecuritySummary(filter: AnalyticsFilter) {
         date,
         ...Object.fromEntries(cats),
       })),
-    events: events.slice(0, 200),
+    events: events.slice(0, 200).map(e => ({
+      ...e,
+      resourceName:
+        e.resourceKind === "document" && e.resourceId
+          ? (docNameById.get(e.resourceId) ?? "Deleted or unavailable document")
+          : e.resourceKind === "message"
+            ? "Chat message"
+            : null,
+    })),
   };
 }
 
@@ -337,11 +377,10 @@ export async function getCostSummary(filter: AnalyticsFilter) {
       : null;
 
   return {
-    disclaimer:
-      "Estimated AI inference cost from recorded Groq list pricing. Does not include AWS, infrastructure, or organizational spend.",
+    disclaimer: COST_ESTIMATE_DISCLAIMER,
     pricing: {
-      version: GROQ_PRICING_VERSION,
-      effective: GROQ_PRICING_EFFECTIVE,
+      version: PRICING_BUNDLE_VERSION,
+      effective: PRICING_BUNDLE_EFFECTIVE,
       baselineModel: DEFAULT_COST_BASELINE_MODEL,
     },
     kpis: {
@@ -370,39 +409,7 @@ export async function getCostSummary(filter: AnalyticsFilter) {
       baselineUsd: baselineCost,
       savingsUsd: routingSavings,
       explanation:
-        `Savings estimate = cost if every request used ${DEFAULT_COST_BASELINE_MODEL} minus actual routed model cost (Groq list pricing ${GROQ_PRICING_VERSION}). Not AWS savings.`,
+        `Savings estimate = cost if every request used ${DEFAULT_COST_BASELINE_MODEL} minus actual routed model cost (list rates ${PRICING_BUNDLE_VERSION}). Not an AWS bill or invoice.`,
     },
   };
-}
-
-export async function getEvidenceRailSummaries(filter: AnalyticsFilter) {
-  const [security, usage, cost] = await Promise.all([
-    getSecuritySummary(filter),
-    getUsageSummary(filter),
-    getCostSummary(filter),
-  ]);
-  return {
-    security: {
-      findings: security.kpis.totalFindings,
-      highRiskBlocked: security.kpis.highRiskBlocked,
-      topCategory: security.kpis.topCategory,
-    },
-    usage: {
-      requests: usage.kpis.totalRequests,
-      tokens: usage.kpis.promptTokens + usage.kpis.completionTokens,
-      groundedRate: usage.kpis.groundedRate,
-      topModel: usage.kpis.topModel,
-    },
-    cost: {
-      estimatedCostUsd: cost.kpis.estimatedCostUsd,
-      avgCostPerRequest: cost.kpis.avgCostPerRequest,
-      routingSavingsUsd: cost.kpis.routingSavingsUsd,
-    },
-  };
-}
-
-export async function ensureWorkspaceOwned(userId: string, workspaceId: string | null | undefined) {
-  if (!workspaceId) return true;
-  const ids = await ownedWorkspaceIds(userId);
-  return ids.includes(workspaceId);
 }

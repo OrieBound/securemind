@@ -46,6 +46,23 @@ describe("packageEvidence", () => {
     expect(promptBlock).toContain("cite as [n]");
     expect(promptBlock).toMatch(/untrusted data/i);
   });
+
+  it("includes sheet-range provenance on the source label", () => {
+    const hits: SemanticHit[] = [
+      {
+        id: "f3",
+        content: "East=10; West=25",
+        category: "document",
+        similarity: 0.9,
+        documentId: "d2",
+        documentName: "sales.xlsx",
+        provenance: { kind: "sheet", sheet: "Sales", range: "Sales!B12:F28" },
+      },
+    ];
+    const { citations, promptBlock } = packageEvidence(hits);
+    expect(citations[0]?.provenance?.range).toBe("Sales!B12:F28");
+    expect(promptBlock).toContain("sales.xlsx (Sales!B12:F28)");
+  });
 });
 
 describe("packageCurrentAttachments", () => {

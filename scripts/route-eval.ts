@@ -27,10 +27,10 @@ const FIXTURES: Fixture[] = [
   { id: "ack-hi", message: "hey", expect: "Micro" },
   { id: "ack-hi-long", message: "hey there how are you", expect: "Standard" },
 
-  // Fast — facts
-  { id: "fact-who", message: "who invented the telephone?", expect: "Fast" },
-  { id: "fact-capital", message: "capital of France", expect: "Fast" },
-  { id: "fact-when", message: "when was the moon landing", expect: "Fast" },
+  // Light — facts (former Fast)
+  { id: "fact-who", message: "who invented the telephone?", expect: "Light" },
+  { id: "fact-capital", message: "capital of France", expect: "Light" },
+  { id: "fact-when", message: "when was the moon landing", expect: "Light" },
 
   // Light — how-to
   { id: "howto-egg", message: "how do I boil an egg properly without cracking it", expect: "Light" },
@@ -55,17 +55,17 @@ const FIXTURES: Fixture[] = [
   {
     id: "tech-debug",
     message: "why does this async function hang forever when I await fetch inside useEffect?",
-    expect: "High",
+    expect: "Max",
   },
   {
     id: "tech-code",
     message: "```js\nuseEffect(() => {\n  fetch('/api').then(r => setData(r));\n}, []);\n```\nwhat's wrong here?",
-    expect: "High",
+    expect: "Max",
   },
   {
     id: "tech-arch",
     message: "help me debug this race condition in my Prisma transaction code",
-    expect: "High",
+    expect: "Max",
   },
 
   // Max — deep
@@ -79,12 +79,12 @@ const FIXTURES: Fixture[] = [
   {
     id: "stick-tech",
     message: "what about Redis?",
-    expect: "High",
+    expect: "Max",
     history: [
       { role: "user", content: "my API keeps timing out under load" },
       { role: "assistant", content: "sounds like you need caching or a queue" },
     ],
-    lastTier: "High",
+    lastTier: "Max",
   },
   {
     id: "stick-plan",
@@ -128,7 +128,7 @@ function runEval() {
   }
 
   console.log("\n── Tier distribution ──\n");
-  for (const tier of ["Micro", "Fast", "Light", "Standard", "Plus", "High", "Max"]) {
+  for (const tier of ["Micro", "Light", "Standard", "Plus", "Max"]) {
     const n = distribution[tier] ?? 0;
     const bar = "█".repeat(n);
     console.log(`  ${tier.padEnd(10)} ${String(n).padStart(2)} ${bar}`);

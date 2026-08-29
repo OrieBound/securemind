@@ -1,38 +1,38 @@
 ## ADR 0001: Conversation ingestion → memory → retrieval pipeline
 
-**Status**: Proposed (Phase B target) · **Last updated**: 2026-05-12 · **Audience**: Backend + cognition architecture
+**Status**: Partially shipped · **Last updated**: 2026-08-03 · **Audience**: Backend + cognition architecture
 
 ---
 
 ### Context
 
-SecureMind distinguishes itself through retrieval-driven cognition and inspectable governance. Conversations cannot be pasted wholesale into prompts; structured artifacts must summarize, sanitize, summarize again at longer horizons, and become retrievable memory that the intelligence panel reflects accurately.
+SecureMind distinguishes itself through retrieval-driven cognition. Conversations cannot be pasted wholesale into prompts; structured artifacts must summarize, sanitize, and become retrievable memory that Insights and Memory views can show accurately.
 
-Phase A intentionally mocks this path. Phase B onward needs a repeatable pipeline resilient to cost spikes and eventual AWS hardening.
+Summarization, Knowledge ingest with scrubbing, and document embeddings are live. LLM-as-judge claim verification and hosted AWS hardening remain future work (see AGENTS.md).
 
 ### Decision drivers
 
 | Driver | Requirement |
 |--------|-------------|
-| Transparency | Persist enough metadata so the intelligence panel can display sources, rationales, and confidence surrogates. |
-| Cost | Route cheap models or local adapters for churn-prone summarize/extract/embed steps; escalate only strategic turns. |
-| Security | Inspect content before committing durable memory entries; propagate policy decisions downstream. |
+| Transparency | Persist enough metadata so Insights can display sources and confidence surrogates. |
+| Cost | Route cheap models or local adapters for summarize/extract/embed; escalate only strategic turns. |
+| Security | Scrub before durable memory; never persist raw detected values. |
 
-### Proposal (conceptual phases)
+### Pipeline (conceptual)
 
-High-level flow aligns with PRODUCT_THESIS:
+High-level flow:
 
 ```mermaid
 flowchart LR
   Input[IncomingTurn]
-  Persist[PersistRawUtterances]
-  PII[ClassificationPII_RedactionStub]
+  Persist[PersistUtterances]
+  PII[ClientPII_Redaction]
   Summarize[SummarizeWindow]
-  Extract[ExtractArtifacts]
-  Embed[IndexEmbeddings_optional]
-  Store[UpsertStructuredMemoryRecords]
+  Extract[ExtractWorkspaceFacts]
+  Embed[IndexDocumentEmbeddings]
+  Store[UpsertStructuredMemory]
   Retrieve[RetrieverSelectsPieces]
-  Route[OrchestratorChoosesInferenceMode]
+  Route[ComplexityTier]
   Model[UpstreamLLM_Call]
 ```
 

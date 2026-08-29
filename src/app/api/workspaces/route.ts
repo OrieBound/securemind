@@ -17,13 +17,13 @@ const MAX_NAME = 60;
 const MAX_DESCRIPTION = 140;
 const MAX_CONTEXT = 2000;
 
-const DEFAULT_WORKSPACE_NAME = "Aegis";
+const DEFAULT_WORKSPACE_NAME = "Mindy Locke";
 const DEFAULT_WORKSPACE_EMOJI = "🛡️";
 const DEFAULT_WORKSPACE_DESCRIPTION =
   "Runbooks, incidents, architecture, and operational knowledge.";
 
-/** Prior default name — renamed once so local DBs pick up the new identity. */
-const LEGACY_DEFAULT_NAME = "Cloud Operations";
+/** Prior default names — renamed once so local DBs pick up the new identity. */
+const LEGACY_DEFAULT_NAMES = ["Cloud Operations", "Aegis", "My Workspace"] as const;
 
 function clean(value: unknown, max: number): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -69,7 +69,9 @@ export async function GET(req: NextRequest) {
   // One-time rename of the previous default seed name so the chat speaker
   // identity matches the new default without a manual Workspace edit.
   const legacyDefault = workspaces.find(
-    w => w.isDefault && w.name === LEGACY_DEFAULT_NAME,
+    w =>
+      w.isDefault
+      && (LEGACY_DEFAULT_NAMES as readonly string[]).includes(w.name),
   );
   if (legacyDefault) {
     await db.workspace.update({

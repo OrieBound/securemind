@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import EmojiPicker, { Theme, type EmojiClickData } from "emoji-picker-react";
 import { Button } from "@/components/ui/button";
+import { useTheme } from "@/components/app/theme-provider";
 import { cn } from "@/lib/utils";
 
 type WorkspaceFields = {
@@ -36,6 +37,7 @@ const WORKSPACE_ICONS = [
 ] as const;
 
 export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
+  const { theme } = useTheme();
   const [name, setName] = useState(workspace.name);
   const [emoji, setEmoji] = useState(workspace.emoji || "🗂️");
   const [color, setColor] = useState(workspace.color);
@@ -93,8 +95,8 @@ export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
     <form onSubmit={handleSave} className="space-y-5 max-w-xl">
       <div className="flex items-start gap-3">
         <div
-          className="size-12 shrink-0 rounded-xl flex items-center justify-center text-xl select-none"
-          style={{ backgroundColor: color + "33", border: `1px solid ${color}55` }}
+          className="workspace-avatar size-12 shrink-0 rounded-xl flex items-center justify-center text-xl select-none"
+          style={{ "--ws-accent": color } as CSSProperties}
           aria-hidden
         >
           {emoji || "🗂️"}
@@ -105,20 +107,20 @@ export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
             onChange={e => setName(e.target.value)}
             placeholder="Workspace name"
             maxLength={60}
-            className="w-full h-10 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-sm text-white/85 placeholder:text-white/25 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
+            className="w-full h-10 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-3 text-sm text-foreground/85 placeholder:text-foreground/25 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
           />
           <input
             value={description}
             onChange={e => setDescription(e.target.value)}
             placeholder="Short description — e.g. AuthN, sessions, MFA"
             maxLength={140}
-            className="w-full h-9 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs text-white/70 placeholder:text-white/25 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
+            className="w-full h-9 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-3 text-xs text-foreground/70 placeholder:text-foreground/25 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
           />
         </div>
       </div>
 
       <div>
-        <p className="text-[0.65rem] uppercase tracking-wider text-white/30 font-semibold mb-2">Icon</p>
+        <p className="text-[0.65rem] uppercase tracking-wider text-foreground/30 font-semibold mb-2">Icon</p>
         <div className="flex flex-wrap gap-1.5">
           {WORKSPACE_ICONS.map(icon => (
             <button
@@ -129,10 +131,10 @@ export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
               aria-pressed={emoji === icon}
               className={cn(
                 "size-9 rounded-lg text-base flex items-center justify-center transition-all cursor-pointer",
-                "border bg-white/[0.03] hover:bg-white/[0.08]",
+                "border bg-foreground/[0.03] hover:bg-foreground/[0.08]",
                 emoji === icon
                   ? "border-indigo-400/50 bg-indigo-500/15 ring-1 ring-indigo-400/30"
-                  : "border-white/8",
+                  : "border-foreground/8",
               )}
             >
               {icon}
@@ -147,10 +149,10 @@ export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
               aria-label="Browse more icons"
               className={cn(
                 "size-9 rounded-lg text-[0.65rem] font-medium flex items-center justify-center transition-all cursor-pointer",
-                "border bg-white/[0.03] hover:bg-white/[0.08] text-white/45",
+                "border bg-foreground/[0.03] hover:bg-foreground/[0.08] text-foreground/45",
                 pickerOpen
                   ? "border-indigo-400/50 bg-indigo-500/15 text-indigo-200"
-                  : "border-white/8",
+                  : "border-foreground/8",
               )}
             >
               More
@@ -158,10 +160,10 @@ export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
             {pickerOpen && (
               <div
                 ref={pickerRef}
-                className="absolute left-0 top-11 z-50 shadow-2xl rounded-2xl overflow-hidden border border-white/10"
+                className="absolute left-0 top-11 z-50 shadow-2xl rounded-2xl overflow-hidden border border-foreground/10"
               >
                 <EmojiPicker
-                  theme={Theme.DARK}
+                  theme={theme === "dark" ? Theme.DARK : Theme.LIGHT}
                   onEmojiClick={(data: EmojiClickData) => pickIcon(data.emoji)}
                   width={320}
                   height={380}
@@ -175,7 +177,7 @@ export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
       </div>
 
       <div>
-        <p className="text-[0.65rem] uppercase tracking-wider text-white/30 font-semibold mb-2">Color</p>
+        <p className="text-[0.65rem] uppercase tracking-wider text-foreground/30 font-semibold mb-2">Color</p>
         <div className="flex flex-wrap gap-2">
           {COLORS.map(c => (
             <button
@@ -186,7 +188,7 @@ export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
               aria-pressed={color === c}
               className={cn(
                 "size-7 rounded-full border-2 transition-transform cursor-pointer",
-                color === c ? "border-white scale-110" : "border-transparent hover:scale-105",
+                color === c ? "border-foreground scale-110" : "border-transparent hover:scale-105",
               )}
               style={{ backgroundColor: c }}
             />
@@ -195,10 +197,10 @@ export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
       </div>
 
       <div>
-        <label className="block text-[0.65rem] uppercase tracking-wider text-white/30 font-semibold mb-2">
+        <label className="block text-[0.65rem] uppercase tracking-wider text-foreground/30 font-semibold mb-2">
           Operational context
         </label>
-        <p className="text-[0.65rem] text-white/35 mb-2 leading-relaxed">
+        <p className="text-[0.65rem] text-foreground/35 mb-2 leading-relaxed">
           What this workspace covers — injected into the system prompt so answers stay
           grounded in the right domain. For example: payment services, Stripe, PCI scope.
         </p>
@@ -208,7 +210,7 @@ export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
           rows={5}
           maxLength={2000}
           placeholder="Describe the systems, documents, and operational scope of this workspace…"
-          className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-xs text-white/70 placeholder:text-white/25 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 resize-y min-h-[6rem]"
+          className="w-full rounded-xl border border-foreground/10 bg-foreground/[0.04] px-3 py-2.5 text-xs text-foreground/70 placeholder:text-foreground/25 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 resize-y min-h-[6rem]"
         />
       </div>
 

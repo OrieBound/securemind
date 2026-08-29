@@ -22,12 +22,15 @@ const workspace = {
 };
 const session       = { findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn() };
 const message       = { findFirst: vi.fn(), findMany: vi.fn(), count: vi.fn(), create: vi.fn() };
-const workspaceFact = { findMany: vi.fn() };
+const workspaceFact = { findMany: vi.fn(), findFirst: vi.fn(), update: vi.fn(), delete: vi.fn() };
 const securityEvent = { findMany: vi.fn(), createMany: vi.fn() };
 const inferenceEvent = { findMany: vi.fn(), create: vi.fn() };
+const document = { findMany: vi.fn(), findFirst: vi.fn(), delete: vi.fn() };
+const memoryFragment = { findMany: vi.fn(), findFirst: vi.fn(), count: vi.fn() };
+const savedItem = { findMany: vi.fn(), findFirst: vi.fn(), upsert: vi.fn(), delete: vi.fn() };
 
 vi.mock("@/lib/db", () => ({
-  db: { workspace, session, message, workspaceFact, securityEvent, inferenceEvent },
+  db: { workspace, session, message, workspaceFact, securityEvent, inferenceEvent, document, savedItem, memoryFragment },
 }));
 vi.mock("@/lib/memory", () => ({
   storeMemoryFragment: vi.fn(),
@@ -110,7 +113,7 @@ describe("PATCH /api/workspaces/:id", () => {
   it("scopes the ownership check to the server-derived user", async () => {
     const { PATCH } = await import("@/app/api/workspaces/[id]/route");
     workspace.findFirst.mockResolvedValue({
-      id: "w1", userId: SERVER_USER, name: "Aegis", context: null, description: null,
+      id: "w1", userId: SERVER_USER, name: "My Workspace", context: null, description: null,
     });
     workspace.update.mockResolvedValue({ id: "w1" });
 
@@ -223,6 +226,106 @@ describe("GET /api/memory", () => {
   });
 });
 
+describe("PATCH /api/memory/facts/:id", () => {
+  it("returns 404 when the workspace is not owned", async () => {
+    const { PATCH } = await import("@/app/api/memory/facts/[id]/route");
+    workspace.findFirst.mockResolvedValue(null);
+
+    const res = await PATCH(
+      new NextRequest("http://localhost/api/memory/facts/f1", {
+        method: "PATCH",
+        body: JSON.stringify({ workspaceId: "other", value: "hijack" }),
+        headers: { "Content-Type": "application/json" },
+      }),
+      params("f1"),
+    );
+
+    expect(res.status).toBe(404);
+    expect(workspaceFact.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/documents/:id", () => {
+  it("scopes the lookup to the server-derived user", async () => {
+    const { GET } = await import("@/app/api/documents/[id]/route");
+    document.findFirst.mockResolvedValue(null);
+
+    const res = await GET(new NextRequest("http://localhost/api/documents/d1"), params("d1"));
+    expect(res.status).toBe(404);
+    expect(document.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "d1", userId: SERVER_USER } }),
+    );
+  });
+
+  it("poll meta skips fragment loading", async () => {
+    const { GET } = await import("@/app/api/documents/[id]/route");
+    document.findFirst.mockResolvedValue({
+      id: "d1",
+      status: "processing",
+      chunkCount: 0,
+      processingError: null,
+      processedAt: null,
+    });
+
+    const res = await GET(new NextRequest("http://localhost/api/documents/d1?meta=1"), params("d1"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.fragments).toBeUndefined();
+    expect(memoryFragment.findMany).not.toHaveBeenCalled();
+    expect(memoryFragment.count).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/documents", () => {
+  it("returns preview only — no full content body", async () => {
+    const { GET } = await import("@/app/api/documents/route");
+    document.findMany.mockResolvedValue([
+      {
+        id: "d1",
+        workspaceId: "w1",
+        name: "note.txt",
+        mimeType: "text/plain",
+        sizeBytes: 20,
+        description: null,
+        status: "ready",
+        chunkCount: 1,
+        redactionCount: 0,
+        scrubEvents: null,
+        processingError: null,
+        storageKey: "k",
+        extractMeta: null,
+        processedAt: new Date(),
+        content: "x".repeat(2000),
+        createdAt: new Date(),
+      },
+    ]);
+
+    const res = await GET(new NextRequest("http://localhost/api/documents?workspaceId=w1"));
+    expect(res.status).toBe(200);
+    const body = await res.json() as Array<{ content?: string; contentPreview?: string }>;
+    expect(body[0]?.content).toBeUndefined();
+    expect(body[0]?.contentPreview?.length).toBeLessThanOrEqual(500);
+    const arg = document.findMany.mock.calls[0][0] as { select?: { content?: boolean } };
+    expect(arg.select?.content).toBeUndefined();
+    expect(document.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ userId: SERVER_USER }),
+      }),
+    );
+  });
+});
+
+describe("GET /api/bookmarks", () => {
+  it("rejects a workspace the caller does not own", async () => {
+    const { GET } = await import("@/app/api/bookmarks/route");
+    workspace.findFirst.mockResolvedValue(null);
+
+    const res = await GET(new NextRequest("http://localhost/api/bookmarks?workspaceId=other"));
+    expect(res.status).toBe(404);
+    expect(savedItem.findMany).not.toHaveBeenCalled();
+  });
+});
+
 describe("GET /api/analytics/security", () => {
   it("returns 404 when workspaceId is not owned", async () => {
     const { GET } = await import("@/app/api/analytics/security/route");
@@ -240,7 +343,7 @@ describe("GET /api/analytics/security", () => {
     const { GET } = await import("@/app/api/analytics/security/route");
     workspace.findFirst.mockResolvedValue({ id: "w1" });
     securityEvent.findMany.mockResolvedValue([]);
-    workspace.findMany.mockResolvedValue([{ id: "w1", name: "Aegis" }]);
+    workspace.findMany.mockResolvedValue([{ id: "w1", name: "My Workspace" }]);
 
     await GET(
       new NextRequest("http://localhost/api/analytics/security?workspaceId=w1&userId=attacker"),

@@ -6,10 +6,25 @@
  * only executes the chosen provider.
  */
 
-import { streamGroqChat, isGroqAvailable, type GroqUsage } from "./groq";
-import { streamOllamaChat, checkOllamaModel } from "./ollama";
-import { streamBedrockChat, isBedrockConfigured } from "./bedrock";
+import {
+  streamGroqChat,
+  hasGroqRuntime,
+  getGroqUnavailableReason,
+  GROQ_NOT_CONFIGURED_MESSAGE,
+  VENDOR_RISK_REQUIRED_CODE,
+  VENDOR_RISK_REQUIRED_MESSAGE,
+  type GroqUsage,
+} from "./groq";
+import { formatGroqChatError } from "./groq-connectivity";
+import { streamOllamaChat, checkOllamaModel, resolveOllamaChatModel, probeOllama, isOllamaEmbedModel } from "./ollama";
+import { streamBedrockChat, isBedrockConfigured, bedrockBlockReason } from "./bedrock";
+import { streamOpenAIChat, hasOpenAIRuntime } from "./openai";
+import { streamAnthropicChat, hasAnthropicRuntime } from "./anthropic";
+import { streamGoogleChat, hasGoogleRuntime } from "./google";
 import { ollamaFallbackForMode } from "./router";
+import { resolveRuntimeSecrets } from "@/lib/instance-config";
+import { isHostedRuntime } from "@/lib/runtime-env";
+import { pickInstalledChatModel, probeHardware } from "./local-recommendations";
 import type { ChatMessage, ModelProvider } from "./types";
 
 export type StreamChatOpts = {
@@ -19,61 +34,174 @@ export type StreamChatOpts = {
   /** Complexity tier — used only for Ollama fallback model selection. */
   tier?: string;
   onUsage?: (usage: GroqUsage) => void;
+  /** Fired when the live provider/model is known (including Groq → Ollama fallback). */
+  onResolved?: (info: { provider: ModelProvider; model: string }) => void;
+  /**
+   * User picked this model (tier override or fixed-model mode).
+   * Do not remap to the instance primary, and do not silently fall back to Ollama.
+   */
+  lockProvider?: boolean;
 };
 
 /**
- * Stream assistant tokens from the requested provider, with pragmatic fallbacks:
- *   bedrock → groq → ollama
- *   groq    → ollama
- *   ollama  → (error if model missing)
+ * Stream assistant tokens from the requested provider.
+ * Hosted installs do not silently fall back to Ollama. Local installs may use an
+ * already-installed Ollama chat model when Groq is configured but the live call fails —
+ * unless `lockProvider` is set (user-picked model).
  */
 export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> {
   const { messages, model, onUsage, tier = "Standard" } = opts;
   let provider = opts.provider;
+  let ollamaForcedModel: string | null = null;
+  const lockProvider = Boolean(opts.lockProvider);
 
-  // Env override for portfolio demos: force Bedrock when explicitly requested.
-  if (process.env.MODEL_PROVIDER === "bedrock" && isBedrockConfigured()) {
-    provider = "bedrock";
+  const secrets = await resolveRuntimeSecrets();
+  const bedrockOk = await isBedrockConfigured();
+  const groqOk = await hasGroqRuntime();
+
+  // Instance Settings / env can force a primary — unless the user picked a model.
+  if (!lockProvider) {
+    if (
+      (secrets.primaryProvider === "bedrock" || process.env.MODEL_PROVIDER === "bedrock") &&
+      bedrockOk
+    ) {
+      provider = "bedrock";
+    } else if (secrets.primaryProvider === "ollama") {
+      provider = "ollama";
+    } else if (secrets.primaryProvider === "groq" && groqOk) {
+      provider = "groq";
+    }
   }
 
+  const ollamaPrimary =
+    !lockProvider && (secrets.primaryProvider === "ollama" || opts.provider === "ollama");
+
   if (provider === "bedrock") {
-    if (!isBedrockConfigured()) {
-      console.warn("[provider] Bedrock requested but not configured — falling back.");
-      provider = isGroqAvailable() ? "groq" : "ollama";
+    if (!bedrockOk) {
+      if (ollamaPrimary) {
+        console.warn("[provider] Bedrock requested but not configured — falling back to Ollama.");
+        provider = "ollama";
+      } else if (groqOk) {
+        console.warn("[provider] Bedrock requested but not configured — falling back to Groq.");
+        provider = "groq";
+      } else {
+        throw new Error(await bedrockBlockReason() ?? "Bedrock is not configured.");
+      }
     } else {
       try {
-        for await (const delta of streamBedrockChat(messages, model)) {
+        // An explicitly chosen Bedrock model wins. `bedrockChatModel` is only
+        // the default for traffic routed here by primaryProvider, where `model`
+        // is a Groq id that Bedrock would reject.
+        const bedrockModel =
+          opts.provider === "bedrock" ? model : secrets.bedrockChatModel || model;
+        for await (const delta of streamBedrockChat(messages, bedrockModel)) {
           yield delta;
         }
         return;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[provider] Bedrock failed (${msg.slice(0, 80)}). Falling back.`);
-        provider = isGroqAvailable() ? "groq" : "ollama";
+        if (lockProvider) {
+          throw err instanceof Error ? err : new Error(msg);
+        }
+        if (ollamaPrimary) {
+          console.warn(`[provider] Bedrock failed (${msg.slice(0, 80)}). Falling back to Ollama.`);
+          provider = "ollama";
+        } else if (groqOk) {
+          console.warn(`[provider] Bedrock failed (${msg.slice(0, 80)}). Falling back to Groq.`);
+          provider = "groq";
+        } else {
+          throw err instanceof Error ? err : new Error(msg);
+        }
       }
     }
   }
 
-  if (provider === "groq" && isGroqAvailable()) {
+  if (provider === "groq") {
+    if (!groqOk) {
+      const groqBlock = await getGroqUnavailableReason();
+      if (groqBlock === "vendor_risk_required") {
+        throw new Error(`${VENDOR_RISK_REQUIRED_CODE}:${VENDOR_RISK_REQUIRED_MESSAGE}`);
+      }
+      throw new Error(GROQ_NOT_CONFIGURED_MESSAGE);
+    }
     try {
+      opts.onResolved?.({ provider: "groq", model });
       for await (const delta of streamGroqChat(messages, model, onUsage)) {
         yield delta;
       }
       return;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[provider] Groq failed (${msg.slice(0, 80)}). Falling back to Ollama.`);
+      const formatted = formatGroqChatError(err);
+      if (lockProvider) {
+        throw new Error(formatted);
+      }
+      if (ollamaPrimary) {
+        console.warn(`[provider] Groq failed (${formatted.slice(0, 80)}). Falling back to Ollama.`);
+        provider = "ollama";
+      } else if (!isHostedRuntime()) {
+        const probe = await probeOllama(2000);
+        const installed = pickInstalledChatModel(
+          probe.tags.filter(t => !isOllamaEmbedModel(t)),
+          probeHardware(),
+        );
+        if (probe.reachable && installed) {
+          console.warn(
+            `[provider] Groq failed (${formatted.slice(0, 80)}). Using installed Ollama ${installed}.`,
+          );
+          provider = "ollama";
+          ollamaForcedModel = installed;
+        } else {
+          throw new Error(formatted);
+        }
+      } else {
+        throw new Error(formatted);
+      }
     }
   }
 
-  const fallbackModel =
-    provider === "ollama" ? model : ollamaFallbackForMode(tier);
+  if (provider === "openai") {
+    if (!(await hasOpenAIRuntime())) {
+      throw new Error("OpenAI is not configured. Add an API key in Settings → Providers.");
+    }
+    for await (const delta of streamOpenAIChat(messages, model)) {
+      yield delta;
+    }
+    return;
+  }
+
+  if (provider === "anthropic") {
+    if (!(await hasAnthropicRuntime())) {
+      throw new Error("Anthropic is not configured. Add an API key in Settings → Providers.");
+    }
+    for await (const delta of streamAnthropicChat(messages, model)) {
+      yield delta;
+    }
+    return;
+  }
+
+  if (provider === "google") {
+    if (!(await hasGoogleRuntime())) {
+      throw new Error("Google Gemini is not configured. Add an API key in Settings → Providers.");
+    }
+    for await (const delta of streamGoogleChat(messages, model)) {
+      yield delta;
+    }
+    return;
+  }
+
+  if (provider !== "ollama" && !ollamaPrimary && opts.provider !== "ollama") {
+    throw new Error(GROQ_NOT_CONFIGURED_MESSAGE);
+  }
+
+  const fallbackModel = ollamaForcedModel ?? resolveOllamaChatModel(
+    provider === "ollama" ? model : ollamaFallbackForMode(tier),
+    tier,
+  );
   const check = await checkOllamaModel(fallbackModel);
   if (check) {
-    throw new Error(
-      "No chat provider available. Set GROQ_API_KEY, configure Bedrock, or start Ollama.",
-    );
+    throw new Error(check);
   }
+  opts.onResolved?.({ provider: "ollama", model: fallbackModel });
   for await (const delta of streamOllamaChat(messages, fallbackModel)) {
     yield delta;
   }

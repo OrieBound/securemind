@@ -1,6 +1,6 @@
 /**
  * GET /api/memory?workspaceId=<id>
- * Returns workspace facts, user facts, session summaries, and memory stats.
+ * Returns workspace facts, session summaries, and memory stats.
  */
 
 import { NextRequest } from "next/server";
@@ -28,15 +28,12 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: "Workspace not found" }, { status: 404 });
   }
 
-  const [workspaceFacts, userFacts, sessionSummaries, semanticFragmentCount, documentFragmentCount] =
+  const [workspaceFacts, sessionSummaries, semanticFragmentCount, documentFragmentCount] =
     await Promise.all([
       db.workspaceFact.findMany({
         where: { workspaceId },
-        orderBy: { updatedAt: "desc" },
-      }),
-      db.userFact.findMany({
-        where: { userId },
-        orderBy: { updatedAt: "desc" },
+        orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
+        take: 80,
       }),
       db.sessionSummary.findMany({
         where: { session: { workspaceId } },
@@ -54,7 +51,6 @@ export async function GET(req: NextRequest) {
 
   return Response.json({
     workspaceFacts,
-    userFacts,
     sessionSummaries,
     stats: {
       semanticFragmentCount,

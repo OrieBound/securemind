@@ -4,10 +4,7 @@
  */
 
 import { db } from "@/lib/db";
-import {
-  estimateTurnCostUsd,
-  GROQ_PRICING_VERSION,
-} from "@/lib/pricing/groq";
+import { estimateInferenceCost } from "@/lib/pricing";
 import {
   riskLevelForCategory,
   type GroundingStatus,
@@ -80,9 +77,27 @@ export async function recordInferenceEvent(input: InferenceEventInput): Promise<
   const completion = input.completionTokens ?? null;
   let estimatedCostUsd: number | null = null;
   let pricingVersion: string | null = null;
-  if (prompt != null && completion != null && input.provider === "groq") {
-    estimatedCostUsd = estimateTurnCostUsd(input.model, prompt, completion);
-    pricingVersion = GROQ_PRICING_VERSION;
+
+  // Ollama is $0 without tokens; cloud providers need token counts for a list estimate.
+  const provider = input.provider.toLowerCase();
+  if (provider === "ollama") {
+    const est = estimateInferenceCost({
+      provider,
+      model: input.model,
+      promptTokens: prompt ?? 0,
+      completionTokens: completion ?? 0,
+    });
+    estimatedCostUsd = est.estimatedCostUsd;
+    pricingVersion = est.pricingVersion;
+  } else if (prompt != null && completion != null) {
+    const est = estimateInferenceCost({
+      provider,
+      model: input.model,
+      promptTokens: prompt,
+      completionTokens: completion,
+    });
+    estimatedCostUsd = est.estimatedCostUsd;
+    pricingVersion = est.pricingVersion;
   }
 
   await db.inferenceEvent.create({

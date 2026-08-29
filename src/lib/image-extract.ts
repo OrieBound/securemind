@@ -1,21 +1,15 @@
 /**
  * Turn image bytes into searchable text for Knowledge ingest.
  *
- * Ops screenshots (console pages, log panes, tickets) often carry the real
- * evidence. We ask Groq's vision model for a plain transcript + short scene
- * summary when GROQ_API_KEY is set. The result is scrubbed by scrubDocumentText
- * before persist — screenshots can contain emails, phones, and secrets too.
- *
- * Without Groq, we store a minimal stub so the file still appears in Knowledge.
+ * Failed or skipped vision extract must not be indexed as Knowledge.
  */
 
 import Groq from "groq-sdk";
-import { isGroqAvailable } from "@/lib/models/groq";
+import { hasGroqRuntime } from "@/lib/models/groq";
 
 const VISION_MODEL =
   process.env.GROQ_VISION_MODEL ?? "meta-llama/llama-4-scout-17b-16e-instruct";
 
-/** Cap payload size sent to the vision API (base64 expands ~4/3). */
 const MAX_VISION_BYTES = 4 * 1024 * 1024;
 
 const EXTRACT_PROMPT =
@@ -25,34 +19,38 @@ const EXTRACT_PROMPT =
   "3. Do not invent text that is not visible. If nothing is readable, say so.\n" +
   "Output plain text only — no markdown fences.";
 
-function imageStub(mimeType: string, byteLength: number, filename: string, reason: string): string {
-  return (
-    `Image: ${filename}\n` +
-    `MIME: ${mimeType}\n` +
-    `Size: ${byteLength} bytes\n` +
-    `Extraction: ${reason}\n` +
-    `The file is registered in this workspace's Knowledge library.`
-  );
+export class ImageExtractError extends Error {
+  code: string;
+  constructor(message: string, code: string) {
+    super(message);
+    this.name = "ImageExtractError";
+    this.code = code;
+  }
+}
+
+export function isFailedExtractContent(text: string): boolean {
+  return /Extraction:\s*(skipped|failed|vision model returned empty)/i.test(text);
 }
 
 /**
  * Extract searchable text from an image buffer.
- * Never throws — callers always get a non-empty string suitable for scrubbing.
+ * Throws ImageExtractError when vision is unavailable or fails — do not persist stubs.
  */
 export async function extractTextFromImage(
   buffer: Buffer,
   mimeType: string,
   filename: string,
 ): Promise<string> {
-  if (!isGroqAvailable()) {
-    return imageStub(mimeType, buffer.length, filename, "skipped (no GROQ_API_KEY)");
+  if (!(await hasGroqRuntime())) {
+    throw new ImageExtractError(
+      "Image text could not be extracted. Add a Groq key (or use a text document) and retry.",
+      "VISION_UNAVAILABLE",
+    );
   }
   if (buffer.length > MAX_VISION_BYTES) {
-    return imageStub(
-      mimeType,
-      buffer.length,
-      filename,
-      `skipped (image larger than ${MAX_VISION_BYTES} bytes for vision extract)`,
+    throw new ImageExtractError(
+      `Image is too large for vision extract (over ${MAX_VISION_BYTES} bytes).`,
+      "IMAGE_TOO_LARGE",
     );
   }
 
@@ -77,17 +75,20 @@ export async function extractTextFromImage(
 
     const text = completion.choices[0]?.message?.content?.trim() ?? "";
     if (!text) {
-      return imageStub(mimeType, buffer.length, filename, "vision model returned empty text");
+      throw new ImageExtractError(
+        "The vision model returned no readable text from this image.",
+        "EMPTY_VISION",
+      );
     }
 
-    return (
-      `Image: ${filename}\n` +
-      `MIME: ${mimeType}\n\n` +
-      `${text}`
-    );
+    return `Image: ${filename}\nMIME: ${mimeType}\n\n${text}`;
   } catch (err) {
+    if (err instanceof ImageExtractError) throw err;
     const msg = err instanceof Error ? err.message : String(err);
     console.warn("[image-extract] vision extract failed:", msg.slice(0, 160));
-    return imageStub(mimeType, buffer.length, filename, `failed (${msg.slice(0, 80)})`);
+    throw new ImageExtractError(
+      "Image extraction failed. The file was not indexed as Knowledge.",
+      "VISION_FAILED",
+    );
   }
 }

@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -13,10 +12,18 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { AnalyticsShell, rangeLabelOf, useAnalyticsFilters } from "./analytics-shell";
+import {
+  AnalyticsShell,
+  rangeLabelOf,
+  useAnalyticsFilters,
+  type InsightsSubjectScope,
+} from "./analytics-shell";
 import { ChartFrame } from "./chart-frame";
+import { tooltipStyle, useChartTheme } from "./use-chart-theme";
 import { KpiCard } from "./kpi-card";
-import { fetchAnalyticsJson, fmtUsd, shortModel } from "@/lib/analytics/client";
+import { fmtUsd, fmtUsdLabeled, shortModel } from "@/lib/analytics/client";
+import { useAnalyticsQuery } from "./use-analytics-query";
+import { cn } from "@/lib/utils";
 
 type WorkspaceOpt = { id: string; name: string };
 
@@ -42,34 +49,30 @@ type CostPayload = {
     savingsUsd: number;
     explanation: string;
   };
+  monthCap?: {
+    spentUsd: number;
+    capUsd: number | null;
+    resetsAt: string;
+    capped: boolean;
+    warningLevel?: "none" | "warn50" | "warn80" | "blocked";
+  };
 };
 
-type Props = { workspaces: WorkspaceOpt[] };
+type Props = {
+  workspaces: WorkspaceOpt[];
+  subject?: InsightsSubjectScope | null;
+  onBackToAdmin?: () => void;
+};
 
-export function CostAnalyticsView({ workspaces }: Props) {
+export function CostAnalyticsView({ workspaces, subject = null, onBackToAdmin }: Props) {
+  const chart = useChartTheme();
   const { range, setRange, workspaceId, setWorkspaceId } = useAnalyticsFilters("30d");
-  const [data, setData] = useState<CostPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    fetchAnalyticsJson<CostPayload>("cost", { range, workspaceId })
-      .then(d => {
-        if (!cancelled) setData(d);
-      })
-      .catch(e => {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [range, workspaceId]);
+  const asUser = subject?.userId ?? null;
+  const { data, loading, error, retry } = useAnalyticsQuery<CostPayload>("cost", {
+    range,
+    workspaceId,
+    asUser,
+  });
 
   const rangeLabel = rangeLabelOf(range);
   const workspaceLabel =
@@ -91,31 +94,111 @@ export function CostAnalyticsView({ workspaces }: Props) {
       ]
     : [];
 
+  const monthCap = data?.monthCap;
+  const monthPct =
+    monthCap && monthCap.capUsd != null && monthCap.capUsd > 0
+      ? Math.min(100, (monthCap.spentUsd / monthCap.capUsd) * 100)
+      : null;
+  const resetLabel = monthCap?.resetsAt
+    ? new Date(monthCap.resetsAt).toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        timeZone: "UTC",
+      }) + " UTC"
+    : null;
+
   return (
     <AnalyticsShell
       active="cost"
       title="Estimated AI inference cost"
-      subtitle="Groq list-price estimates from recorded token usage. Not complete AWS, infrastructure, or organizational cost."
+      subtitle="Conservative list-price estimates (+10% uplift) from recorded token usage. Not an invoice or full AWS bill."
       workspaces={workspaces}
       range={range}
       workspaceId={workspaceId}
       onRangeChange={setRange}
       onWorkspaceChange={setWorkspaceId}
+      subject={subject}
+      onBackToAdmin={onBackToAdmin}
     >
+      {error && (
+        <div className="flex items-center gap-3 text-sm text-destructive">
+          <span>{error}</span>
+          <button type="button" onClick={retry} className="underline text-foreground">
+            Retry
+          </button>
+        </div>
+      )}
+      {monthCap && (
+        <div
+          className={cn(
+            "rounded-xl border px-4 py-3 space-y-2",
+            monthCap.capped
+              ? "border-[var(--destructive-border)] bg-[var(--destructive-soft)]"
+              : "border-border bg-card",
+          )}
+        >
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-sm font-semibold text-foreground">This month (UTC)</h3>
+            {resetLabel && (
+              <p className="text-[0.65rem] text-muted-foreground">Resets {resetLabel}</p>
+            )}
+          </div>
+          <p className="text-lg font-semibold tabular-nums text-foreground">
+            {loading ? "…" : fmtUsdLabeled(monthCap.spentUsd)}
+            <span className="text-sm font-normal text-muted-foreground">
+              {" "}
+              of {monthCap.capUsd == null ? "Unlimited" : fmtUsdLabeled(monthCap.capUsd)}
+            </span>
+          </p>
+          {monthPct != null && (
+            <div className="h-2 rounded-full bg-secondary overflow-hidden">
+              <div
+                className={cn(
+                  "h-full rounded-full",
+                  monthCap.capped || monthCap.warningLevel === "blocked"
+                    ? "bg-destructive"
+                    : monthPct >= 80 || monthCap.warningLevel === "warn80"
+                      ? "bg-[var(--warning)]"
+                      : monthPct >= 50 || monthCap.warningLevel === "warn50"
+                        ? "bg-amber-400"
+                        : "bg-primary",
+                )}
+                style={{ width: `${monthPct}%` }}
+              />
+            </div>
+          )}
+          {monthCap.warningLevel === "warn50" && (
+            <p className="text-[0.7rem] text-amber-200/80">Approaching monthly cost cap (50%).</p>
+          )}
+          {monthCap.warningLevel === "warn80" && (
+            <p className="text-[0.7rem] text-[var(--warning)]">Monthly cost cap nearly reached (80%).</p>
+          )}
+          {(monthCap.capped || monthCap.warningLevel === "blocked") && (
+            <p className="text-[0.7rem] text-destructive">
+              Monthly cost cap reached. Billable external calls are paused; local models can still run.
+            </p>
+          )}
+          <p className="text-[0.7rem] text-muted-foreground">
+            Estimates only — provider invoices remain authoritative.
+          </p>
+        </div>
+      )}
+
       <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs text-amber-100/70">
         {disclaimer ?? "Estimates only."}
         {data && (
-          <span className="text-white/35">
+          <span className="text-foreground/35">
             {" "}
             Pricing {data.pricing.version} (effective {data.pricing.effective}).
             {data.kpis.unpricedRequests > 0 &&
-              ` ${data.kpis.unpricedRequests} request(s) had no billable token usage (e.g. Ollama).`}
+              ` ${data.kpis.unpricedRequests} request(s) used floor pricing (unknown model rate or missing tokens).`}
           </span>
         )}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-        <KpiCard label="Estimated period cost" value={loading ? "…" : fmtUsd(data?.kpis.estimatedCostUsd)} />
+        <KpiCard label="Estimated period cost" value={loading ? "…" : `${fmtUsd(data?.kpis.estimatedCostUsd)} USD`} />
         <KpiCard label="Avg cost / request" value={loading ? "…" : fmtUsd(data?.kpis.avgCostPerRequest)} />
         <KpiCard label="Input-token cost" value={loading ? "…" : fmtUsd(data?.kpis.inputTokenCostUsd)} />
         <KpiCard label="Output-token cost" value={loading ? "…" : fmtUsd(data?.kpis.outputTokenCostUsd)} />
@@ -146,14 +229,14 @@ export function CostAnalyticsView({ workspaces }: Props) {
         >
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={data?.overTime ?? []}>
-              <CartesianGrid stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="date" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} />
-              <YAxis tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} />
+              <CartesianGrid stroke={chart.grid} />
+              <XAxis dataKey="date" tick={{ fill: chart.tick, fontSize: 11 }} />
+              <YAxis tick={{ fill: chart.tick, fontSize: 11 }} />
               <Tooltip
-                contentStyle={{ background: "#111827", border: "1px solid rgba(255,255,255,0.1)" }}
+                contentStyle={tooltipStyle(chart)}
                 formatter={(v) => fmtUsd(typeof v === "number" ? v : Number(v))}
               />
-              <Line type="monotone" dataKey="costUsd" stroke="#fbbf24" strokeWidth={2} dot={false} name="Est. USD" />
+              <Line type="monotone" dataKey="costUsd" stroke={chart.series[4]} strokeWidth={2} dot={false} name="Est. USD" />
             </LineChart>
           </ResponsiveContainer>
         </ChartFrame>
@@ -176,14 +259,14 @@ export function CostAnalyticsView({ workspaces }: Props) {
               layout="vertical"
               margin={{ left: 8 }}
             >
-              <CartesianGrid stroke="rgba(255,255,255,0.06)" horizontal={false} />
-              <XAxis type="number" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} />
-              <YAxis type="category" dataKey="label" width={110} tick={{ fill: "rgba(255,255,255,0.55)", fontSize: 11 }} />
+              <CartesianGrid stroke={chart.grid} horizontal={false} />
+              <XAxis type="number" tick={{ fill: chart.tick, fontSize: 11 }} />
+              <YAxis type="category" dataKey="label" width={110} tick={{ fill: chart.tick, fontSize: 11 }} />
               <Tooltip
-                contentStyle={{ background: "#111827", border: "1px solid rgba(255,255,255,0.1)" }}
+                contentStyle={tooltipStyle(chart)}
                 formatter={(v) => fmtUsd(typeof v === "number" ? v : Number(v))}
               />
-              <Bar dataKey="costUsd" fill="#fbbf24" name="Est. USD" />
+              <Bar dataKey="costUsd" fill={chart.series[4]} name="Est. USD" />
             </BarChart>
           </ResponsiveContainer>
         </ChartFrame>
@@ -202,14 +285,14 @@ export function CostAnalyticsView({ workspaces }: Props) {
         >
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={data?.byWorkspace ?? []} layout="vertical" margin={{ left: 8 }}>
-              <CartesianGrid stroke="rgba(255,255,255,0.06)" horizontal={false} />
-              <XAxis type="number" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} />
-              <YAxis type="category" dataKey="name" width={140} tick={{ fill: "rgba(255,255,255,0.55)", fontSize: 11 }} />
+              <CartesianGrid stroke={chart.grid} horizontal={false} />
+              <XAxis type="number" tick={{ fill: chart.tick, fontSize: 11 }} />
+              <YAxis type="category" dataKey="name" width={140} tick={{ fill: chart.tick, fontSize: 11 }} />
               <Tooltip
-                contentStyle={{ background: "#111827", border: "1px solid rgba(255,255,255,0.1)" }}
+                contentStyle={tooltipStyle(chart)}
                 formatter={(v) => fmtUsd(typeof v === "number" ? v : Number(v))}
               />
-              <Bar dataKey="costUsd" fill="#a78bfa" name="Est. USD" />
+              <Bar dataKey="costUsd" fill={chart.series[2]} name="Est. USD" />
             </BarChart>
           </ResponsiveContainer>
         </ChartFrame>
@@ -228,14 +311,14 @@ export function CostAnalyticsView({ workspaces }: Props) {
         >
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={ioRows}>
-              <CartesianGrid stroke="rgba(255,255,255,0.06)" />
-              <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} />
-              <YAxis tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} />
+              <CartesianGrid stroke={chart.grid} />
+              <XAxis dataKey="label" tick={{ fill: chart.tick, fontSize: 11 }} />
+              <YAxis tick={{ fill: chart.tick, fontSize: 11 }} />
               <Tooltip
-                contentStyle={{ background: "#111827", border: "1px solid rgba(255,255,255,0.1)" }}
+                contentStyle={tooltipStyle(chart)}
                 formatter={(v) => fmtUsd(typeof v === "number" ? v : Number(v))}
               />
-              <Bar dataKey="costUsd" fill="#34d399" name="Est. USD" />
+              <Bar dataKey="costUsd" fill={chart.series[3]} name="Est. USD" />
             </BarChart>
           </ResponsiveContainer>
         </ChartFrame>
@@ -260,15 +343,15 @@ export function CostAnalyticsView({ workspaces }: Props) {
       >
         <ResponsiveContainer width="100%" height={220}>
           <BarChart data={baselineRows}>
-            <CartesianGrid stroke="rgba(255,255,255,0.06)" />
-            <XAxis dataKey="label" tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} />
-            <YAxis tick={{ fill: "rgba(255,255,255,0.45)", fontSize: 11 }} />
+            <CartesianGrid stroke={chart.grid} />
+            <XAxis dataKey="label" tick={{ fill: chart.tick, fontSize: 11 }} />
+            <YAxis tick={{ fill: chart.tick, fontSize: 11 }} />
             <Tooltip
-              contentStyle={{ background: "#111827", border: "1px solid rgba(255,255,255,0.1)" }}
+              contentStyle={tooltipStyle(chart)}
               formatter={(v) => fmtUsd(typeof v === "number" ? v : Number(v))}
             />
             <Legend />
-            <Bar dataKey="costUsd" fill="#f472b6" name="Est. USD" />
+            <Bar dataKey="costUsd" fill={chart.series[5]} name="Est. USD" />
           </BarChart>
         </ResponsiveContainer>
       </ChartFrame>
