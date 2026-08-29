@@ -1,0 +1,19 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  DEPRECATED entrypoint. SecureMind IaC lives in composable stacks under infra/stacks/.
+  Use: node infra/scripts/deploy.mjs --stack api
+  Templates:
+    - infra/stacks/bedrock-lab/template.yaml
+    - infra/stacks/data-dynamodb/template.yaml (hosted vectors; ADR 0007)
+    - infra/stacks/data-aurora/template.yaml  (optional; parked)
+    - infra/stacks/api/template.yaml
+
+# Kept so older docs that `cd infra && sam build` fail loudly with a clear message
+# rather than deploying a stale monolith. Prefer the scripts above.
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  DeprecatedPlaceholder:
+    Type: AWS::CloudFormation::WaitConditionHandle
+Outputs:
+  MigrationNote:
+    Value: "Use infra/stacks/* via infra/scripts/deploy.mjs — see infra/README.md"

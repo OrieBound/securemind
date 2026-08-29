@@ -17,5 +17,5 @@ if ($connections) {
 
 Set-Location $PSScriptRoot\..
 Write-Host "  Generating Prisma client..."
-npx prisma generate | Out-Null
-npx next dev
+& ".\node_modules\.bin\prisma.cmd" generate | Out-Null
+& ".\node_modules\.bin\next.cmd" dev

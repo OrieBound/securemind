@@ -33,6 +33,8 @@ Thumbs.db
 .cursor/mcp.json
 
 # debug
+dev-server.err.log
+dev-server.out.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -41,13 +43,19 @@ yarn-error.log*
 # Local database dumps — contain conversation content
 /backups/
 
+# Local originals + generated instance encryption key
+/.data/
+
 # Floci Cognito provisioning output (pool/client ids for local emulator)
 scripts/.floci-cognito.env
+scripts/.floci-dynamodb.env
 
 # Secrets / credentials — never commit these.
 # .env.example is the one exception: it documents required variables with no values.
 .env*
 !.env.example
+!.env.onprem.example
+!infra/env.deploy.example
 aws-credentials*
 serviceAccountKey*
 
@@ -59,4 +67,6 @@ serviceAccountKey*
 next-env.d.ts
 
 /src/generated/prisma
+infra/terraform/backend.hcl
+infra/terraform/.build/
 COMMIT_MSG.tmp

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { SignJWT } from "jose";
-import { getIdentity, LOCAL_USER_ID } from "./identity";
+import { getIdentity, LOCAL_USER_ID, roleFromGroups } from "./identity";
 
 const ENV_KEYS = [
   "AUTH_MODE",
@@ -36,6 +36,7 @@ describe("getIdentity — local mode (default)", () => {
     const id = await getIdentity(new Request("http://localhost/api/anything"));
     expect(id.userId).toBe(LOCAL_USER_ID);
     expect(id.authenticated).toBe(false);
+    expect(id.role).toBe("super_admin");
   });
 
   it("ignores a userId in the query string", async () => {
@@ -84,6 +85,17 @@ describe("getIdentity — local mode (default)", () => {
   });
 });
 
+describe("roleFromGroups", () => {
+  it("maps Owner to Super Admin and Admin/Operator to Admin", () => {
+    expect(roleFromGroups(["Owner"])).toBe("super_admin");
+    expect(roleFromGroups(["Admin"])).toBe("admin");
+    expect(roleFromGroups(["admin"])).toBe("admin");
+    expect(roleFromGroups(["Operator"])).toBe("admin");
+    expect(roleFromGroups(["Member"])).toBe("member");
+    expect(roleFromGroups([])).toBe("member");
+  });
+});
+
 describe("getIdentity — jwt-hs256 mode", () => {
   const secret = "test-dev-secret-please-rotate";
 
@@ -106,6 +118,24 @@ describe("getIdentity — jwt-hs256 mode", () => {
     }));
     expect(id.userId).toBe("user-abc");
     expect(id.authenticated).toBe(true);
+    expect(id.role).toBe("member");
+  });
+
+  it("maps cognito:groups Admin to admin role", async () => {
+    setEnv("AUTH_MODE", "jwt-hs256");
+    setEnv("AUTH_DEV_JWT_SECRET", secret);
+    setEnv("AUTH_ALLOW_LOCAL_FALLBACK", "false");
+    const token = await new SignJWT({ "cognito:groups": ["Admin"] })
+      .setProtectedHeader({ alg: "HS256" })
+      .setSubject("admin-user")
+      .setIssuedAt()
+      .setExpirationTime("1h")
+      .sign(new TextEncoder().encode(secret));
+    const id = await getIdentity(new Request("http://localhost/api/x", {
+      headers: { authorization: `Bearer ${token}` },
+    }));
+    expect(id.role).toBe("admin");
+    expect(id.groups).toContain("Admin");
   });
 
   it("falls back to local when token is missing and fallback is allowed", async () => {

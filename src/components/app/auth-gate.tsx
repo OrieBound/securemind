@@ -1,19 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { AuthSessionProvider } from "@/components/app/auth-session";
+import { PRODUCT_NAME, PRODUCT_POSITIONING } from "@/lib/branding";
 import { cn } from "@/lib/utils";
+import { storeClientAccessToken } from "@/lib/client/api-base";
 
 type MeResponse = {
   userId: string;
   authenticated: boolean;
   email: string | null;
   mode: string;
+  role?: "super_admin" | "admin" | "member";
+  groups?: string[];
 };
 
 type Props = {
   children: React.ReactNode;
 };
+
+type GateMode = "login" | "signup" | "forgot" | "reset";
 
 /**
  * When the server is in Cognito mode, require a session before showing the app.
@@ -22,22 +29,47 @@ type Props = {
 export function AuthGate({ children }: Props) {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState<"login" | "signup">("login");
-  const [email, setEmail] = useState("demo@securemind.local");
-  const [password, setPassword] = useState("<demo-password>!");
+  const [mode, setMode] = useState<GateMode>("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function refreshMe() {
-    const res = await fetch("/api/auth/me", { credentials: "same-origin" });
-    if (res.status === 401) {
+    try {
+      const res = await fetch("/api/auth/me", { credentials: "same-origin" });
+      if (res.status === 401) {
+        setMe({ userId: "", authenticated: false, email: null, mode: "cognito" });
+        return;
+      }
+      if (!res.ok) {
+        let modeHint = "cognito";
+        try {
+          const errBody = (await res.json()) as { mode?: string };
+          if (errBody.mode) modeHint = errBody.mode;
+        } catch {
+          /* HTML 404 / empty body */
+        }
+        setMe({ userId: "", authenticated: false, email: null, mode: modeHint });
+        setError(
+          res.status === 404
+            ? "Session API unavailable. Restart npm run dev, or set AUTH_MODE=local in .env.local."
+            : `Session check failed (${res.status}).`,
+        );
+        return;
+      }
+      const data = (await res.json()) as MeResponse;
+      setMe(data);
+    } catch {
       setMe({ userId: "", authenticated: false, email: null, mode: "cognito" });
+      setError("Could not reach the server. Is npm run dev running?");
+    } finally {
       setLoading(false);
-      return;
     }
-    const data = (await res.json()) as MeResponse;
-    setMe(data);
-    setLoading(false);
   }
 
   useEffect(() => {
@@ -48,7 +80,51 @@ export function AuthGate({ children }: Props) {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
+      if (mode === "forgot") {
+        const res = await fetch("/api/auth/forgot-password", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+        const data = (await res.json()) as { error?: string; message?: string };
+        if (!res.ok) {
+          setError(data.error ?? "Request failed");
+          return;
+        }
+        setNotice(data.message ?? "If an account exists, a reset code was sent.");
+        setMode("reset");
+        return;
+      }
+
+      if (mode === "reset") {
+        const res = await fetch("/api/auth/confirm-forgot-password", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email,
+            code,
+            newPassword,
+            confirmPassword,
+          }),
+        });
+        const data = (await res.json()) as { error?: string; message?: string };
+        if (!res.ok) {
+          setError(data.error ?? "Reset failed");
+          return;
+        }
+        setNotice(data.message ?? "Password reset. Sign in with your new password.");
+        setMode("login");
+        setPassword("");
+        setCode("");
+        setNewPassword("");
+        setConfirmPassword("");
+        return;
+      }
+
       const path = mode === "login" ? "/api/auth/login" : "/api/auth/signup";
       const res = await fetch(path, {
         method: "POST",
@@ -56,7 +132,12 @@ export function AuthGate({ children }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      const data = await res.json() as { error?: string; confirmed?: boolean; message?: string };
+      const data = await res.json() as {
+        error?: string;
+        confirmed?: boolean;
+        message?: string;
+        accessToken?: string;
+      };
       if (!res.ok) {
         setError(data.error ?? "Request failed");
         return;
@@ -66,6 +147,7 @@ export function AuthGate({ children }: Props) {
         setMode("login");
         return;
       }
+      if (data.accessToken) storeClientAccessToken(data.accessToken);
       await refreshMe();
     } catch {
       setError("Network error");
@@ -74,104 +156,188 @@ export function AuthGate({ children }: Props) {
     }
   }
 
-  async function logout() {
+  const logout = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
-    setMe({ userId: "", authenticated: false, email: null, mode: me?.mode ?? "cognito" });
-  }
+    storeClientAccessToken(null);
+    setMe(prev => ({
+      userId: "",
+      authenticated: false,
+      email: null,
+      mode: prev?.mode ?? "cognito",
+    }));
+  }, []);
+
+  const session = useMemo(
+    () =>
+      me && me.authenticated
+        ? {
+            userId: me.userId,
+            email: me.email,
+            role: me.role,
+            logout,
+          }
+        : null,
+    [me, logout],
+  );
 
   if (loading) {
     return (
-      <div className="flex h-dvh items-center justify-center bg-background text-sm text-white/40">
+      <div className="flex h-dvh items-center justify-center bg-background text-sm text-foreground/40">
         Checking session…
       </div>
     );
   }
 
-  // Local mode — no gate
   if (me && me.mode === "local") {
-    return <>{children}</>;
+    return <AuthSessionProvider value={null}>{children}</AuthSessionProvider>;
   }
 
   if (me && me.authenticated) {
     return (
-      <div className="relative h-dvh">
-        <div className="absolute top-3 right-3 z-50 flex items-center gap-2">
-          <span className="text-[0.65rem] text-white/35 truncate max-w-[12rem]">
-            {me.email ?? me.userId.slice(0, 8)}
-          </span>
-          <button
-            type="button"
-            onClick={() => void logout()}
-            className="text-[0.65rem] text-white/45 hover:text-white/70 px-2 py-1 rounded-md border border-white/10 bg-white/[0.03]"
-          >
-            Sign out
-          </button>
-        </div>
+      <AuthSessionProvider value={session}>
         {children}
-      </div>
+      </AuthSessionProvider>
     );
   }
 
+  const title =
+    mode === "login" ? "Sign in"
+    : mode === "signup" ? "Create account"
+    : mode === "forgot" ? "Forgot password"
+    : "Reset password";
+
   return (
     <div className="flex h-dvh items-center justify-center bg-background px-4">
-      <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#0e0e14] p-6 shadow-2xl space-y-5">
+      <div className="w-full max-w-sm rounded-2xl border border-foreground/10 bg-popover p-6 shadow-2xl space-y-5">
         <div>
-          <p className="text-[0.65rem] uppercase tracking-[0.2em] text-indigo-300/60 font-semibold">
-            SecureMind
+          <p className="text-meta uppercase tracking-[0.2em] text-[var(--primary-soft-foreground)] font-medium">
+            {PRODUCT_NAME}
           </p>
-          <h1 className="mt-1 text-lg font-bold text-white/90">
-            {mode === "login" ? "Sign in" : "Create account"}
-          </h1>
-          <p className="mt-1.5 text-xs text-white/40 leading-relaxed">
-            Local Floci Cognito — $0, no AWS account. Same pool/client shape you will recreate in real Cognito later.
+          <h1 className="text-title mt-1.5">{title}</h1>
+          <p className="text-ui text-[var(--text-muted)] mt-2 leading-[var(--leading-body)]">
+            {mode === "forgot" || mode === "reset"
+              ? "We will never confirm whether an email is registered."
+              : PRODUCT_POSITIONING}
           </p>
         </div>
 
-        <form onSubmit={submit} className="space-y-3">
-          <label className="block space-y-1">
-            <span className="text-[0.65rem] uppercase tracking-wider text-white/30 font-semibold">Email</span>
+        <form onSubmit={submit} className="space-y-3.5">
+          <label className="block space-y-1.5">
+            <span className="text-label uppercase tracking-wider text-[var(--text-muted)]">Email</span>
             <input
               type="email"
               autoComplete="username"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              className="w-full h-10 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-sm text-white/85 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
+              className="w-full h-10 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-3 text-[length:var(--font-size-body)] font-normal text-[var(--text-body)] focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
               required
-            />
-          </label>
-          <label className="block space-y-1">
-            <span className="text-[0.65rem] uppercase tracking-wider text-white/30 font-semibold">Password</span>
-            <input
-              type="password"
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="w-full h-10 rounded-lg border border-white/10 bg-white/[0.04] px-3 text-sm text-white/85 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
-              required
-              minLength={8}
             />
           </label>
 
-          {error && (
-            <p role="alert" className="text-[0.7rem] text-red-300/90">{error}</p>
+          {(mode === "login" || mode === "signup") && (
+            <label className="block space-y-1.5">
+              <span className="text-label uppercase tracking-wider text-[var(--text-muted)]">Password</span>
+              <input
+                type="password"
+                autoComplete={mode === "login" ? "current-password" : "new-password"}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                className="w-full h-10 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-3 text-[length:var(--font-size-body)] font-normal text-[var(--text-body)] focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
+                required
+                minLength={8}
+              />
+            </label>
           )}
 
-          <Button type="submit" disabled={busy} className="w-full h-10 text-sm">
-            {busy ? "Working…" : mode === "login" ? "Sign in" : "Create account"}
+          {mode === "reset" && (
+            <>
+              <label className="block space-y-1.5">
+                <span className="text-label uppercase tracking-wider text-[var(--text-muted)]">Code</span>
+                <input
+                  value={code}
+                  onChange={e => setCode(e.target.value)}
+                  className="w-full h-10 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-3 text-sm font-mono"
+                  required
+                />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-label uppercase tracking-wider text-[var(--text-muted)]">New password</span>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)}
+                  className="w-full h-10 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-3 text-sm"
+                  required
+                  minLength={12}
+                />
+              </label>
+              <label className="block space-y-1.5">
+                <span className="text-label uppercase tracking-wider text-[var(--text-muted)]">Confirm password</span>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={confirmPassword}
+                  onChange={e => setConfirmPassword(e.target.value)}
+                  className="w-full h-10 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-3 text-sm"
+                  required
+                  minLength={12}
+                />
+              </label>
+            </>
+          )}
+
+          {error && (
+            <p role="alert" className="text-meta text-red-300/90">{error}</p>
+          )}
+          {notice && (
+            <p role="status" className="text-meta text-emerald-300/90">{notice}</p>
+          )}
+
+          <Button type="submit" disabled={busy} className="w-full h-10 text-sm font-medium">
+            {busy
+              ? "Working…"
+              : mode === "login" ? "Sign in"
+              : mode === "signup" ? "Create account"
+              : mode === "forgot" ? "Send reset code"
+              : "Set new password"}
           </Button>
         </form>
 
-        <button
-          type="button"
-          onClick={() => { setMode(mode === "login" ? "signup" : "login"); setError(null); }}
-          className={cn("text-xs text-white/40 hover:text-white/60 w-full text-center")}
-        >
-          {mode === "login" ? "Need an account? Sign up" : "Already have an account? Sign in"}
-        </button>
+        <div className="space-y-2">
+          {mode === "login" && (
+            <button
+              type="button"
+              onClick={() => { setMode("forgot"); setError(null); setNotice(null); }}
+              className={cn("text-ui text-[var(--text-muted)] hover:text-foreground/70 w-full text-center")}
+            >
+              Forgot password?
+            </button>
+          )}
+          {(mode === "forgot" || mode === "reset") && (
+            <button
+              type="button"
+              onClick={() => { setMode("login"); setError(null); setNotice(null); }}
+              className={cn("text-ui text-[var(--text-muted)] hover:text-foreground/70 w-full text-center")}
+            >
+              Back to sign in
+            </button>
+          )}
+          {(mode === "login" || mode === "signup") && (
+            <button
+              type="button"
+              onClick={() => {
+                setMode(mode === "login" ? "signup" : "login");
+                setError(null);
+                setNotice(null);
+              }}
+              className={cn("text-ui text-[var(--text-muted)] hover:text-foreground/70 w-full text-center")}
+            >
+              {mode === "login" ? "Need an account? Sign up" : "Already have an account? Sign in"}
+            </button>
+          )}
+        </div>
 
-        <p className="text-[0.62rem] text-white/25 leading-relaxed text-center">
-          Demo user from setup script: demo@securemind.local / <demo-password>!
-        </p>
       </div>
     </div>
   );

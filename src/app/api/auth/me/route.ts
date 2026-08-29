@@ -15,6 +15,8 @@ export async function GET(req: NextRequest) {
       authenticated: id.authenticated,
       email: id.email ?? null,
       mode: process.env.AUTH_MODE ?? "local",
+      role: id.role,
+      groups: id.groups,
     });
   } catch (err) {
     const res = identityErrorResponse(err);

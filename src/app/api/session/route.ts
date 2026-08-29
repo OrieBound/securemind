@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   // it. Without this, workspaceId alone would expose another user's facts.
   const owned = await db.workspace.findFirst({
     where:  { id: workspaceId, userId },
-    select: { id: true },
+    select: { id: true, name: true, isDefault: true },
   });
   if (!owned) {
     return Response.json({ error: "Workspace not found" }, { status: 404 });
@@ -58,6 +58,26 @@ export async function GET(req: NextRequest) {
       data: { userId, workspaceId },
       include: { summary: true },
     });
+  }
+
+  // First open of the default workspace with an empty thread — short hello.
+  // Extra workspaces stay empty until the user starts chatting.
+  if (owned.isDefault) {
+    const priorInWorkspace = await db.message.count({
+      where: { session: { userId, workspaceId } },
+    });
+    if (priorInWorkspace === 0) {
+      await db.message.create({
+        data: {
+          sessionId: session.id,
+          role: "assistant",
+          content:
+            `Hi — I'm **${owned.name}**, your first workspace.\n\n` +
+            `Feel free to change my name anytime in **Workspace** settings. ` +
+            `When you're ready, upload Knowledge or ask a question — I'll stay grounded in what you add here.`,
+        },
+      });
+    }
   }
 
   // Load the *latest* MESSAGE_LIMIT messages (not the oldest).

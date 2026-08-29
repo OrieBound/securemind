@@ -24,6 +24,13 @@ by pointing `.env.local` at Compose URLs (see `.env.example`).
 
 - Neon remains a supported hosted option; Compose is not required.
 - Floci’s Bedrock Runtime is stubbed — real Bedrock still needs AWS credentials.
-- Cognito JWT verification is implemented in `getIdentity()`; user-pool provisioning
-  and a login UI are intentionally out of scope for this ADR.
+  `ConverseStream` is not supported on Floci; use Ollama/Groq for local streaming.
+- Floci DynamoDB supports item APIs (Put/Query). It does **not** emulate `SearchVectors`
+  (GA 2026-08-05). Local DynamoDB retrieval uses in-process cosine over stored items
+  (ADR 0007). S3 Vectors in Floci is not the hosted data plane.
+- Cognito JWT verification is implemented in `getIdentity()`; local pool provisioning
+  is via `npm run floci:cognito` (Admin/Member groups included).
 - `AUTH_MODE=local` remains the default so existing single-user installs keep working.
+- Operator guide: `docs/deploy/floci-local.md` (feature matrix + internal test checklist).
+- App Runner and Aurora Serverless are **not** emulated; host Next.js + Compose Postgres
+  are the local stand-ins.

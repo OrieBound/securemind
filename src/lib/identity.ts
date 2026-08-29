@@ -18,6 +18,9 @@
 
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { readAccessTokenFromRequest } from "@/lib/auth-cookies";
+import { roleFromGroups, type AppRole } from "@/lib/roles";
+
+export { roleFromGroups };
 
 /** The only identity that exists before authentication is wired up. */
 export const LOCAL_USER_ID = "local";
@@ -27,6 +30,10 @@ export type Identity = {
   /** True when the userId came from a verified token. */
   authenticated: boolean;
   email?: string;
+  /** Super Admin / Admin can manage providers & users; Member is ordinary. */
+  role: AppRole;
+  /** Cognito group names when present. */
+  groups: string[];
 };
 
 export class IdentityError extends Error {
@@ -61,9 +68,31 @@ function cognitoIssuer(): string | null {
 }
 
 function cognitoJwksUrl(issuer: string): string {
-  // Floci: http://localhost:4566/<poolId>/.well-known/jwks.json
-  // AWS:   https://cognito-idp.<region>.amazonaws.com/<poolId>/.well-known/jwks.json
   return process.env.COGNITO_JWKS_URL ?? `${issuer.replace(/\/$/, "")}/.well-known/jwks.json`;
+}
+
+/**
+ * Floci JWTs often claim iss=http://floci:4566/... while host-side dev env uses
+ * localhost:4566. Accept both so login cookies verify after npm run dev.
+ */
+export function cognitoIssuerCandidates(configured: string): string[] {
+  const normalized = configured.replace(/\/$/, "");
+  const out = new Set<string>([normalized]);
+  try {
+    const url = new URL(normalized);
+    if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
+      const alt = new URL(normalized);
+      alt.hostname = "floci";
+      out.add(alt.toString().replace(/\/$/, ""));
+    } else if (url.hostname === "floci") {
+      const alt = new URL(normalized);
+      alt.hostname = "localhost";
+      out.add(alt.toString().replace(/\/$/, ""));
+    }
+  } catch {
+    /* malformed issuer */
+  }
+  return [...out];
 }
 
 let _jwks: ReturnType<typeof createRemoteJWKSet> | null = null;
@@ -77,14 +106,40 @@ function jwksFor(url: string) {
   return _jwks;
 }
 
-async function verifyCognito(token: string): Promise<{ userId: string; email?: string }> {
+function groupsFromPayload(payload: Record<string, unknown>): string[] {
+  const raw =
+    payload["cognito:groups"] ??
+    payload.groups ??
+    payload["custom:groups"];
+  if (Array.isArray(raw)) {
+    return raw.filter((g): g is string => typeof g === "string");
+  }
+  if (typeof raw === "string" && raw.trim()) {
+    return raw.split(",").map(s => s.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function localOwnerIdentity(): Identity {
+  return {
+    userId: LOCAL_USER_ID,
+    authenticated: false,
+    role: "super_admin",
+    groups: ["Owner"],
+  };
+}
+
+async function verifyCognito(token: string): Promise<{
+  userId: string;
+  email?: string;
+  groups: string[];
+}> {
   const issuer = cognitoIssuer();
   if (!issuer) {
     throw new IdentityError("Cognito is not configured (COGNITO_USER_POOL_ID / COGNITO_ISSUER).");
   }
-  // Access tokens from Cognito/Floci often omit standard `aud`; they carry `client_id`.
   const { payload } = await jwtVerify(token, jwksFor(cognitoJwksUrl(issuer)), {
-    issuer,
+    issuer: cognitoIssuerCandidates(issuer),
   });
   if (typeof payload.sub !== "string" || !payload.sub) {
     throw new IdentityError("Token missing subject.");
@@ -94,10 +149,15 @@ async function verifyCognito(token: string): Promise<{ userId: string; email?: s
     throw new IdentityError("Token client_id mismatch.");
   }
   const email = typeof payload.email === "string" ? payload.email : undefined;
-  return { userId: payload.sub, email };
+  const groups = groupsFromPayload(payload as Record<string, unknown>);
+  return { userId: payload.sub, email, groups };
 }
 
-async function verifyHs256(token: string): Promise<{ userId: string; email?: string }> {
+async function verifyHs256(token: string): Promise<{
+  userId: string;
+  email?: string;
+  groups: string[];
+}> {
   const secret = process.env.AUTH_DEV_JWT_SECRET;
   if (!secret) {
     throw new IdentityError("AUTH_DEV_JWT_SECRET is not set.");
@@ -107,7 +167,8 @@ async function verifyHs256(token: string): Promise<{ userId: string; email?: str
     throw new IdentityError("Token missing subject.");
   }
   const email = typeof payload.email === "string" ? payload.email : undefined;
-  return { userId: payload.sub, email };
+  const groups = groupsFromPayload(payload as Record<string, unknown>);
+  return { userId: payload.sub, email, groups };
 }
 
 /**
@@ -120,13 +181,13 @@ export async function getIdentity(req: Request): Promise<Identity> {
   const mode = authMode();
 
   if (mode === "local") {
-    return { userId: LOCAL_USER_ID, authenticated: false };
+    return localOwnerIdentity();
   }
 
   const token = readAccessTokenFromRequest(req);
   if (!token) {
     if (allowLocalFallback()) {
-      return { userId: LOCAL_USER_ID, authenticated: false };
+      return localOwnerIdentity();
     }
     throw new IdentityError("Authentication required.");
   }
@@ -135,16 +196,22 @@ export async function getIdentity(req: Request): Promise<Identity> {
     const verified = mode === "cognito"
       ? await verifyCognito(token)
       : await verifyHs256(token);
-    return { userId: verified.userId, authenticated: true, email: verified.email };
+    return {
+      userId: verified.userId,
+      authenticated: true,
+      email: verified.email,
+      groups: verified.groups,
+      role: roleFromGroups(verified.groups),
+    };
   } catch (err) {
     if (err instanceof IdentityError) {
       if (allowLocalFallback()) {
-        return { userId: LOCAL_USER_ID, authenticated: false };
+        return localOwnerIdentity();
       }
       throw err;
     }
     if (allowLocalFallback()) {
-      return { userId: LOCAL_USER_ID, authenticated: false };
+      return localOwnerIdentity();
     }
     throw new IdentityError("Invalid or expired token.");
   }
