@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 /**
- * After `next build` on Amplify: drop files that are not needed at SSR runtime.
- * Amplify WEB_COMPUTE counts uncompressed traced + `.next` output toward 220 MB.
- * Does not remove application API routes (hosted UI still calls them same-origin).
+ * After `next build` on Amplify: shrink the WEB_COMPUTE package without
+ * deleting `.next/standalone` (Amplify needs it to boot).
  */
 
 import { existsSync, readdirSync, rmSync, statSync, unlinkSync } from "node:fs";
@@ -11,8 +10,7 @@ import path from "node:path";
 const ROOT = process.cwd();
 
 function rm(rel) {
-  const abs = path.join(ROOT, rel);
-  rmSync(abs, { recursive: true, force: true });
+  rmSync(path.join(ROOT, rel), { recursive: true, force: true });
 }
 
 function walkUnlinkMaps(dir) {
@@ -36,12 +34,7 @@ function walkUnlinkMaps(dir) {
   }
 }
 
-rm(".next/cache");
-rm(".next/standalone");
-rm(".next/trace");
-walkUnlinkMaps(path.join(ROOT, ".next"));
-
-for (const rel of [
+const BUILD_ONLY = [
   "node_modules/@swc",
   "node_modules/@esbuild",
   "node_modules/esbuild",
@@ -59,8 +52,15 @@ for (const rel of [
   "node_modules/prisma",
   "node_modules/tailwindcss",
   "node_modules/@tailwindcss",
-]) {
+];
+
+rm(".next/cache");
+rm(".next/trace");
+walkUnlinkMaps(path.join(ROOT, ".next"));
+
+for (const rel of BUILD_ONLY) {
   rm(rel);
+  rm(path.join(".next/standalone", rel));
 }
 
-console.log("amplify-prune-compute: dropped build-only trees under .next and node_modules");
+console.log("amplify-prune-compute: kept standalone; dropped cache, maps, and build-only modules");

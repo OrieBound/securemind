@@ -1,10 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // Standalone for the on-prem Docker image. Amplify sets AWS_APP_ID during
-  // WEB_COMPUTE builds; standalone duplicates traced node_modules and blows
-  // the 220 MB hosting cap.
-  output: process.env.AWS_APP_ID ? undefined : "standalone",
+  // Standalone for Docker and Amplify WEB_COMPUTE. Skipping it got under
+  // 220 MB but left compute unable to boot (HTTP 500, empty body).
+  output: "standalone",
 
   // Move the dev-tools badge away from the sidebar (default is bottom-left which
   // overlaps the sidebar Settings button). Use bottom-right instead.
