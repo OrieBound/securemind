@@ -12,11 +12,9 @@ import type { SpreadsheetTable } from "@/lib/spreadsheet/types";
 
 function storageRoot(): string {
   const configured = process.env.DOCUMENT_STORAGE_PATH?.trim();
-  return resolve(
-    configured && configured.length > 0
-      ? configured
-      : join(/* turbopackIgnore: true */ process.cwd(), ".data", "uploads"),
-  );
+  if (configured && configured.length > 0) return resolve(configured);
+  // Relative path only — process.cwd() makes Turbopack NFT-trace the whole repo.
+  return join(".data", "uploads");
 }
 
 function safeSegment(value: string): string {

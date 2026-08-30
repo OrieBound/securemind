@@ -24,9 +24,8 @@ function isHostedRuntime(): boolean {
 
 function keyFilePath(): string {
   if (process.env.INSTANCE_KEY_FILE?.trim()) return process.env.INSTANCE_KEY_FILE.trim();
-  // turbopackIgnore: do not NFT-trace the whole repo from process.cwd()
-  // (that leak put AGENTS.md / src / amplify-compute-bundle-output into Amplify compute).
-  return join(/* turbopackIgnore: true */ process.cwd(), ".data", "instance.key");
+  // Relative path only — process.cwd() makes Turbopack NFT-trace the whole repo.
+  return join(".data", "instance.key");
 }
 
 function materialFromPassphrase(raw: string): Buffer {
