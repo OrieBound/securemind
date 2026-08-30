@@ -2586,6 +2586,8 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
 
   // ── agent state ──────────────────────────────────────────────────────────────
   const [workspaces, setWorkspaces]               = useState<Workspace[]>([]);
+  const [workspaceListError, setWorkspaceListError] = useState<string | null>(null);
+  const [workspacesReady, setWorkspacesReady]     = useState(false);
   const workspaceIds = useMemo(() => workspaces.map(w => w.id), [workspaces]);
   const [workspaceListOrder, setWorkspaceListOrder] = useWorkspaceListOrder(workspaceIds);
   const orderedWorkspaces = useMemo(() => {
@@ -3078,22 +3080,38 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   // ── Load workspaces then session on mount ────────────────────────────────────────
   useEffect(() => {
     fetch("/api/workspaces")
-      .then(r => r.json())
-      .then((data: Workspace[]) => {
-        setWorkspaces(data);
+      .then(async r => {
+        const data: unknown = await r.json().catch(() => null);
+        if (!r.ok || !Array.isArray(data)) {
+          const err = data && typeof data === "object" && "error" in data
+            ? String((data as { error?: unknown }).error ?? "")
+            : "";
+          setWorkspaceListError(err || "Could not load workspaces.");
+          setWorkspaces([]);
+          setSessionLoading(false);
+          return;
+        }
+        setWorkspaceListError(null);
+        setWorkspaces(data as Workspace[]);
         const savedId = typeof window !== "undefined"
           ? localStorage.getItem(ACTIVE_WORKSPACE_KEY)
           : null;
-        const savedAgent = savedId ? data.find(a => a.id === savedId) : undefined;
-        const target = savedAgent ?? data.find(a => a.isDefault) ?? data[0];
+        const savedAgent = savedId ? (data as Workspace[]).find(a => a.id === savedId) : undefined;
+        const target = savedAgent ?? (data as Workspace[]).find(a => a.isDefault) ?? data[0];
         if (target) {
           setActiveWorkspaceId(target.id);
           setViewWorkspaceId(target.id);
           setExpandedWorkspaceId(target.id);
           loadSession(target.id, target.name);
+        } else {
+          setSessionLoading(false);
         }
       })
-      .catch(() => setSessionLoading(false));
+      .catch(() => {
+        setWorkspaceListError("Could not load workspaces.");
+        setSessionLoading(false);
+      })
+      .finally(() => setWorkspacesReady(true));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -4245,17 +4263,26 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify(draft),
     });
-    const agent = await res.json() as Workspace;
-    setWorkspaces(p => [...p, agent]);
-    switchWorkspace(agent);
-    return agent;
+    const payload = await res.json().catch(() => null) as Workspace & { error?: string };
+    if (!res.ok || !payload?.id) {
+      setWorkspaceListError(payload?.error || "Could not create a workspace.");
+      throw new Error(payload?.error || "Could not create a workspace.");
+    }
+    setWorkspaceListError(null);
+    setWorkspaces(p => [...p, payload]);
+    switchWorkspace(payload);
+    return payload;
   }, [switchWorkspace]);
 
   const createNewWorkspace = useCallback(async () => {
-    const agent = await createWorkspace({ name: "New workspace" });
-    setViewWorkspaceId(agent.id);
-    setExpandedWorkspaceId(agent.id);
-    setActiveNav("workspace-settings");
+    try {
+      const agent = await createWorkspace({ name: "New workspace" });
+      setViewWorkspaceId(agent.id);
+      setExpandedWorkspaceId(agent.id);
+      setActiveNav("workspace-settings");
+    } catch {
+      /* workspaceListError already set */
+    }
   }, [createWorkspace]);
 
   const saveWorkspace = useCallback(async (id: string, patch: Partial<Workspace>) => {
@@ -5692,6 +5719,14 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
               <span className="text-base leading-none">+</span>
             </button>
           </div>
+          {workspaceListError && (
+            <p role="alert" className="px-1.5 mb-2 text-meta text-red-300/90">{workspaceListError}</p>
+          )}
+          {workspacesReady && workspaces.length === 0 && !workspaceListError && (
+            <p className="px-1.5 mb-2 text-meta">
+              Your first workspace, Mindy Locke, appears here after the list loads. Use + if you need another.
+            </p>
+          )}
 
           {(() => {
             const reorderingWorkspaces = dragWorkspaceId != null;

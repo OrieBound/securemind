@@ -46,17 +46,24 @@ export async function getUsersMonthSpendUsd(
   const result = new Map(ids.map(id => [id, 0]));
   if (ids.length === 0) return result;
   const { start, resetsAt } = utcMonthBounds(now);
-  const rows = await db.inferenceEvent.groupBy({
-    by: ["userId"],
-    where: {
-      userId: { in: ids },
-      at: { gte: start, lt: resetsAt },
-      estimatedCostUsd: { not: null },
-    },
-    _sum: { estimatedCostUsd: true },
-  });
-  for (const row of rows) {
-    result.set(row.userId, row._sum.estimatedCostUsd ?? 0);
+  try {
+    const rows = await db.inferenceEvent.groupBy({
+      by: ["userId"],
+      where: {
+        userId: { in: ids },
+        at: { gte: start, lt: resetsAt },
+        estimatedCostUsd: { not: null },
+      },
+      _sum: { estimatedCostUsd: true },
+    });
+    for (const row of rows) {
+      result.set(row.userId, row._sum.estimatedCostUsd ?? 0);
+    }
+  } catch (err) {
+    console.warn(
+      "[cost-cap] monthly spend unavailable",
+      err instanceof Error ? err.message : err,
+    );
   }
   return result;
 }
@@ -80,12 +87,19 @@ export async function getDefaultMonthlyCostCapUsd(): Promise<number> {
  * Missing profile → default for Cognito users; local owner → unlimited until set.
  */
 export async function resolveUserMonthlyCostCapUsd(userId: string): Promise<number | null> {
-  const profile = await db.userProfile.findUnique({
-    where: { userId },
-    select: { monthlyCostCapUsd: true },
-  });
-  if (profile) {
-    return profile.monthlyCostCapUsd;
+  try {
+    const profile = await db.userProfile.findUnique({
+      where: { userId },
+      select: { monthlyCostCapUsd: true },
+    });
+    if (profile) {
+      return profile.monthlyCostCapUsd;
+    }
+  } catch (err) {
+    console.warn(
+      "[cost-cap] profile cap unavailable",
+      err instanceof Error ? err.message : err,
+    );
   }
   if (userId === LOCAL_USER_ID) return null;
   return getDefaultMonthlyCostCapUsd();

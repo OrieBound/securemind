@@ -9,14 +9,15 @@
  */
 
 import { NextRequest } from "next/server";
-import { db } from "@/lib/db";
 import { getIdentity } from "@/lib/identity";
+import { appendMessage } from "@/lib/workspaces/store";
+
 export const runtime = "nodejs";
 
 type MessageRequest = {
   sessionId: string;
-  role:      "user" | "assistant";
-  content:   string;
+  role: "user" | "assistant";
+  content: string;
 };
 
 export async function POST(req: NextRequest) {
@@ -35,31 +36,10 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "sessionId, role, and content are required" }, { status: 422 });
   }
 
-  const trimmed = content.trim();
-
-  // Resolve the session under the caller's identity before writing. Accepting a
-  // bare sessionId would let any caller append messages to another user's thread.
-  const session = await db.session.findFirst({
-    where:  { id: sessionId, userId },
-    select: { workspaceId: true, userId: true },
-  });
-  if (!session) {
+  const message = await appendMessage(userId, sessionId, role, content.trim());
+  if (!message) {
     return Response.json({ error: "Session not found" }, { status: 404 });
   }
-
-  const message = await db.message.create({
-    data: { sessionId, role, content: trimmed },
-  });
-
-  // Touch the session so updatedAt stays current (used for ordering)
-  await db.session.update({
-    where: { id: sessionId },
-    data:  { updatedAt: new Date() },
-  });
-
-  // Do NOT embed assistant replies into MemoryFragment. They stay in Message
-  // history for continuity only — never as citeable Knowledge/evidence.
-  // User-authored facts are extracted via /api/summarize with provenance rules.
 
   return Response.json({ id: message.id });
 }

@@ -34,6 +34,7 @@ import {
 } from "@/lib/evidence";
 import { auditCitations } from "@/lib/citation-audit";
 import { db } from "@/lib/db";
+import { findOwnedWorkspace } from "@/lib/workspaces/store";
 import { recordInferenceEvent } from "@/lib/analytics/write";
 import type { GroundingStatus } from "@/lib/analytics/types";
 import type { ChatMessage, ModelProvider } from "@/lib/models/types";
@@ -116,12 +117,20 @@ export async function prepareChatTurn(
       .filter((id): id is string => typeof id === "string" && id.length > 0),
   )].slice(0, MAX_ATTACHMENTS_PER_TURN);
 
-  const attachmentDocs = requestedAttachmentIds.length > 0
-    ? await db.document.findMany({
+  let attachmentDocs: Array<{ id: string; name: string; content: string }> = [];
+  if (requestedAttachmentIds.length > 0) {
+    try {
+      attachmentDocs = await db.document.findMany({
         where: { userId, id: { in: requestedAttachmentIds } },
         select: { id: true, name: true, content: true },
-      })
-    : [];
+      });
+    } catch (err) {
+      console.warn(
+        "[chat] attachment lookup unavailable",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
   const attachmentById = new Map(attachmentDocs.map(d => [d.id, d]));
   const orderedAttachments = requestedAttachmentIds
     .map(id => attachmentById.get(id))
@@ -146,10 +155,7 @@ export async function prepareChatTurn(
   let workspaceName: string | undefined;
   let workspaceContext: string | undefined;
   if (workspaceId) {
-    const workspace = await db.workspace.findFirst({
-      where: { id: workspaceId, userId },
-      select: { name: true, context: true },
-    });
+    const workspace = await findOwnedWorkspace(userId, workspaceId);
     if (!workspace) {
       return { ok: false, status: 404, body: { error: "Workspace not found" } };
     }

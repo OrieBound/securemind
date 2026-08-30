@@ -6,13 +6,10 @@
  */
 
 import { NextRequest } from "next/server";
-import { db } from "@/lib/db";
 import { getIdentity } from "@/lib/identity";
+import { loadSession } from "@/lib/workspaces/store";
 
 export const runtime = "nodejs";
-
-/** Max messages returned to the client — always the most recent N. */
-const MESSAGE_LIMIT = 200;
 
 export async function GET(req: NextRequest) {
   const { userId } = await getIdentity(req);
@@ -22,97 +19,9 @@ export async function GET(req: NextRequest) {
     return Response.json({ error: "workspaceId is required" }, { status: 400 });
   }
 
-  // Confirm the caller owns this workspace before returning anything scoped to
-  // it. Without this, workspaceId alone would expose another user's facts.
-  const owned = await db.workspace.findFirst({
-    where:  { id: workspaceId, userId },
-    select: { id: true, name: true, isDefault: true },
-  });
-  if (!owned) {
+  const payload = await loadSession(userId, workspaceId);
+  if (!payload) {
     return Response.json({ error: "Workspace not found" }, { status: 404 });
   }
-
-  // Resolve the session that actually has the newest message for this
-  // workspace. updatedAt alone can point at the wrong row when duplicate
-  // sessions exist.
-  const latestMsg = await db.message.findFirst({
-    where:   { session: { userId, workspaceId } },
-    orderBy: { createdAt: "desc" },
-    select:  { sessionId: true },
-  });
-
-  let session = latestMsg
-    ? await db.session.findUnique({
-        where:   { id: latestMsg.sessionId },
-        include: { summary: true },
-      })
-    : await db.session.findFirst({
-        where:   { userId, workspaceId },
-        orderBy: { updatedAt: "desc" },
-        include: { summary: true },
-      });
-
-  // Create a new session only when this workspace has never been used before.
-  if (!session) {
-    session = await db.session.create({
-      data: { userId, workspaceId },
-      include: { summary: true },
-    });
-  }
-
-  // First open of the default workspace with an empty thread — short hello.
-  // Extra workspaces stay empty until the user starts chatting.
-  if (owned.isDefault) {
-    const priorInWorkspace = await db.message.count({
-      where: { session: { userId, workspaceId } },
-    });
-    if (priorInWorkspace === 0) {
-      await db.message.create({
-        data: {
-          sessionId: session.id,
-          role: "assistant",
-          content:
-            `Hi — I'm **${owned.name}**, your first workspace.\n\n` +
-            `Feel free to change my name anytime in **Workspace** settings. ` +
-            `When you're ready, upload Knowledge or ask a question — I'll stay grounded in what you add here.`,
-        },
-      });
-    }
-  }
-
-  // Load the *latest* MESSAGE_LIMIT messages (not the oldest).
-  // Prisma take+asc returns the first N rows — wrong for long threads.
-  const [totalCount, recentDesc] = await Promise.all([
-    db.message.count({ where: { sessionId: session.id } }),
-    db.message.findMany({
-      where:   { sessionId: session.id },
-      orderBy: { createdAt: "desc" },
-      take:    MESSAGE_LIMIT,
-    }),
-  ]);
-  const messages = recentDesc.reverse();
-
-  // If we trimmed older messages, shift summarizedCount so the client
-  // doesn't re-summarize or drop working-memory context incorrectly.
-  const skipped = Math.max(0, totalCount - messages.length);
-  const rawSummarized = session.summary?.turnsCovered ?? 0;
-  const summarizedCount = Math.max(0, rawSummarized - skipped);
-
-  // Only this workspace's facts — no cross-workspace bleed.
-  const facts = await db.workspaceFact.findMany({
-    where:   { workspaceId },
-    orderBy: { updatedAt: "desc" },
-  });
-
-  const factsMap: Record<string, string> = {};
-  for (const f of facts) factsMap[f.key] = f.value;
-
-  return Response.json({
-    sessionId:      session.id,
-    workspaceId,
-    messages,
-    sessionSummary: session.summary?.summary ?? "",
-    summarizedCount,
-    extractedFacts: factsMap,
-  });
+  return Response.json(payload);
 }

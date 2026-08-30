@@ -100,7 +100,8 @@ export async function recordInferenceEvent(input: InferenceEventInput): Promise<
     pricingVersion = est.pricingVersion;
   }
 
-  await db.inferenceEvent.create({
+  try {
+    await db.inferenceEvent.create({
     data: {
       userId: input.userId,
       workspaceId: input.workspaceId ?? null,
@@ -128,5 +129,11 @@ export async function recordInferenceEvent(input: InferenceEventInput): Promise<
       insufficientEvidence: input.insufficientEvidence ?? false,
       attachmentUsed: input.attachmentUsed ?? false,
     },
-  });
+    });
+  } catch (err) {
+    console.warn(
+      "[analytics] inference event not persisted",
+      err instanceof Error ? err.message : err,
+    );
+  }
 }

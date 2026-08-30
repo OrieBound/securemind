@@ -8,6 +8,7 @@
  */
 
 import { db } from "@/lib/db";
+import type { WizardStorageChoice } from "@/lib/wizard-storage";
 import { decryptSecret, encryptSecret } from "@/lib/secret-at-rest";
 import {
   detectProviderKey,
@@ -552,7 +553,7 @@ export async function markSetupClaimUsed(ownerUserId: string | null): Promise<bo
 }
 
 export async function completeInstanceSetup(input: {
-  storageBackend: "postgres" | "dynamodb";
+  storageBackend: WizardStorageChoice;
   userId: string;
 }): Promise<boolean> {
   try {
