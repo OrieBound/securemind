@@ -16,6 +16,7 @@ import {
 import { isOllamaEmbedModel, resolveOllamaChatModel } from "./ollama";
 
 export const MODEL_PROVIDER_REQUIRED_CODE = "MODEL_PROVIDER_REQUIRED";
+export const MODEL_NOT_ASSIGNED_CODE = "MODEL_NOT_ASSIGNED";
 
 export const MODEL_PROVIDER_REQUIRED_TITLE = "Model provider required";
 

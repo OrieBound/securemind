@@ -75,7 +75,5 @@ export function displayModelForTier(opts: {
     return DEFAULT_TIER_MODELS[opts.tier];
   }
   if (opts.localFallbackModel) return opts.localFallbackModel;
-  return isComplexityTierName(opts.tier)
-    ? DEFAULT_TIER_MODELS[opts.tier]
-    : "llama-3.3-70b-versatile";
+  return "";
 }

@@ -36,9 +36,6 @@ export const BEDROCK_TEXT_MODELS: CatalogModel[] = [
   },
 ];
 
-/** Hosted chat default when Bedrock is on and no override is set. */
-export const HOSTED_DEFAULT_BEDROCK_MODEL = "amazon.nova-micro-v1:0";
-
 export type ModelCatalogBuckets = {
   groq: CatalogModel[];
   bedrock: CatalogModel[];

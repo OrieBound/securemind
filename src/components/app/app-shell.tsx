@@ -2874,6 +2874,9 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       const p = guessProvider(fixedModelId);
       return `Every message · ${p ?? "model"} · ${fixedModelId}`;
     }
+    if (Object.keys(modeModelOverrides).length > 0) {
+      return "Auto by complexity · assigned models";
+    }
     if (cloudDefaultsWillRun) {
       return "Auto by complexity · assigned models";
     }
@@ -2887,6 +2890,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     cloudDefaultsWillRun,
     fixedModelId,
     lastRouteInfo,
+    modeModelOverrides,
     modelSelectionMode,
     runtimeStatus?.model.model,
     runtimeStatus?.model.provider,
@@ -3956,6 +3960,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
             body.code === "GROQ_NOT_CONFIGURED" ||
             body.code === "BEDROCK_NOT_CONFIGURED" ||
             body.code === "MODEL_PROVIDER_REQUIRED" ||
+            body.code === "MODEL_NOT_ASSIGNED" ||
             body.code === "OLLAMA_EMBED_MODEL"
             ? body.error
             : body.code === "OLLAMA_MODEL_MISSING"
@@ -3968,7 +3973,9 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
               body.code === "BEDROCK_NOT_CONFIGURED" ||
               body.code === "MODEL_PROVIDER_REQUIRED"
               ? "providers"
-              : undefined),
+              : body.code === "MODEL_NOT_ASSIGNED"
+                ? "inference"
+                : undefined),
         } : m));
         return;
       }

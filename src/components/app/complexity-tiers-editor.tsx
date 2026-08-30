@@ -202,9 +202,8 @@ export function ComplexityTiersEditor({
       )}
       {modelSelectionMode === "auto" && !groqCatalogReady && bedrockCatalogReady && (
         <p className="text-[0.65rem] leading-relaxed text-foreground/45 bg-foreground/[0.04] border border-foreground/10 rounded-lg px-2.5 py-2 mb-2">
-          Live chat uses{" "}
-          <span className="font-medium text-foreground/70">Amazon Bedrock</span>
-          . Each row is the model that tier will run. Enable the model in AWS console → Bedrock → Model access if a send fails.
+          Amazon Bedrock is enabled. Chat uses the model on each row — assign one to start.
+          Enabling Bedrock does not pick a model or change rows you already set.
         </p>
       )}
       {modelSelectionMode === "auto" && !groqCatalogReady && !bedrockCatalogReady && ollamaCatalogReady && (
@@ -377,7 +376,9 @@ function TierRow({
       aria-label={
         isPickerOpen
           ? `Choosing model for ${tier}`
-          : `Change model for ${tier} tier, currently ${labelFor(displayModelId)}`
+          : displayModelId
+            ? `Change model for ${tier} tier, currently ${labelFor(displayModelId)}`
+            : `Assign a model for ${tier} tier`
       }
       className={cn(
         "w-full text-left rounded-lg group cursor-pointer transition-all duration-150",
@@ -437,7 +438,7 @@ function TierRow({
               Change model
             </span>
           )}
-          {provider && (
+          {provider && displayModelId && (
             status.ready ? (
               <ProviderBadge provider={provider} />
             ) : (
@@ -447,7 +448,7 @@ function TierRow({
             )
           )}
           <code
-            title={labelFor(displayModelId)}
+            title={displayModelId ? labelFor(displayModelId) : "Assign a model"}
             className={cn(
               "text-[0.62rem] font-mono px-1.5 py-0.5 rounded-md truncate border min-w-0 flex-1",
               isPage ? "max-w-full" : "max-w-none",
@@ -458,7 +459,7 @@ function TierRow({
                   : "text-foreground/70 bg-elevated border-border",
             )}
           >
-            {labelFor(displayModelId)}
+            {displayModelId ? labelFor(displayModelId) : "Assign a model"}
           </code>
           {!isPage && (
             <ChevronRight className="size-3 shrink-0 text-transparent group-hover:text-indigo-300/50" />

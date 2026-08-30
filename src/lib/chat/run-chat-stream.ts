@@ -19,10 +19,9 @@ import {
   DEFAULT_TIER,
 } from "@/lib/models/router";
 import { streamChat } from "@/lib/models/provider";
-import { HOSTED_DEFAULT_BEDROCK_MODEL } from "@/lib/models/catalog-shared";
 import { resolveAllowedModel } from "@/lib/models/allowlist";
 import { routeMessage } from "@/lib/models/route-message";
-import { decideChatRuntime } from "@/lib/models/resolve-chat-runtime";
+import { decideChatRuntime, MODEL_NOT_ASSIGNED_CODE } from "@/lib/models/resolve-chat-runtime";
 import { probeHardware } from "@/lib/models/local-recommendations";
 import { runtimeEdition } from "@/lib/runtime-env";
 import { selectWorkingMemory } from "@/lib/tokens";
@@ -195,6 +194,20 @@ export async function prepareChatTurn(
     }
   }
 
+  if (runtimeEdition() === "cloud" && !hasImages && !override && !groqOk && !bedrockBlock) {
+    return {
+      ok: false,
+      status: 503,
+      body: {
+        error:
+          "No model is assigned for this complexity tier. Pick a model in Insights → Models or Settings → Models. Enabling Bedrock does not select a model, and it does not change models you already assigned.",
+        code: MODEL_NOT_ASSIGNED_CODE,
+        setupRequired: true,
+        settingsSection: "inference",
+      },
+    };
+  }
+
   const decision = decideChatRuntime({
     edition: runtimeEdition(),
     routedProvider: hasImages ? "groq" : routedProvider,
@@ -226,16 +239,10 @@ export async function prepareChatTurn(
     };
   }
 
-  let model = decision.model;
+  const model = decision.model;
   const provider = decision.provider;
-  let useGroq = decision.useGroq;
-  let useBedrock = decision.useBedrock;
-
-  if (useBedrock && decision.source !== "override") {
-    model =
-      runtimeSecrets.bedrockChatModel?.trim() ||
-      (runtimeEdition() === "cloud" ? HOSTED_DEFAULT_BEDROCK_MODEL : model);
-  }
+  const useGroq = decision.useGroq;
+  const useBedrock = decision.useBedrock;
 
   if (provider === "ollama") {
     const modelError = await checkOllamaModel(model);
