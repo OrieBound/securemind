@@ -98,7 +98,7 @@ We did **not** delete `/api/workspaces` or `/api/documents` from the Amplify app
 
 **Cause:** Turbopack NFT traced the **whole repo** because `secret-at-rest.ts` used `process.cwd()` without a `turbopackIgnore` comment. Amplify’s compute `run.sh` then `ln -sf` every standalone root entry, including `src/`, `docs/`, and a nested `amplify-compute-bundle-output`. Those recursive symlinks fail on the read-only compute FS, so the Node server never starts. Missing CloudWatch permissions on the custom Amplify role hid the crash.
 
-**Fix:** `turbopackIgnore` on `process.cwd()` in `secret-at-rest.ts` / `document-storage.ts`; prune standalone to an allowlist (`server.js`, `.next`, `node_modules`, `public`, `prisma`, package files); add SSR log IAM; set dummy `DATABASE_URL` + `INSTANCE_ENCRYPTION_KEY` on the Amplify **runtime** env (not build-only). Do not Redeploy job 9 — StartJob a new commit.
+**Fix:** `turbopackIgnore` on `process.cwd()`; prune standalone to an allowlist; **also delete leftover workspace files on Amplify/CodeBuild** (`src`, `docs`, `next.config.ts`, …) because the packager copies the clone, not only standalone. Job 10 still 500’d after standalone-only prune. Add SSR log IAM; set dummy `DATABASE_URL` + `INSTANCE_ENCRYPTION_KEY` on the Amplify runtime env. Do not Redeploy an old job — StartJob a new commit.
 
 ---
 

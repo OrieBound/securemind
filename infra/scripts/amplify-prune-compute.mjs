@@ -87,4 +87,33 @@ if (existsSync(STANDALONE)) {
   }
 }
 
+/**
+ * Amplify's Next packager copies leftover files from the CodeBuild workspace
+ * (not only standalone). Job 10 still shipped src/ + amplify-compute-bundle-output
+ * after we pruned standalone, and run.sh then ln -sf those paths on a read-only FS.
+ * Never do this on a laptop — it would delete the source tree.
+ */
+const WORKSPACE_KEEP = new Set([
+  ".git",
+  ".next",
+  "node_modules",
+  "package.json",
+  "package-lock.json",
+  "public",
+  "prisma",
+  ".env.production",
+]);
+
+function isAmplifyBuild() {
+  return Boolean(process.env.CODEBUILD_BUILD_ID || process.env.AWS_APP_ID || process.env.AWS_COMMIT_ID);
+}
+
+if (isAmplifyBuild()) {
+  for (const name of readdirSync(ROOT)) {
+    if (WORKSPACE_KEEP.has(name)) continue;
+    rm(name);
+    console.log(`amplify-prune-compute: dropped workspace/${name}`);
+  }
+}
+
 console.log("amplify-prune-compute: kept standalone; dropped cache, maps, build-only modules, leaked repo files");
