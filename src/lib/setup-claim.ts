@@ -228,6 +228,12 @@ export async function runFirstAdminClaim(input: ClaimInput): Promise<ClaimResult
         422,
       );
     }
+    if (/Could not load credentials from any providers/i.test(msg)) {
+      throw new SetupClaimError(
+        "This host cannot call Cognito yet (no Amplify SSR compute role). An operator must attach the compute IAM role.",
+        503,
+      );
+    }
     throw new SetupClaimError("Could not create the owner account.", 502);
   }
 

@@ -148,6 +148,8 @@ resource "aws_amplify_app" "this" {
   description          = "SecureMind UI (API stays on API Gateway + Lambda)"
   platform             = "WEB_COMPUTE"
   iam_service_role_arn = aws_iam_role.amplify.arn
+  # Distinct from the service role: injected into Next.js compute so AdminCreateUser works.
+  compute_role_arn     = aws_iam_role.amplify.arn
 
   build_spec = <<-EOT
     version: 1
