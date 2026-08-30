@@ -133,6 +133,17 @@ describe("GET /api/setup/status", () => {
     expect(data).not.toHaveProperty("setupCode");
     expect(data).not.toHaveProperty("SETUP_CLAIM_SECRET");
   });
+
+  it("offers hosted claim when the directory cannot be listed", async () => {
+    process.env.SECUREMIND_EDITION = "cloud";
+    process.env.SETUP_CLAIM_SECRET = "super-secret-setup-code-never-leak";
+    cognitoDirectoryIsEmpty.mockRejectedValue(new Error("timeout listing Cognito users"));
+    const { GET } = await import("@/app/api/setup/status/route");
+    const res = await GET(new NextRequest("http://localhost/api/setup/status"));
+    const data = await res.json() as { claimAvailable?: boolean; directoryEmpty?: boolean | null };
+    expect(data.directoryEmpty).toBeNull();
+    expect(data.claimAvailable).toBe(true);
+  });
 });
 
 describe("POST /api/setup/claim", () => {
