@@ -26,4 +26,24 @@ describe("reference-catalog", () => {
     const merged = mergeProviderModels(live, REFERENCE_OPENAI);
     expect(merged.find(m => m.id === "gpt-4o")?.name).toBe("GPT-4o (live)");
   });
+
+  it("does not inject the Bedrock fallback list once a live catalog exists", () => {
+    const merged = mergeCatalogWithReference({
+      groq: [],
+      bedrock: [
+        {
+          id: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+          name: "Claude Sonnet 4.5",
+          provider: "bedrock",
+          modality: "text",
+        },
+      ],
+      ollama: [],
+      openai: [],
+      anthropic: [],
+      google: [],
+    });
+    expect(merged.some(m => m.id === "amazon.nova-micro-v1:0")).toBe(false);
+    expect(merged.some(m => m.id === "us.anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe(true);
+  });
 });

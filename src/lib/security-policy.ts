@@ -10,6 +10,7 @@
 import { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { ensureInstanceConfig, getInstanceConfig } from "@/lib/instance-config";
+import { isHostedRuntime } from "@/lib/runtime-env";
 import {
   DEFAULT_SAFE_TERMS,
   DEFAULT_SENSITIVITY,
@@ -129,19 +130,33 @@ export async function applySecurityPolicy(opts: {
   safeTerms: SafeTerm[];
 }): Promise<{ policy: SecurityPolicyPublic }> {
   await ensureInstanceConfig();
-  await db.instanceConfig.update({
-    where: { id: "singleton" },
-    data: {
+  if (isHostedRuntime()) {
+    const { hostedInstanceConfig } = await import("@/lib/instance-config-hosted");
+    await hostedInstanceConfig().merge({
       piiSensitivity: opts.piiSensitivity,
       safeTerms: opts.safeTerms,
       pendingPiiSensitivity: null,
-      pendingSafeTerms: Prisma.DbNull,
+      pendingSafeTerms: null,
       pendingProposedByUserId: null,
       pendingProposedAt: null,
       pendingNote: null,
       updatedByUserId: opts.actorUserId,
-    },
-  });
+    });
+  } else {
+    await db.instanceConfig.update({
+      where: { id: "singleton" },
+      data: {
+        piiSensitivity: opts.piiSensitivity,
+        safeTerms: opts.safeTerms,
+        pendingPiiSensitivity: null,
+        pendingSafeTerms: Prisma.DbNull,
+        pendingProposedByUserId: null,
+        pendingProposedAt: null,
+        pendingNote: null,
+        updatedByUserId: opts.actorUserId,
+      },
+    });
+  }
 
   return { policy: await getSecurityPolicy() };
 }
@@ -153,31 +168,53 @@ export async function proposeSecurityPolicy(opts: {
   note?: string;
 }): Promise<SecurityPolicyPublic> {
   await ensureInstanceConfig();
-  await db.instanceConfig.update({
-    where: { id: "singleton" },
-    data: {
+  if (isHostedRuntime()) {
+    const { hostedInstanceConfig } = await import("@/lib/instance-config-hosted");
+    await hostedInstanceConfig().merge({
       pendingPiiSensitivity: opts.piiSensitivity,
       pendingSafeTerms: opts.safeTerms ?? undefined,
       pendingProposedByUserId: opts.actorUserId,
       pendingProposedAt: new Date(),
       pendingNote: opts.note?.slice(0, 500) ?? null,
-    },
-  });
+    });
+  } else {
+    await db.instanceConfig.update({
+      where: { id: "singleton" },
+      data: {
+        pendingPiiSensitivity: opts.piiSensitivity,
+        pendingSafeTerms: opts.safeTerms ?? undefined,
+        pendingProposedByUserId: opts.actorUserId,
+        pendingProposedAt: new Date(),
+        pendingNote: opts.note?.slice(0, 500) ?? null,
+      },
+    });
+  }
   return getSecurityPolicy();
 }
 
 export async function clearPendingProposal(): Promise<SecurityPolicyPublic> {
   await ensureInstanceConfig();
-  await db.instanceConfig.update({
-    where: { id: "singleton" },
-    data: {
+  if (isHostedRuntime()) {
+    const { hostedInstanceConfig } = await import("@/lib/instance-config-hosted");
+    await hostedInstanceConfig().merge({
       pendingPiiSensitivity: null,
-      pendingSafeTerms: Prisma.DbNull,
+      pendingSafeTerms: null,
       pendingProposedByUserId: null,
       pendingProposedAt: null,
       pendingNote: null,
-    },
-  });
+    });
+  } else {
+    await db.instanceConfig.update({
+      where: { id: "singleton" },
+      data: {
+        pendingPiiSensitivity: null,
+        pendingSafeTerms: Prisma.DbNull,
+        pendingProposedByUserId: null,
+        pendingProposedAt: null,
+        pendingNote: null,
+      },
+    });
+  }
   return getSecurityPolicy();
 }
 

@@ -16,6 +16,7 @@ import {
 import { probeHardware } from "@/lib/models/local-recommendations";
 import { runtimeEdition } from "@/lib/runtime-env";
 import { SUPPORTED_DOC_FORMATS_SHORT } from "@/lib/documents/constants";
+import { pickImageExtractBackend } from "@/lib/image-extract";
 
 export type RuntimeStatus = {
   edition: "local" | "cloud";
@@ -76,6 +77,14 @@ export async function getRuntimeStatus(): Promise<RuntimeStatus> {
     (edition === "local" && ollama.tags.some(t => isOllamaEmbedModel(t))) ||
     (edition === "cloud" && bedrockOk);
 
+  const imageBackend = pickImageExtractBackend({ edition, groqOk, bedrockOk });
+  const imageNote =
+    imageBackend === "bedrock"
+      ? "Image text extract uses Amazon Bedrock. Pixels leave this host to AWS; extracted text is scanned before storage. Groq is not required."
+      : imageBackend === "groq"
+        ? "Image text extract uses a Groq vision model. Pixels leave this host; extracted text is scanned before storage."
+        : "Image text extract needs Amazon Bedrock or an optional Groq key. Upload a text document instead — images are not used to discover sensitive values without a vision provider.";
+
   return {
     edition,
     chatReady: decision.ok,
@@ -90,11 +99,9 @@ export async function getRuntimeStatus(): Promise<RuntimeStatus> {
         formats: SUPPORTED_DOC_FORMATS_SHORT.split(",").map(s => s.trim()),
       },
       imageOcr: {
-        ready: groqOk,
-        sendsPixelsOffHost: groqOk,
-        note: groqOk
-          ? "Image text extract uses a vision model. Pixels leave this host; extracted text is scrubbed before storage."
-          : "Image text extract is unavailable until a vision-capable provider is configured. Images are not used to discover sensitive values.",
+        ready: imageBackend != null,
+        sendsPixelsOffHost: imageBackend != null,
+        note: imageNote,
       },
       embeddings: {
         ready: embedReady,

@@ -7,6 +7,8 @@ import { db } from "@/lib/db";
 import type { Identity } from "@/lib/identity";
 import { IdentityError } from "@/lib/identity";
 import { requireAdmin } from "@/lib/roles";
+import { hostedAppStore } from "@/lib/workspaces/hosted-dynamo";
+import { usesHostedAppStore } from "@/lib/workspaces/store";
 
 export type AnalyticsSubjectOk = {
   ok: true;
@@ -64,6 +66,16 @@ export async function resolveAnalyticsSubject(
 
 /** Subject has left a footprint we can attribute Insights to. */
 export async function isKnownAnalyticsSubject(userId: string): Promise<boolean> {
+  if (usesHostedAppStore()) {
+    const store = hostedAppStore();
+    const [profile, workspaceCount, inference, security] = await Promise.all([
+      store.getProfile(userId),
+      store.countWorkspaces(userId),
+      store.listInferenceEvents(userId, { take: 1 }),
+      store.listSecurityEvents(userId, { take: 1 }),
+    ]);
+    return Boolean(profile || workspaceCount > 0 || inference.length || security.length);
+  }
   const [profile, workspace, inference, security] = await Promise.all([
     db.userProfile.findUnique({
       where: { userId },
@@ -96,17 +108,25 @@ export type InsightsSubjectMeta = {
 export async function getInsightsSubjectMeta(userId: string): Promise<InsightsSubjectMeta | null> {
   if (!(await isKnownAnalyticsSubject(userId))) return null;
 
-  const [profile, workspaces] = await Promise.all([
-    db.userProfile.findUnique({
-      where: { userId },
-      select: { email: true, displayName: true },
-    }),
-    db.workspace.findMany({
-      where: { userId },
-      select: { id: true, name: true },
-      orderBy: { name: "asc" },
-    }),
-  ]);
+  const [profile, workspaces] = usesHostedAppStore()
+    ? await Promise.all([
+        hostedAppStore().getProfile(userId),
+        hostedAppStore().peekWorkspaces(userId),
+      ]).then(([p, ws]) => [
+        p ? { email: p.email, displayName: p.displayName } : null,
+        ws.map(w => ({ id: w.id, name: w.name })).sort((a, b) => a.name.localeCompare(b.name)),
+      ] as const)
+    : await Promise.all([
+        db.userProfile.findUnique({
+          where: { userId },
+          select: { email: true, displayName: true },
+        }),
+        db.workspace.findMany({
+          where: { userId },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        }),
+      ]);
 
   const email = profile?.email ?? null;
   const label =

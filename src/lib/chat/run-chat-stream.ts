@@ -33,8 +33,8 @@ import {
   selectEvidenceForPrompt,
 } from "@/lib/evidence";
 import { auditCitations } from "@/lib/citation-audit";
-import { db } from "@/lib/db";
 import { findOwnedWorkspace } from "@/lib/workspaces/store";
+import { getPersistedDocument } from "@/lib/documents/persist";
 import { recordInferenceEvent } from "@/lib/analytics/write";
 import type { GroundingStatus } from "@/lib/analytics/types";
 import type { ChatMessage, ModelProvider } from "@/lib/models/types";
@@ -120,10 +120,12 @@ export async function prepareChatTurn(
   let attachmentDocs: Array<{ id: string; name: string; content: string }> = [];
   if (requestedAttachmentIds.length > 0) {
     try {
-      attachmentDocs = await db.document.findMany({
-        where: { userId, id: { in: requestedAttachmentIds } },
-        select: { id: true, name: true, content: true },
-      });
+      const found = await Promise.all(
+        requestedAttachmentIds.map(id => getPersistedDocument(userId, id)),
+      );
+      attachmentDocs = found
+        .filter((d): d is NonNullable<typeof d> => d != null)
+        .map(d => ({ id: d.id, name: d.name, content: d.content }));
     } catch (err) {
       console.warn(
         "[chat] attachment lookup unavailable",

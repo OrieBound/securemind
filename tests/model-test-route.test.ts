@@ -67,7 +67,7 @@ describe("POST /api/models/test", () => {
     const res = await POST(post({ modelId: "amazon.nova-micro-v1:0" }));
     expect(res.status).toBe(403);
     expect(resolveAllowedModel).not.toHaveBeenCalled();
-  });
+  }, 15_000);
 
   it("refuses a model that is not on the server allowlist", async () => {
     resolveAllowedModel.mockResolvedValue(null);

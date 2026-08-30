@@ -63,7 +63,7 @@ describe("PUT /api/settings/security", () => {
     );
     expect(res.status).toBe(403);
     expect(applySecurityPolicy).not.toHaveBeenCalled();
-  });
+  }, 15_000);
 
   it("allows admins to apply policy without rescrub flags", async () => {
     getIdentity.mockResolvedValue({

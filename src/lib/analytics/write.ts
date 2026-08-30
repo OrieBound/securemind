@@ -4,6 +4,8 @@
  */
 
 import { db } from "@/lib/db";
+import { usesHostedAppStore } from "@/lib/workspaces/store";
+import { hostedAppStore } from "@/lib/workspaces/hosted-dynamo";
 import { estimateInferenceCost } from "@/lib/pricing";
 import {
   riskLevelForCategory,
@@ -29,6 +31,29 @@ export type SecurityEventInput = {
 
 export async function recordSecurityEvents(events: SecurityEventInput[]): Promise<number> {
   if (events.length === 0) return 0;
+  if (usesHostedAppStore()) {
+    const store = hostedAppStore();
+    let written = 0;
+    for (const e of events) {
+      const at = (e.at ?? new Date()).toISOString();
+      await store.putSecurityEvent({
+        id: crypto.randomUUID(),
+        userId: e.userId,
+        workspaceId: e.workspaceId ?? null,
+        at,
+        source: e.source,
+        category: e.category,
+        riskLevel: e.riskLevel ?? riskLevelForCategory(e.category),
+        outcome: e.outcome,
+        count: Math.max(1, e.count ?? 1),
+        sensitivity: e.sensitivity ?? null,
+        resourceKind: e.resourceKind ?? null,
+        resourceId: e.resourceId ?? null,
+      });
+      written += 1;
+    }
+    return written;
+  }
   const data = events.map(e => ({
     userId: e.userId,
     workspaceId: e.workspaceId ?? null,
@@ -101,6 +126,38 @@ export async function recordInferenceEvent(input: InferenceEventInput): Promise<
   }
 
   try {
+    if (usesHostedAppStore()) {
+      await hostedAppStore().putInferenceEvent({
+        id: crypto.randomUUID(),
+        userId: input.userId,
+        workspaceId: input.workspaceId ?? null,
+        sessionId: input.sessionId ?? null,
+        messageId: input.messageId ?? null,
+        at: new Date().toISOString(),
+        provider: input.provider,
+        model: input.model,
+        tier: input.tier,
+        promptTokens: prompt,
+        completionTokens: completion,
+        latencyMs: input.latencyMs ?? null,
+        status: input.status,
+        retrievalHitCount: input.retrievalHitCount ?? 0,
+        citationCount: input.citationCount ?? 0,
+        groundingStatus: input.groundingStatus ?? null,
+        estimatedCostUsd,
+        pricingVersion,
+        turnMode: input.turnMode ?? null,
+        retrievalAttempted: input.retrievalAttempted ?? false,
+        retrievalReasonCode: input.retrievalReasonCode ?? null,
+        candidateCount: input.candidateCount ?? 0,
+        evidenceCount: input.evidenceCount ?? 0,
+        sourcesCited: input.sourcesCited ?? 0,
+        retrievalMs: input.retrievalMs ?? null,
+        insufficientEvidence: input.insufficientEvidence ?? false,
+        attachmentUsed: input.attachmentUsed ?? false,
+      });
+      return;
+    }
     await db.inferenceEvent.create({
     data: {
       userId: input.userId,

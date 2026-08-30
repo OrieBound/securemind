@@ -31,6 +31,14 @@ const CATEGORY = "app_meta";
 const WS = "ws#";
 const SE = "se#";
 const MS = "ms#";
+const PF = "pf#";
+const DC = "dc#";
+const BM = "bm#";
+const INF = "inf#";
+const SEC = "sec#";
+const FT = "ft#";
+const SM = "sm#";
+const MAX_DOC_CONTENT_CHARS = 80_000;
 
 export type HostedWorkspace = {
   id: string;
@@ -61,6 +69,150 @@ export type HostedMessage = {
   role: string;
   content: string;
   createdAt: string;
+};
+
+export type HostedProfile = {
+  userId: string;
+  email: string | null;
+  displayName: string | null;
+  handle: string | null;
+  jobTitle: string | null;
+  bio: string | null;
+  timezone: string | null;
+  locale: string | null;
+  avatarPreset: string;
+  themePreference: string | null;
+  density: string | null;
+  defaultLanding: string | null;
+  defaultWorkspaceId: string | null;
+  preferredModelId: string | null;
+  notificationPrefs: unknown;
+  status: string;
+  monthlyCostCapUsd: number | null;
+  lastSignInAt: string | null;
+  deletedAt: string | null;
+  deletedByUserId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type HostedDocumentChunk = {
+  id: string;
+  content: string;
+  createdAt: string;
+  provenance: unknown;
+};
+
+export type HostedDocument = {
+  id: string;
+  userId: string;
+  workspaceId: string | null;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  description: string | null;
+  status: string;
+  chunkCount: number;
+  redactionCount: number;
+  scrubEvents: unknown;
+  processingError: string | null;
+  storageKey: string | null;
+  extractMeta: unknown;
+  processedAt: string | null;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  fragmentIds: string[];
+  chunks: HostedDocumentChunk[];
+};
+
+export type HostedSavedItem = {
+  id: string;
+  userId: string;
+  workspaceId: string;
+  messageId: string;
+  label: string;
+  preview: string;
+  role: string | null;
+  heavy: boolean;
+  createdAt: string;
+};
+
+export type HostedSecurityEvent = {
+  id: string;
+  userId: string;
+  workspaceId: string | null;
+  at: string;
+  source: string;
+  category: string;
+  riskLevel: string;
+  outcome: string;
+  count: number;
+  sensitivity: string | null;
+  resourceKind: string | null;
+  resourceId: string | null;
+};
+
+export type HostedInferenceEvent = {
+  id: string;
+  userId: string;
+  workspaceId: string | null;
+  sessionId: string | null;
+  messageId: string | null;
+  at: string;
+  provider: string;
+  model: string;
+  tier: string;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  latencyMs: number | null;
+  status: string;
+  retrievalHitCount: number;
+  citationCount: number;
+  groundingStatus: string | null;
+  estimatedCostUsd: number | null;
+  pricingVersion: string | null;
+  turnMode: string | null;
+  retrievalAttempted: boolean;
+  retrievalReasonCode: string | null;
+  candidateCount: number;
+  evidenceCount: number;
+  sourcesCited: number;
+  retrievalMs: number | null;
+  insufficientEvidence: boolean;
+  attachmentUsed: boolean;
+};
+
+export type HostedWorkspaceFact = {
+  id: string;
+  userId: string;
+  workspaceId: string;
+  key: string;
+  value: string;
+  confidence: number;
+  source: string | null;
+  pinned: boolean;
+  forgotten: boolean;
+  correctedAt: string | null;
+  correctedByUserId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type HostedSessionSummary = {
+  id: string;
+  userId: string;
+  workspaceId: string;
+  sessionId: string;
+  summary: string;
+  turnsCovered: number;
+  updatedAt: string;
+};
+
+export type HostedEventQuery = {
+  workspaceId?: string | null;
+  fromIso?: string | null;
+  take?: number;
 };
 
 export type WorkspaceListRow = HostedWorkspace & {
@@ -98,6 +250,34 @@ function seSk(workspaceId: string, sessionId: string): string {
 
 function msSk(sessionId: string, createdAt: string, messageId: string): string {
   return `${MS}${sessionId}#${createdAt}#${messageId}`;
+}
+
+function pfSk(): string {
+  return `${PF}self`;
+}
+
+function dcSk(id: string): string {
+  return `${DC}${id}`;
+}
+
+function bmSk(workspaceId: string, messageId: string): string {
+  return `${BM}${workspaceId}#${messageId}`;
+}
+
+function infSk(at: string, id: string): string {
+  return `${INF}${at}#${id}`;
+}
+
+function secSk(at: string, id: string): string {
+  return `${SEC}${at}#${id}`;
+}
+
+function ftSk(workspaceId: string, key: string): string {
+  return `${FT}${workspaceId}#${key}`;
+}
+
+function smSk(workspaceId: string, sessionId: string): string {
+  return `${SM}${workspaceId}#${sessionId}`;
 }
 
 function newId(): string {
@@ -290,6 +470,75 @@ function asMessage(item: Record<string, AttributeValue>): HostedMessage | null {
   return row;
 }
 
+function asProfile(item: Record<string, AttributeValue>): HostedProfile | null {
+  const row = parseJson<HostedProfile | null>(contentOf(item), null);
+  if (!row?.userId) return null;
+  return row;
+}
+
+function asDocument(item: Record<string, AttributeValue>): HostedDocument | null {
+  const row = parseJson<HostedDocument | null>(contentOf(item), null);
+  if (!row?.id || !row.userId) return null;
+  return {
+    ...row,
+    fragmentIds: row.fragmentIds ?? [],
+    chunks: row.chunks ?? [],
+  };
+}
+
+function asSavedItem(item: Record<string, AttributeValue>): HostedSavedItem | null {
+  const row = parseJson<HostedSavedItem | null>(contentOf(item), null);
+  if (!row?.id || !row.userId || !row.workspaceId || !row.messageId) return null;
+  return row;
+}
+
+function asSecurityEvent(item: Record<string, AttributeValue>): HostedSecurityEvent | null {
+  const row = parseJson<HostedSecurityEvent | null>(contentOf(item), null);
+  if (!row?.id || !row.userId || !row.at) return null;
+  return row;
+}
+
+function asInferenceEvent(item: Record<string, AttributeValue>): HostedInferenceEvent | null {
+  const row = parseJson<HostedInferenceEvent | null>(contentOf(item), null);
+  if (!row?.id || !row.userId || !row.at) return null;
+  return row;
+}
+
+function asFact(item: Record<string, AttributeValue>): HostedWorkspaceFact | null {
+  const row = parseJson<HostedWorkspaceFact | null>(contentOf(item), null);
+  if (!row?.id || !row.userId || !row.workspaceId || !row.key) return null;
+  return row;
+}
+
+function asSessionSummary(item: Record<string, AttributeValue>): HostedSessionSummary | null {
+  const row = parseJson<HostedSessionSummary | null>(contentOf(item), null);
+  if (!row?.id || !row.userId || !row.sessionId || !row.workspaceId) return null;
+  return row;
+}
+
+function filterEvents<T extends { userId: string; workspaceId: string | null; at: string }>(
+  userId: string,
+  rows: T[],
+  query?: HostedEventQuery,
+): T[] {
+  let out = rows.filter(row => row.userId === userId);
+  if (query?.workspaceId) {
+    out = out.filter(row => row.workspaceId === query.workspaceId);
+  }
+  if (query?.fromIso) {
+    out = out.filter(row => row.at >= query.fromIso!);
+  }
+  out.sort((a, b) => b.at.localeCompare(a.at));
+  const take = query?.take;
+  if (typeof take === "number" && take > 0) return out.slice(0, take);
+  return out;
+}
+
+function capDocContent(text: string): string {
+  if (text.length <= MAX_DOC_CONTENT_CHARS) return text;
+  return text.slice(0, MAX_DOC_CONTENT_CHARS);
+}
+
 export function createHostedAppStore(driver: HostedDriver) {
   async function putWorkspace(row: HostedWorkspace): Promise<void> {
     await driver.put(userPk(row.userId), wsSk(row.id), metaItem(row.userId, row));
@@ -376,6 +625,184 @@ export function createHostedAppStore(driver: HostedDriver) {
     const row = await getWorkspace(userId, id);
     if (!row) return null;
     return { id: row.id, name: row.name, context: row.context, isDefault: row.isDefault };
+  }
+
+  async function getProfile(userId: string): Promise<HostedProfile | null> {
+    const item = await driver.get(userPk(userId), pfSk());
+    if (!item) return null;
+    const row = asProfile(item);
+    if (!row || row.userId !== userId) return null;
+    return row;
+  }
+
+  async function putProfile(row: HostedProfile): Promise<HostedProfile> {
+    await driver.put(userPk(row.userId), pfSk(), metaItem(row.userId, row));
+    return row;
+  }
+
+  async function listDocuments(userId: string, workspaceId?: string | null): Promise<HostedDocument[]> {
+    const items = await driver.queryPrefix(userPk(userId), DC);
+    let rows = items
+      .map(asDocument)
+      .filter((d): d is HostedDocument => d != null && d.userId === userId);
+    if (workspaceId) {
+      rows = rows.filter(d => d.workspaceId === workspaceId || d.workspaceId == null);
+    }
+    rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return rows;
+  }
+
+  async function getDocument(userId: string, id: string): Promise<HostedDocument | null> {
+    const item = await driver.get(userPk(userId), dcSk(id));
+    if (!item) return null;
+    const row = asDocument(item);
+    if (!row || row.userId !== userId) return null;
+    return row;
+  }
+
+  async function putDocument(row: HostedDocument): Promise<HostedDocument> {
+    const stored: HostedDocument = {
+      ...row,
+      content: capDocContent(row.content ?? ""),
+      chunks: (row.chunks ?? []).map(c => ({
+        ...c,
+        content: capDocContent(c.content),
+      })),
+    };
+    await driver.put(userPk(row.userId), dcSk(row.id), metaItem(row.userId, stored));
+    return stored;
+  }
+
+  async function deleteDocument(userId: string, id: string): Promise<HostedDocument | null> {
+    const existing = await getDocument(userId, id);
+    if (!existing) return null;
+    await driver.delete(userPk(userId), dcSk(id));
+    return existing;
+  }
+
+  async function listBookmarks(userId: string, workspaceId: string): Promise<HostedSavedItem[]> {
+    const items = await driver.queryPrefix(userPk(userId), `${BM}${workspaceId}#`);
+    const rows = items
+      .map(asSavedItem)
+      .filter((row): row is HostedSavedItem => row != null && row.userId === userId);
+    rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return rows;
+  }
+
+  async function putBookmark(row: HostedSavedItem): Promise<HostedSavedItem> {
+    await driver.put(userPk(row.userId), bmSk(row.workspaceId, row.messageId), metaItem(row.userId, row));
+    return row;
+  }
+
+  async function deleteBookmark(
+    userId: string,
+    workspaceId: string,
+    messageId: string,
+  ): Promise<HostedSavedItem | null> {
+    const item = await driver.get(userPk(userId), bmSk(workspaceId, messageId));
+    if (!item) return null;
+    const row = asSavedItem(item);
+    if (!row || row.userId !== userId) return null;
+    await driver.delete(userPk(userId), bmSk(workspaceId, messageId));
+    return row;
+  }
+
+  async function listSecurityEvents(
+    userId: string,
+    query?: HostedEventQuery,
+  ): Promise<HostedSecurityEvent[]> {
+    const items = await driver.queryPrefix(userPk(userId), SEC);
+    const rows = items
+      .map(asSecurityEvent)
+      .filter((row): row is HostedSecurityEvent => row != null);
+    return filterEvents(userId, rows, query);
+  }
+
+  async function putSecurityEvent(row: HostedSecurityEvent): Promise<HostedSecurityEvent> {
+    await driver.put(userPk(row.userId), secSk(row.at, row.id), metaItem(row.userId, row));
+    return row;
+  }
+
+  async function listInferenceEvents(
+    userId: string,
+    query?: HostedEventQuery,
+  ): Promise<HostedInferenceEvent[]> {
+    const items = await driver.queryPrefix(userPk(userId), INF);
+    const rows = items
+      .map(asInferenceEvent)
+      .filter((row): row is HostedInferenceEvent => row != null);
+    return filterEvents(userId, rows, query);
+  }
+
+  async function putInferenceEvent(row: HostedInferenceEvent): Promise<HostedInferenceEvent> {
+    await driver.put(userPk(row.userId), infSk(row.at, row.id), metaItem(row.userId, row));
+    return row;
+  }
+
+  async function listFacts(userId: string, workspaceId: string): Promise<HostedWorkspaceFact[]> {
+    const items = await driver.queryPrefix(userPk(userId), `${FT}${workspaceId}#`);
+    const rows = items
+      .map(asFact)
+      .filter((row): row is HostedWorkspaceFact => row != null && row.userId === userId);
+    rows.sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt.localeCompare(a.updatedAt));
+    return rows;
+  }
+
+  async function putFact(row: HostedWorkspaceFact): Promise<HostedWorkspaceFact> {
+    await driver.put(userPk(row.userId), ftSk(row.workspaceId, row.key), metaItem(row.userId, row));
+    return row;
+  }
+
+  async function getFactById(
+    userId: string,
+    workspaceId: string,
+    factId: string,
+  ): Promise<HostedWorkspaceFact | null> {
+    return (await listFacts(userId, workspaceId)).find(f => f.id === factId) ?? null;
+  }
+
+  async function deleteFact(
+    userId: string,
+    workspaceId: string,
+    factId: string,
+  ): Promise<HostedWorkspaceFact | null> {
+    const existing = await getFactById(userId, workspaceId, factId);
+    if (!existing) return null;
+    await driver.delete(userPk(userId), ftSk(workspaceId, existing.key));
+    return existing;
+  }
+
+  async function listSessionSummaries(
+    userId: string,
+    workspaceId: string,
+  ): Promise<HostedSessionSummary[]> {
+    const items = await driver.queryPrefix(userPk(userId), `${SM}${workspaceId}#`);
+    const rows = items
+      .map(asSessionSummary)
+      .filter((row): row is HostedSessionSummary => row != null && row.userId === userId);
+    rows.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return rows;
+  }
+
+  async function putSessionSummary(row: HostedSessionSummary): Promise<HostedSessionSummary> {
+    await driver.put(
+      userPk(row.userId),
+      smSk(row.workspaceId, row.sessionId),
+      metaItem(row.userId, row),
+    );
+    return row;
+  }
+
+  async function getSessionSummary(
+    userId: string,
+    workspaceId: string,
+    sessionId: string,
+  ): Promise<HostedSessionSummary | null> {
+    const item = await driver.get(userPk(userId), smSk(workspaceId, sessionId));
+    if (!item) return null;
+    const row = asSessionSummary(item);
+    if (!row || row.userId !== userId) return null;
+    return row;
   }
 
   return {
@@ -513,13 +940,21 @@ export function createHostedAppStore(driver: HostedDriver) {
       }
 
       const limited = messages.slice(-200);
+      const [summaryRow, facts] = await Promise.all([
+        getSessionSummary(userId, workspaceId, session.id),
+        listFacts(userId, workspaceId),
+      ]);
+      const extractedFacts: Record<string, string> = {};
+      for (const f of facts) {
+        if (!f.forgotten) extractedFacts[f.key] = f.value;
+      }
       return {
         sessionId: session.id,
         workspaceId,
         messages: limited,
-        sessionSummary: "",
-        summarizedCount: 0,
-        extractedFacts: {},
+        sessionSummary: summaryRow?.summary ?? "",
+        summarizedCount: summaryRow?.turnsCovered ?? 0,
+        extractedFacts,
       };
     },
 
@@ -546,6 +981,46 @@ export function createHostedAppStore(driver: HostedDriver) {
       await putSession({ ...owned, updatedAt: msg.createdAt });
       return { id: msg.id };
     },
+
+    getProfile,
+    putProfile,
+    listDocuments,
+    getDocument,
+    putDocument,
+    deleteDocument,
+    listBookmarks,
+    putBookmark,
+    deleteBookmark,
+    listSecurityEvents,
+    putSecurityEvent,
+    listInferenceEvents,
+    putInferenceEvent,
+    listFacts,
+    putFact,
+    getFactById,
+    deleteFact,
+    listSessionSummaries,
+    putSessionSummary,
+    getSessionSummary,
+    peekWorkspaces: listWorkspaceRows,
+
+    async findDuplicateDocument(
+      userId: string,
+      name: string,
+      sizeBytes: number,
+      workspaceId: string | null,
+    ): Promise<HostedDocument | null> {
+      const rows = await listDocuments(userId, workspaceId);
+      return (
+        rows.find(
+          d =>
+            d.name === name
+            && d.sizeBytes === sizeBytes
+            && (workspaceId ? d.workspaceId === workspaceId : d.workspaceId == null)
+            && d.status !== "failed",
+        ) ?? null
+      );
+    },
   };
 }
 
@@ -558,7 +1033,7 @@ export function hostedAppStore(): HostedAppStore {
   return singleton;
 }
 
-/** Tests only. */
-export function resetHostedAppStoreForTests(): void {
-  singleton = null;
+/** Tests only. Pass a store to inject a memory driver. */
+export function resetHostedAppStoreForTests(store?: HostedAppStore): void {
+  singleton = store ?? null;
 }

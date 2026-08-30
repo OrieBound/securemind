@@ -120,14 +120,14 @@ These are **risk-reduction** controls, not a security or compliance guarantee. D
 
 - Not multi-tenant production auth. Floci Cognito is local. Hosted Cognito Sign in works against a real pool; as of 2026-08-29 that pool was empty and first-run claim is **not** on the live Amplify build yet.
 - Regex detection misses free-form names and unusual formats.
-- Image extract depends on Groq vision; OCR quality varies by screenshot.
+- Image extract needs a vision provider (Bedrock on hosted; optional Groq BYOK). OCR quality varies by screenshot.
 - Citation audit is heuristic (markers / claim units), not an LLM judge.
 - Safe terms, sensitivity, and the detection log still live in `localStorage`.
 - Do not claim Bedrock/KMS/Macie as live product features unless you have configured them.
 
 ## Discoveries and roadblocks (dated)
 
-**Last stamped: 2026-08-29.** First AWS sandbox apply (account `your-aws-profile` / `123456789012`). Full symptom → cause → fix notes: [`docs/deploy/hosted-sandbox-roadblocks.md`](docs/deploy/hosted-sandbox-roadblocks.md).
+**Last stamped: 2026-08-30.** First AWS sandbox apply (account `your-aws-profile` / `123456789012`). Full symptom → cause → fix notes: [`docs/deploy/hosted-sandbox-roadblocks.md`](docs/deploy/hosted-sandbox-roadblocks.md).
 
 **Not live until GitHub Actions finishes.** First-run Owner claim was pushed to `main` on 2026-08-29 so CI can `terraform apply` (environment `aws-sandbox`) and `amplify start-job`. Until that workflow is green, the live Amplify URL is still the job-12 Sign in build against an **empty** Cognito pool. After a green apply: `terraform output -raw setup_claim_secret` (Actions logs will not print it; use the CLI or the Terraform state output). Local try: empty Floci pool (`docker compose down -v` if old demo users exist) → `npm run dev`.
 
@@ -143,6 +143,9 @@ These are **risk-reduction** controls, not a security or compliance guarantee. D
 | 2026-08-29 | Jobs “SUCCEED” but site HTTP 500 empty HTML | Turbopack NFT traced the whole repo (`process.cwd()`); prune then dropped `@swc/helpers` which Next needs at runtime. CloudWatch was 0 bytes until SSR log IAM. Job 12: HTTP 200 Sign in. |
 | 2026-08-29 | `admin@example.test` / `<demo-password>!` failed on Amplify | Those users exist only on **local Floci**. Hosted pool is invite-only and was **empty**. Public Sign up UI was a lie. |
 | 2026-08-29 | First-run Owner claim designed | Hosted: CLI setup code ≠ password. On-prem: choose email+password, no code. No product demo users. **Shipped to `main` for Actions apply; not live until that job succeeds.** |
+| 2026-08-30 | Documents / Cost / Insights: “Restart the dev server after schema changes” on Amplify | Live UI still ran Prisma against Postgres. Hosted has **no** Postgres. App records (workspaces, Knowledge, Insights, memory, profile) belong on DynamoDB. Laptop code now maps them; **not live until deploy**. Retry does nothing until that build ships. |
+| 2026-08-30 | Wizard offered Neon and Aurora on cloud | Those were preference-only and never a data plane. Cloud is **DynamoDB only** (everything on one store). Local stays Postgres + pgvector. Neon/Aurora parked as a possible later **all-SQL** path — not mixed with Dynamo. |
+| 2026-08-30 | Image Knowledge seemed to need Groq | Groq is optional BYOK. Hosted image extract uses Bedrock (Nova Lite). Original files are not stored on the hosted install — only extracted, scanned text. |
 
 Production is a **second stack** in `your-aws-profile`, not a retarget of sandbox.
 
@@ -150,8 +153,8 @@ Production is a **second stack** in `your-aws-profile`, not a retarget of sandbo
 
 - [`docs/securemind-education-guide.md`](docs/securemind-education-guide.md) — full project walkthrough and dependency guide
 - [`docs/README.md`](docs/README.md) — docs index
-- [`docs/adr/0002-storage-choice.md`](docs/adr/0002-storage-choice.md) — why Neon/Postgres + pgvector
+- [`docs/adr/0002-storage-choice.md`](docs/adr/0002-storage-choice.md) — local Postgres + pgvector; hosted AWS superseded by ADR 0007 (DynamoDB)
 - [`docs/adr/0003-local-aws-scaffolding.md`](docs/adr/0003-local-aws-scaffolding.md) — Floci + Compose
 - [`docs/adr/0004-amplify-lambda-hosting.md`](docs/adr/0004-amplify-lambda-hosting.md) — Amplify UI + API Gateway + Lambda
-- [`docs/deploy/hosted-sandbox-roadblocks.md`](docs/deploy/hosted-sandbox-roadblocks.md) — dated sandbox timeline: OIDC, Amplify 220 MB, HTTP 500, empty Cognito pool
+- [`docs/deploy/hosted-sandbox-roadblocks.md`](docs/deploy/hosted-sandbox-roadblocks.md) — dated sandbox timeline: OIDC, Amplify 220 MB, HTTP 500, empty Cognito pool, hosted Dynamo mapping (2026-08-30)
 - [`AGENTS.md`](AGENTS.md) — rules for agents working in this repo

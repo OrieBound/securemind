@@ -5,9 +5,9 @@
 
 export const runtime = "nodejs";
 
-import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import { extractDocument, processDocument, scrubDocumentText } from "@/lib/documents";
+import { getPersistedDocument, updatePersistedDocument } from "@/lib/documents/persist";
 import { originalExists, readOriginal } from "@/lib/document-storage";
 import { getIdentity } from "@/lib/identity";
 import { ImageExtractError } from "@/lib/image-extract";
@@ -20,15 +20,12 @@ export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
   const { userId } = await getIdentity(req);
 
-  const doc = await db.document.findFirst({ where: { id, userId } });
+  const doc = await getPersistedDocument(userId, id);
   if (!doc) {
     return NextResponse.json({ error: "Document not found" }, { status: 404 });
   }
 
-  await db.document.update({
-    where: { id: doc.id },
-    data: { status: "processing", processingError: null },
-  });
+  await updatePersistedDocument(userId, doc.id, { status: "processing", processingError: null });
 
   try {
     if (originalExists(doc.storageKey)) {
@@ -40,27 +37,24 @@ export async function POST(req: NextRequest, { params }: Params) {
         const piece = await scrubDocumentText(chunk.content);
         if (piece.content) drafts.push({ content: piece.content, provenance: chunk.provenance });
       }
-      await db.document.update({
-        where: { id: doc.id },
-        data: {
+      await updatePersistedDocument(userId, doc.id, {
           content: scrubbed.content || drafts.map(d => d.content).join("\n\n"),
-          extractMeta: extracted.extractMeta as object | undefined,
+          extractMeta: extracted.extractMeta,
           redactionCount: scrubbed.redactionCount,
           scrubEvents: scrubbed.hadRedactions ? scrubbed.scrubEvents : undefined,
-        },
-      });
+        });
       if (shouldSyncDocumentIngest()) {
-        await processDocument(doc.id, drafts);
+        await processDocument(doc.id, drafts, userId);
       } else {
-        processDocument(doc.id, drafts).catch(err =>
+        processDocument(doc.id, drafts, userId).catch(err =>
           console.error("[documents] reprocess failed:", err),
         );
       }
     } else {
       if (shouldSyncDocumentIngest()) {
-        await processDocument(doc.id);
+        await processDocument(doc.id, undefined, userId);
       } else {
-        processDocument(doc.id).catch(err =>
+        processDocument(doc.id, undefined, userId).catch(err =>
           console.error("[documents] reprocess failed:", err),
         );
       }
@@ -76,27 +70,15 @@ export async function POST(req: NextRequest, { params }: Params) {
           textExtracted: false,
         })
       : undefined;
-    await db.document.update({
-      where: { id: doc.id },
-      data: {
+    await updatePersistedDocument(userId, doc.id, {
         status: "failed",
         processingError: code,
         processedAt: new Date(),
         extractMeta: imageScan ? { kind: "image", imageScan } : undefined,
-      },
-    });
+      });
     return NextResponse.json({ error: message, code }, { status: 422 });
   }
 
-  const updated = await db.document.findFirst({
-    where: { id: doc.id, userId },
-    select: {
-      id: true,
-      status: true,
-      chunkCount: true,
-      processingError: true,
-      processedAt: true,
-    },
-  });
+  const updated = await getPersistedDocument(userId, doc.id);
   return NextResponse.json(updated);
 }

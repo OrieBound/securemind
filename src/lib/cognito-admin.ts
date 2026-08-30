@@ -23,6 +23,8 @@ import {
 import { CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
 import { LOCAL_AWS_CREDENTIALS, LOCAL_AWS_ENDPOINT } from "@/lib/aws-endpoint";
 import { roleFromGroups as mapGroupsToRole, type AppRole, type AssignableRole } from "@/lib/roles";
+import { getInstanceConfig } from "@/lib/instance-config";
+import { isHostedRuntime } from "@/lib/runtime-env";
 import { db } from "@/lib/db";
 
 export const GROUP_OWNER = "Owner";
@@ -181,10 +183,7 @@ async function groupsForUsername(username: string): Promise<string[]> {
 
 async function getOwnerUserId(): Promise<string | null> {
   try {
-    const row = await db.instanceConfig.findUnique({
-      where: { id: "singleton" },
-      select: { ownerUserId: true },
-    });
+    const row = await getInstanceConfig();
     return row?.ownerUserId ?? null;
   } catch {
     return null;
@@ -192,6 +191,11 @@ async function getOwnerUserId(): Promise<string | null> {
 }
 
 async function setOwnerUserId(userId: string): Promise<void> {
+  if (isHostedRuntime()) {
+    const { hostedInstanceConfig } = await import("@/lib/instance-config-hosted");
+    await hostedInstanceConfig().merge({ ownerUserId: userId });
+    return;
+  }
   await db.instanceConfig.upsert({
     where: { id: "singleton" },
     create: { id: "singleton", ownerUserId: userId },

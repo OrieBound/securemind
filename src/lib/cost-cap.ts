@@ -5,6 +5,9 @@
 
 import { db } from "@/lib/db";
 import { LOCAL_USER_ID } from "@/lib/identity";
+import { usesHostedAppStore } from "@/lib/workspaces/store";
+import { hostedAppStore } from "@/lib/workspaces/hosted-dynamo";
+import { hostedInstanceConfig } from "@/lib/instance-config-hosted";
 import {
   DEFAULT_MONTHLY_COST_CAP_USD,
   costCapWarningLevel,
@@ -47,6 +50,23 @@ export async function getUsersMonthSpendUsd(
   if (ids.length === 0) return result;
   const { start, resetsAt } = utcMonthBounds(now);
   try {
+    if (usesHostedAppStore()) {
+      const store = hostedAppStore();
+      const fromIso = start.toISOString();
+      const untilIso = resetsAt.toISOString();
+      await Promise.all(
+        ids.map(async id => {
+          const events = await store.listInferenceEvents(id, { fromIso });
+          let sum = 0;
+          for (const e of events) {
+            if (e.at >= untilIso) continue;
+            if (e.estimatedCostUsd != null) sum += e.estimatedCostUsd;
+          }
+          result.set(id, sum);
+        }),
+      );
+      return result;
+    }
     const rows = await db.inferenceEvent.groupBy({
       by: ["userId"],
       where: {
@@ -70,6 +90,12 @@ export async function getUsersMonthSpendUsd(
 
 export async function getDefaultMonthlyCostCapUsd(): Promise<number> {
   try {
+    if (usesHostedAppStore()) {
+      const row = await hostedInstanceConfig().get();
+      const v = row?.defaultMonthlyCostCapUsd;
+      if (typeof v === "number" && Number.isFinite(v) && v >= 0) return v;
+      return DEFAULT_MONTHLY_COST_CAP_USD;
+    }
     const row = await db.instanceConfig.findUnique({
       where: { id: "singleton" },
       select: { defaultMonthlyCostCapUsd: true },
@@ -88,12 +114,17 @@ export async function getDefaultMonthlyCostCapUsd(): Promise<number> {
  */
 export async function resolveUserMonthlyCostCapUsd(userId: string): Promise<number | null> {
   try {
-    const profile = await db.userProfile.findUnique({
-      where: { userId },
-      select: { monthlyCostCapUsd: true },
-    });
-    if (profile) {
-      return profile.monthlyCostCapUsd;
+    if (usesHostedAppStore()) {
+      const row = await hostedAppStore().getProfile(userId);
+      if (row) return row.monthlyCostCapUsd;
+    } else {
+      const profile = await db.userProfile.findUnique({
+        where: { userId },
+        select: { monthlyCostCapUsd: true },
+      });
+      if (profile) {
+        return profile.monthlyCostCapUsd;
+      }
     }
   } catch (err) {
     console.warn(

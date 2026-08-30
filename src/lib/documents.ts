@@ -17,6 +17,8 @@ import { db } from "@/lib/db";
 import { originalExists, readOriginal } from "@/lib/document-storage";
 import { embedText } from "@/lib/models/embed";
 import { mirrorDocumentChunkToDynamo } from "@/lib/storage/dynamodb-ingest";
+import { usesHostedAppStore } from "@/lib/workspaces/store";
+import { getPersistedDocument, updatePersistedDocument } from "@/lib/documents/persist";
 import { scrubPII, type ScrubEvent } from "@/lib/pii";
 import { sanitizeRetrievedText } from "@/lib/prompt-guard";
 import { extractTextFromImage, isFailedExtractContent } from "@/lib/image-extract";
@@ -318,7 +320,12 @@ export function chunkText(text: string): string[] {
 export async function processDocument(
   documentId: string,
   preparedChunks?: DocumentChunkDraft[],
+  ownerUserId?: string,
 ): Promise<void> {
+  if (usesHostedAppStore()) {
+    await processHostedDocument(documentId, preparedChunks, ownerUserId);
+    return;
+  }
   try {
     const doc = await db.document.findUnique({ where: { id: documentId } });
     if (!doc) {
@@ -431,5 +438,89 @@ export async function processDocument(
     await db.document
       .update({ where: { id: documentId }, data: { status: "failed" } })
       .catch(() => {});
+  }
+}
+
+async function processHostedDocument(
+  documentId: string,
+  preparedChunks: DocumentChunkDraft[] | undefined,
+  ownerUserId: string | undefined,
+): Promise<void> {
+  if (!ownerUserId) {
+    console.error("[documents] hosted processDocument requires ownerUserId");
+    return;
+  }
+  try {
+    const doc = await getPersistedDocument(ownerUserId, documentId);
+    if (!doc) {
+      console.error(`[documents] processDocument: document ${documentId} not found`);
+      return;
+    }
+    if (isFailedExtractContent(doc.content)) {
+      await updatePersistedDocument(ownerUserId, documentId, {
+        status: "failed",
+        chunkCount: 0,
+        processingError: "STUB_EXTRACT",
+        processedAt: new Date(),
+      });
+      return;
+    }
+
+    const drafts: DocumentChunkDraft[] = preparedChunks?.length
+      ? preparedChunks
+      : chunkText(doc.content).map(content => ({ content }));
+    const chunks: DocumentChunkDraft[] = drafts.length > 0
+      ? drafts
+      : chunkText(doc.content).map(content => ({ content }));
+
+    let embedded = 0;
+    let embedFailed = false;
+    const fragmentIds: string[] = [];
+    const storedChunks: { id: string; content: string; createdAt: string; provenance: unknown }[] = [];
+    const ts = new Date().toISOString();
+
+    for (const chunk of chunks) {
+      try {
+        const vector = await embedText(chunk.content);
+        const fragmentId = crypto.randomUUID();
+        await mirrorDocumentChunkToDynamo({
+          fragmentId,
+          userId: doc.userId,
+          workspaceId: doc.workspaceId,
+          content: chunk.content,
+          embedding: vector,
+          documentId: doc.id,
+          documentName: doc.name,
+          provenance: chunk.provenance ?? null,
+        });
+        fragmentIds.push(fragmentId);
+        storedChunks.push({
+          id: fragmentId,
+          content: chunk.content,
+          createdAt: ts,
+          provenance: chunk.provenance ?? null,
+        });
+        embedded++;
+      } catch (chunkErr) {
+        embedFailed = true;
+        console.warn(`[documents] hosted chunk ${embedded + 1} embed failed:`, chunkErr);
+      }
+    }
+
+    const finalStatus = embedded > 0 || embedFailed ? "ready" : "failed";
+    await updatePersistedDocument(ownerUserId, documentId, {
+      status: finalStatus,
+      chunkCount: embedded,
+      processedAt: new Date(),
+      processingError: finalStatus === "failed" ? "EMBED_FAILED" : null,
+      fragmentIds,
+      chunks: storedChunks,
+    });
+    console.log(
+      `[documents] ${doc.name}: ${embedded}/${chunks.length} chunks embedded → ${finalStatus}`,
+    );
+  } catch (err) {
+    console.error("[documents] hosted processDocument failed:", err);
+    await updatePersistedDocument(ownerUserId, documentId, { status: "failed" }).catch(() => {});
   }
 }

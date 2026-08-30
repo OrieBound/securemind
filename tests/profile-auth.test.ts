@@ -27,6 +27,11 @@ vi.mock("@/lib/user-profile", () => ({
   getUserProfile: vi.fn(),
 }));
 
+vi.mock("@/lib/workspaces/store", () => ({
+  listWorkspaces: vi.fn().mockResolvedValue([]),
+  usesHostedAppStore: () => false,
+}));
+
 vi.mock("@/lib/db", () => ({
   db: {
     userProfile: {

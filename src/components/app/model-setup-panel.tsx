@@ -4,6 +4,7 @@ import { useState } from "react";
 import { apiAuthHeaders, apiUrl, usesRemoteApi } from "@/lib/client/api-base";
 import { markBedrockHighlight } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
+import { themeForRuntime } from "@/lib/provider-theme";
 import type { SettingsSection } from "@/components/app/settings-hub";
 
 export type RuntimeStatusPayload = {
@@ -56,20 +57,30 @@ export type RuntimeStatusPayload = {
 function Chip({
   ok,
   label,
+  provider,
 }: {
   ok: boolean;
   label: string;
+  provider?: string | null;
 }) {
+  const theme = provider ? themeForRuntime(provider) : null;
   return (
     <span
       className={cn(
         "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.62rem]",
-        ok
-          ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-200/85"
-          : "border-amber-500/25 bg-amber-500/10 text-amber-200/85",
+        theme && ok
+          ? theme.badge
+          : ok
+            ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-200/85"
+            : "border-amber-500/25 bg-amber-500/10 text-amber-200/85",
       )}
     >
-      <span className={cn("size-1.5 rounded-full", ok ? "bg-emerald-400/80" : "bg-amber-400/80")} />
+      <span
+        className={cn(
+          "size-1.5 rounded-full",
+          theme && ok ? "bg-current opacity-80" : ok ? "bg-emerald-400/80" : "bg-amber-400/80",
+        )}
+      />
       {label}
     </span>
   );
@@ -78,21 +89,24 @@ function Chip({
 export function RuntimeStatusBar({
   status,
   inUseLabel,
+  inUseProvider,
 }: {
   status: RuntimeStatusPayload | null;
   /** Overrides the provider chip — last reply or the model the next send will use. */
   inUseLabel?: string | null;
+  inUseProvider?: string | null;
 }) {
   if (!status) return null;
   const providerLabel = inUseLabel
     ?? (status.model.provider
       ? `${status.model.provider}${status.model.model ? ` · ${status.model.model}` : ""}`
       : "No model provider");
+  const providerChip = inUseProvider ?? status.model.provider;
   return (
     <div className="mb-2 flex flex-wrap items-center gap-1.5 px-0.5">
       <Chip ok={status.capabilities.detection.ready} label="Detection" />
       <Chip ok={status.capabilities.documentParsing.ready} label="Document parsing" />
-      <Chip ok={status.chatReady} label={providerLabel} />
+      <Chip ok={status.chatReady} label={providerLabel} provider={providerChip} />
       {status.edition === "cloud" && (
         <Chip ok={status.capabilities.imageOcr.ready} label="Vision extract" />
       )}

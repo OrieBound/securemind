@@ -23,12 +23,11 @@ import { streamOpenAIChat } from "@/lib/models/openai";
 import { streamAnthropicChat } from "@/lib/models/anthropic";
 import { streamGoogleChat } from "@/lib/models/google";
 import type { ChatMessage, ModelProvider } from "@/lib/models/types";
+import { diagnoseModelTestError } from "@/lib/models/test-diagnose";
 
 /** Cap the reply: this proves reachability, it does not need to say anything. */
 const MAX_SAMPLE_CHARS = 80;
 const TIMEOUT_MS = 30_000;
-
-type Diagnosis = { code: string; message: string; remediation: string | null };
 
 /**
  * Dispatch straight to the provider — deliberately not `streamChat()`, whose
@@ -46,54 +45,6 @@ function streamExactly(
   if (provider === "anthropic") return streamAnthropicChat(messages, model);
   if (provider === "google") return streamGoogleChat(messages, model);
   return streamGroqChat(messages, model);
-}
-
-/** Turn a provider SDK error into something an operator can act on. */
-function diagnose(err: unknown, provider: string, modelId: string): Diagnosis {
-  const name = err instanceof Error ? err.name : "Error";
-  const raw = err instanceof Error ? err.message : String(err);
-
-  if (/AccessDenied|not authorized|UnrecognizedClient/i.test(`${name} ${raw}`)) {
-    return {
-      code: "access_denied",
-      message: raw,
-      remediation:
-        provider === "bedrock"
-          ? "This Test call runs as the Amplify UI role. Terraform attaches Bedrock invoke to that existing role — you do not create a role by hand. Chat already uses the chat Lambda role. Also enable the model in the AWS console under Bedrock → Model access (that step is not IAM)."
-          : "The API key was rejected for this model. Check the key's plan and permissions.",
-    };
-  }
-  if (/ResourceNotFound|end of its life|does not exist/i.test(raw)) {
-    return {
-      code: "not_available",
-      message: raw,
-      remediation:
-        "This model id is not available in the selected region — it may be retired, or it may only exist behind a cross-region inference profile.",
-    };
-  }
-  if (/ValidationException|Invocation of model ID.*isn't supported/i.test(raw)) {
-    return {
-      code: "needs_inference_profile",
-      message: raw,
-      remediation:
-        "This model cannot be called on demand. Use the cross-region inference profile id (the one prefixed with us.) instead.",
-    };
-  }
-  if (/Throttl|TooManyRequests|rate limit/i.test(`${name} ${raw}`)) {
-    return {
-      code: "throttled",
-      message: raw,
-      remediation: "The provider throttled the request. Retry in a moment.",
-    };
-  }
-  if (/timed out|timeout|abort/i.test(raw)) {
-    return {
-      code: "timeout",
-      message: raw,
-      remediation: "No response within 30s. The model may be cold or unreachable from this host.",
-    };
-  }
-  return { code: "error", message: raw || `${name} while calling ${modelId}`, remediation: null };
 }
 
 export async function POST(req: NextRequest) {
@@ -172,7 +123,7 @@ export async function POST(req: NextRequest) {
         sample: text.slice(0, MAX_SAMPLE_CHARS),
       });
     } catch (err) {
-      const d = diagnose(err, allowed.provider, allowed.model);
+      const d = diagnoseModelTestError(err, allowed.provider, allowed.model);
       return Response.json({
         ok: false,
         modelId: allowed.model,

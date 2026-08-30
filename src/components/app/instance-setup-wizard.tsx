@@ -6,7 +6,6 @@ import { PRODUCT_NAME } from "@/lib/branding";
 import { cn } from "@/lib/utils";
 import type { WizardStorageChoice } from "@/lib/wizard-storage";
 
-type CloudChoice = "dynamodb" | "neon" | "aurora";
 type LocalChoice = "postgres" | "dynamodb";
 
 type Props = {
@@ -15,50 +14,9 @@ type Props = {
   onDone: () => void;
 };
 
-function initialCloud(preferred: WizardStorageChoice): CloudChoice {
-  if (preferred === "neon" || preferred === "aurora" || preferred === "dynamodb") return preferred;
-  return "dynamodb";
-}
-
 function initialLocal(preferred: WizardStorageChoice): LocalChoice {
   return preferred === "dynamodb" ? "dynamodb" : "postgres";
 }
-
-const CLOUD_OPTIONS: Array<{
-  id: CloudChoice;
-  title: string;
-  badge?: string;
-  points: string[];
-}> = [
-  {
-    id: "dynamodb",
-    title: "DynamoDB",
-    badge: "Default",
-    points: [
-      "Ready on this hosted install — Knowledge search and workspaces use it today.",
-      "You pay for what you use (reads, writes, and stored data), not a database server sitting idle.",
-      "Scales without patching a SQL instance. Cost can rise with heavy traffic.",
-    ],
-  },
-  {
-    id: "neon",
-    title: "Neon",
-    points: [
-      "Managed Postgres with a more predictable monthly-style bill than pay-per-request DynamoDB.",
-      "A good later path if you want SQL and pgvector in the cloud.",
-      "Not created from this screen. Choosing it records a preference for an operator to connect later.",
-    ],
-  },
-  {
-    id: "aurora",
-    title: "Aurora",
-    points: [
-      "AWS-managed Postgres with a flatter instance-style cost than DynamoDB’s pay-per-use model.",
-      "Stays in your AWS account if you want a relational data plane there.",
-      "Costs more at idle than serverless options. Not provisioned from this screen.",
-    ],
-  },
-];
 
 /**
  * Blocking first-run wizard after the owner is signed in.
@@ -67,13 +25,12 @@ const CLOUD_OPTIONS: Array<{
  */
 export function InstanceSetupWizard({ edition, preferredStorage, onDone }: Props) {
   const [step, setStep] = useState<1 | 2>(1);
-  const [cloudStorage, setCloudStorage] = useState<CloudChoice>(() => initialCloud(preferredStorage));
   const [localStorage, setLocalStorage] = useState<LocalChoice>(() => initialLocal(preferredStorage));
   const [riskAck, setRiskAck] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const storage: WizardStorageChoice = edition === "cloud" ? cloudStorage : localStorage;
+  const storage: WizardStorageChoice = edition === "cloud" ? "dynamodb" : localStorage;
 
   async function finish() {
     setBusy(true);
@@ -108,59 +65,35 @@ export function InstanceSetupWizard({ edition, preferredStorage, onDone }: Props
           <h1 className="text-title mt-1.5">
             {step === 1
               ? edition === "cloud"
-                ? "Choose your data store"
+                ? "Hosted data store"
                 : "Choose your data store"
               : "Before you start"}
           </h1>
           <p className="text-ui text-[var(--text-muted)] mt-2 leading-[var(--leading-body)]">
             {step === 1
               ? edition === "cloud"
-                ? "This hosted workspace uses Amazon DynamoDB by default. You can record a preference for Neon or Aurora instead — we do not create those databases from this screen."
+                ? "This hosted workspace stores everything in Amazon DynamoDB — workspaces, chat, Knowledge, memory, and Insights. There is no Postgres on this install."
                 : "On this machine the default is Postgres with pgvector. DynamoDB is optional and only records a preference until you connect a table."
               : "SecureMind helps you work with AI in a workspace that detects and replaces sensitive values before they leave this browser. That reduces risk. It cannot catch everything, and it is not a promise of complete security or compliance."}
           </p>
         </div>
 
         {step === 1 && edition === "cloud" && (
-          <fieldset className="space-y-3">
-            <legend className="text-label uppercase tracking-wider text-[var(--text-muted)]">
-              Cloud options
-            </legend>
-            {CLOUD_OPTIONS.map(opt => (
-              <label
-                key={opt.id}
-                className={cn(
-                  "flex gap-3 items-start rounded-lg border p-3 cursor-pointer transition-colors",
-                  cloudStorage === opt.id
-                    ? "border-[var(--primary-soft-foreground)]/40 bg-foreground/[0.03]"
-                    : "border-foreground/10",
-                )}
-              >
-                <input
-                  type="radio"
-                  name="storage"
-                  checked={cloudStorage === opt.id}
-                  onChange={() => setCloudStorage(opt.id)}
-                  className="mt-1"
-                />
-                <span className="min-w-0">
-                  <span className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{opt.title}</span>
-                    {opt.badge ? (
-                      <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-indigo-200">
-                        {opt.badge}
-                      </span>
-                    ) : null}
-                  </span>
-                  <ul className="mt-1.5 space-y-1 text-ui text-[var(--text-muted)] list-disc pl-4">
-                    {opt.points.map(p => (
-                      <li key={p}>{p}</li>
-                    ))}
-                  </ul>
-                </span>
-              </label>
-            ))}
-          </fieldset>
+          <div className="rounded-lg border border-foreground/10 p-3 space-y-2">
+            <p className="flex items-center gap-2">
+              <span className="text-sm font-medium">DynamoDB</span>
+              <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-indigo-200">
+                Cloud store
+              </span>
+            </p>
+            <ul className="space-y-1 text-ui text-[var(--text-muted)] list-disc pl-4">
+              <li>Ready on this hosted install for Knowledge search and app data.</li>
+              <li>You pay for what you use, not a database server sitting idle.</li>
+            </ul>
+            <p className="text-ui text-[var(--text-muted)] pt-1">
+              Managed Postgres (Neon or Aurora) is not offered here. It may come back later as an all-SQL option — not mixed with DynamoDB.
+            </p>
+          </div>
         )}
 
         {step === 1 && edition === "local" && (
@@ -168,7 +101,7 @@ export function InstanceSetupWizard({ edition, preferredStorage, onDone }: Props
             <legend className="text-label uppercase tracking-wider text-[var(--text-muted)]">
               Local options
             </legend>
-            <label className="flex gap-3 items-start rounded-lg border border-foreground/10 p-3 cursor-pointer">
+            <label className={cn("flex gap-3 items-start rounded-lg border p-3 cursor-pointer", localStorage === "postgres" ? "border-[var(--primary-soft-foreground)]/40 bg-foreground/[0.03]" : "border-foreground/10")}>
               <input
                 type="radio"
                 name="storage"
@@ -188,7 +121,7 @@ export function InstanceSetupWizard({ edition, preferredStorage, onDone }: Props
                 </span>
               </span>
             </label>
-            <label className="flex gap-3 items-start rounded-lg border border-foreground/10 p-3 cursor-pointer">
+            <label className={cn("flex gap-3 items-start rounded-lg border p-3 cursor-pointer", localStorage === "dynamodb" ? "border-[var(--primary-soft-foreground)]/40 bg-foreground/[0.03]" : "border-foreground/10")}>
               <input
                 type="radio"
                 name="storage"

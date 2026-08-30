@@ -30,7 +30,6 @@ import {
   Trash2,
   Upload,
   X,
-  Zap,
 } from "lucide-react";
 import {
   memo,
@@ -174,6 +173,7 @@ import {
   warmChatConnection,
 } from "@/lib/client/api-base";
 import { PRODUCT_CHROME_TAGLINE, PRODUCT_POSITIONING } from "@/lib/branding";
+import { themeForRuntime } from "@/lib/provider-theme";
 import { cn } from "@/lib/utils";
 import {
   scrubPII,
@@ -1311,8 +1311,12 @@ function ThinkingIndicator({
           {formatThinkingElapsed(elapsedMs)}
         </span>
         {provider && (
-          <span className="text-[0.58rem] uppercase tracking-wider font-semibold text-indigo-200/45">
-            {provider}
+          <span className={cn(
+            "text-[0.58rem] uppercase tracking-wider font-semibold",
+            themeForRuntime(provider).icon,
+            "opacity-80",
+          )}>
+            {themeForRuntime(provider).label}
           </span>
         )}
         {onStop && (
@@ -1593,16 +1597,10 @@ const MessageBubble = memo(function MessageBubble({
         {/* Route badge — shows which mode + model handled this turn */}
         {message.routeInfo && !message.error && (
           <div className="mt-2.5 flex items-center gap-2 flex-wrap">
-            {/* Provider pill */}
-            <span className={cn(
-              "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[0.65rem] font-mono font-medium uppercase tracking-wide",
-              message.routeInfo.provider === "groq"
-                ? "text-indigo-400/80 bg-indigo-400/10 border border-indigo-400/15"
-                : "text-emerald-400/70 bg-emerald-400/8 border border-emerald-400/15",
-            )}>
-              <Zap className="size-2.5 shrink-0" aria-hidden />
-              {message.routeInfo.provider === "ollama" ? "Ollama" : message.routeInfo.provider}
-            </span>
+            <ProviderBadge
+              provider={message.routeInfo.provider}
+              className="text-[0.65rem] font-mono font-medium"
+            />
             {/* Mode — with "auto" indicator when classifier picked it */}
             <span className="text-meta inline-flex items-center gap-1">
               {message.routeInfo.mode}
@@ -2893,6 +2891,17 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     modeModelOverrides,
     modelSelectionMode,
     runtimeStatus?.model.model,
+    runtimeStatus?.model.provider,
+  ]);
+  const composerInUseProvider = useMemo(() => {
+    if (lastRouteInfo) return lastRouteInfo.provider;
+    if (modelSelectionMode === "fixed") return guessProvider(fixedModelId);
+    if (runtimeStatus?.model.provider) return runtimeStatus.model.provider;
+    return null;
+  }, [
+    fixedModelId,
+    lastRouteInfo,
+    modelSelectionMode,
     runtimeStatus?.model.provider,
   ]);
 
@@ -4456,7 +4465,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
         setDocuments(await res.json() as DocRecord[]);
       } else {
         const body = await res.json().catch(() => null) as { error?: string } | null;
-        setDocError(body?.error ?? `Could not load documents (HTTP ${res.status}). Try restarting the dev server.`);
+        setDocError(body?.error ?? `Could not load documents (HTTP ${res.status}).`);
         setDocuments([]);
       }
     } catch (err) {
@@ -5272,15 +5281,10 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                   children: lastRouteInfo ? (
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={cn(
-                          "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[0.6rem] font-mono font-semibold uppercase tracking-wide",
-                          lastRouteInfo.provider === "groq"
-                            ? "text-indigo-400/80 bg-indigo-400/10 border border-indigo-400/15"
-                            : "text-emerald-400/70 bg-emerald-400/8 border border-emerald-400/15",
-                        )}>
-                          <Zap className="size-2.5 shrink-0" aria-hidden />
-                          {lastRouteInfo.provider === "ollama" ? "Ollama" : lastRouteInfo.provider}
-                        </span>
+                        <ProviderBadge
+                          provider={lastRouteInfo.provider}
+                          className="text-[0.6rem] font-mono"
+                        />
                         <code className="text-[0.65rem] font-mono text-foreground/50">{labelFor(lastRouteInfo.model)}</code>
                         {lastRouteInfo.wasAutoRouted && (
                           <span className="text-[0.55rem] text-indigo-400/50 font-mono uppercase tracking-wide">auto</span>
@@ -6757,7 +6761,9 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                 />
 
                 <p className="text-sm text-foreground/45 px-1">
-                  Files for {viewWorkspace?.name ?? "this workspace"} — originals kept; extracted text is scanned, then indexed.
+                  {runtimeStatus?.edition === "cloud"
+                    ? `Files for ${viewWorkspace?.name ?? "this workspace"} — only extracted, scanned text is stored. Original files are not kept on this install.`
+                    : `Files for ${viewWorkspace?.name ?? "this workspace"} — originals kept locally; extracted text is scanned, then indexed.`}
                 </p>
                 {documents.length > 0 && (
                   <KnowledgeLibraryFilters
@@ -7067,7 +7073,11 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
 
                 {runtimeStatus && (
                   <>
-                    <RuntimeStatusBar status={runtimeStatus} inUseLabel={composerInUseLabel} />
+                    <RuntimeStatusBar
+                      status={runtimeStatus}
+                      inUseLabel={composerInUseLabel}
+                      inUseProvider={composerInUseProvider}
+                    />
                     <ModelSetupPanel
                       status={runtimeStatus}
                       onOpenSettings={openSettings}

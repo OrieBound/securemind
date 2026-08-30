@@ -6,6 +6,8 @@ import {
   PRICING_BUNDLE_EFFECTIVE,
   PRICING_BUNDLE_VERSION,
 } from "@/lib/pricing";
+import { hostedAppStore } from "@/lib/workspaces/hosted-dynamo";
+import { findOwnedWorkspace, usesHostedAppStore } from "@/lib/workspaces/store";
 import { resolveDateRange, type AnalyticsRange } from "./types";
 
 export type AnalyticsFilter = {
@@ -19,14 +21,6 @@ function atFilter(range: AnalyticsRange) {
   return from ? { gte: from } : undefined;
 }
 
-async function ownedWorkspaceIds(userId: string): Promise<string[]> {
-  const rows = await db.workspace.findMany({
-    where: { userId },
-    select: { id: true },
-  });
-  return rows.map(r => r.id);
-}
-
 /** Ensure a workspace filter is owned by the caller; returns null if forbidden. */
 export async function resolveWorkspaceScope(
   userId: string,
@@ -34,6 +28,11 @@ export async function resolveWorkspaceScope(
 ): Promise<{ ok: true; workspaceId: string | null } | { ok: false }> {
   if (!workspaceId || workspaceId === "all") {
     return { ok: true, workspaceId: null };
+  }
+  if (usesHostedAppStore()) {
+    const ws = await findOwnedWorkspace(userId, workspaceId);
+    if (!ws) return { ok: false };
+    return { ok: true, workspaceId: ws.id };
   }
   const ws = await db.workspace.findFirst({
     where: { id: workspaceId, userId },
@@ -61,10 +60,80 @@ function inferenceWhere(filter: AnalyticsFilter) {
   };
 }
 
-export async function getSecuritySummary(filter: AnalyticsFilter) {
-  const where = securityWhere(filter);
-  const events = await db.securityEvent.findMany({
-    where,
+type SecurityRow = {
+  id: string;
+  at: Date;
+  workspaceId: string | null;
+  source: string;
+  category: string;
+  riskLevel: string;
+  outcome: string;
+  count: number;
+  sensitivity: string | null;
+  resourceKind: string | null;
+  resourceId: string | null;
+};
+
+type InferenceRow = {
+  id?: string;
+  at: Date;
+  workspaceId: string | null;
+  provider?: string;
+  model: string;
+  tier?: string;
+  promptTokens: number | null;
+  completionTokens: number | null;
+  latencyMs?: number | null;
+  status?: string;
+  retrievalHitCount?: number;
+  citationCount?: number;
+  groundingStatus: string | null;
+  estimatedCostUsd?: number | null;
+  pricingVersion?: string | null;
+};
+
+async function workspaceNameMap(userId: string): Promise<Map<string, string>> {
+  if (usesHostedAppStore()) {
+    const rows = await hostedAppStore().peekWorkspaces(userId);
+    return new Map(rows.map(w => [w.id, w.name]));
+  }
+  const workspaces = await db.workspace.findMany({
+    where: { userId },
+    select: { id: true, name: true },
+  });
+  return new Map(workspaces.map(w => [w.id, w.name]));
+}
+
+async function documentNameMap(userId: string, ids: string[]): Promise<Map<string, string>> {
+  const docNameById = new Map<string, string>();
+  if (ids.length === 0) return docNameById;
+  if (usesHostedAppStore()) {
+    const docs = await hostedAppStore().listDocuments(userId);
+    for (const d of docs) {
+      if (ids.includes(d.id)) docNameById.set(d.id, d.name);
+    }
+    return docNameById;
+  }
+  const docs = await db.document.findMany({
+    where: { userId, id: { in: ids } },
+    select: { id: true, name: true },
+  });
+  for (const d of docs) docNameById.set(d.id, d.name);
+  return docNameById;
+}
+
+async function loadSecurityRows(filter: AnalyticsFilter): Promise<SecurityRow[]> {
+  if (usesHostedAppStore()) {
+    const from = atFilter(filter.range)?.gte;
+    const rows = await hostedAppStore().listSecurityEvents(filter.userId, {
+      workspaceId: filter.workspaceId,
+      fromIso: from ? from.toISOString() : null,
+      take: 2000,
+    });
+    return rows.map(r => ({ ...r, at: new Date(r.at) }));
+  }
+  return db.securityEvent.findMany({
+    where: securityWhere(filter),
     select: {
       id: true,
       at: true,
@@ -81,6 +150,44 @@ export async function getSecuritySummary(filter: AnalyticsFilter) {
     orderBy: { at: "desc" },
     take: 2000,
   });
+}
+
+async function loadInferenceRows(filter: AnalyticsFilter, take: number): Promise<InferenceRow[]> {
+  if (usesHostedAppStore()) {
+    const from = atFilter(filter.range)?.gte;
+    const rows = await hostedAppStore().listInferenceEvents(filter.userId, {
+      workspaceId: filter.workspaceId,
+      fromIso: from ? from.toISOString() : null,
+      take,
+    });
+    return rows.map(r => ({ ...r, at: new Date(r.at) }));
+  }
+  return db.inferenceEvent.findMany({
+    where: inferenceWhere(filter),
+    select: {
+      id: true,
+      at: true,
+      workspaceId: true,
+      provider: true,
+      model: true,
+      tier: true,
+      promptTokens: true,
+      completionTokens: true,
+      latencyMs: true,
+      status: true,
+      retrievalHitCount: true,
+      citationCount: true,
+      groundingStatus: true,
+      estimatedCostUsd: true,
+      pricingVersion: true,
+    },
+    orderBy: { at: "desc" },
+    take,
+  });
+}
+
+export async function getSecuritySummary(filter: AnalyticsFilter) {
+  const events = await loadSecurityRows(filter);
 
   const totalFindings = events.reduce((s, e) => s + e.count, 0);
   const highRiskBlocked = events
@@ -120,11 +227,7 @@ export async function getSecuritySummary(filter: AnalyticsFilter) {
     }
   }
 
-  const workspaces = await db.workspace.findMany({
-    where: { userId: filter.userId },
-    select: { id: true, name: true },
-  });
-  const nameById = new Map(workspaces.map(w => [w.id, w.name]));
+  const nameById = await workspaceNameMap(filter.userId);
 
   // Resolve Knowledge document names for events that already store resourceId.
   const documentIds = [
@@ -134,14 +237,7 @@ export async function getSecuritySummary(filter: AnalyticsFilter) {
         .map(e => e.resourceId as string),
     ),
   ];
-  const docNameById = new Map<string, string>();
-  if (documentIds.length > 0) {
-    const docs = await db.document.findMany({
-      where: { userId: filter.userId, id: { in: documentIds } },
-      select: { id: true, name: true },
-    });
-    for (const d of docs) docNameById.set(d.id, d.name);
-  }
+  const docNameById = await documentNameMap(filter.userId, documentIds);
 
   const byDocument = new Map<string, { documentId: string; name: string; count: number }>();
   for (const e of events) {
@@ -196,31 +292,10 @@ export async function getSecuritySummary(filter: AnalyticsFilter) {
 }
 
 export async function getUsageSummary(filter: AnalyticsFilter) {
-  const where = inferenceWhere(filter);
-  const events = await db.inferenceEvent.findMany({
-    where,
-    select: {
-      id: true,
-      at: true,
-      workspaceId: true,
-      provider: true,
-      model: true,
-      tier: true,
-      promptTokens: true,
-      completionTokens: true,
-      latencyMs: true,
-      status: true,
-      retrievalHitCount: true,
-      citationCount: true,
-      groundingStatus: true,
-      estimatedCostUsd: true,
-    },
-    orderBy: { at: "desc" },
-    take: 5000,
-  });
+  const events = await loadInferenceRows(filter, 5000);
 
   const total = events.length;
-  const ok = events.filter(e => e.status === "ok").length;
+  const ok = events.filter(e => (e.status ?? "ok") === "ok").length;
   const promptTokens = events.reduce((s, e) => s + (e.promptTokens ?? 0), 0);
   const completionTokens = events.reduce((s, e) => s + (e.completionTokens ?? 0), 0);
   const latencies = events.map(e => e.latencyMs).filter((n): n is number => n != null);
@@ -235,8 +310,8 @@ export async function getUsageSummary(filter: AnalyticsFilter) {
       e.groundingStatus !== "n/a" &&
       e.groundingStatus !== "not_applicable",
   ).length;
-  const retrievalHits = events.filter(e => e.retrievalHitCount > 0).length;
-  const withCitations = events.filter(e => e.citationCount > 0).length;
+  const retrievalHits = events.filter(e => (e.retrievalHitCount ?? 0) > 0).length;
+  const withCitations = events.filter(e => (e.citationCount ?? 0) > 0).length;
 
   const byModel = new Map<string, number>();
   const byTier = new Map<string, number>();
@@ -249,7 +324,8 @@ export async function getUsageSummary(filter: AnalyticsFilter) {
 
   for (const e of events) {
     byModel.set(e.model, (byModel.get(e.model) ?? 0) + 1);
-    byTier.set(e.tier, (byTier.get(e.tier) ?? 0) + 1);
+    const tier = e.tier ?? "Standard";
+    byTier.set(tier, (byTier.get(tier) ?? 0) + 1);
     const g = e.groundingStatus ?? "not_applicable";
     byGrounding.set(g, (byGrounding.get(g) ?? 0) + 1);
     const day = e.at.toISOString().slice(0, 10);
@@ -272,11 +348,7 @@ export async function getUsageSummary(filter: AnalyticsFilter) {
     }
   }
 
-  const workspaces = await db.workspace.findMany({
-    where: { userId: filter.userId },
-    select: { id: true, name: true },
-  });
-  const nameById = new Map(workspaces.map(w => [w.id, w.name]));
+  const nameById = await workspaceNameMap(filter.userId);
 
   return {
     kpis: {
@@ -308,22 +380,7 @@ export async function getUsageSummary(filter: AnalyticsFilter) {
 }
 
 export async function getCostSummary(filter: AnalyticsFilter) {
-  const where = inferenceWhere(filter);
-  const events = await db.inferenceEvent.findMany({
-    where,
-    select: {
-      at: true,
-      workspaceId: true,
-      provider: true,
-      model: true,
-      promptTokens: true,
-      completionTokens: true,
-      estimatedCostUsd: true,
-      pricingVersion: true,
-    },
-    orderBy: { at: "desc" },
-    take: 5000,
-  });
+  const events = await loadInferenceRows(filter, 5000);
 
   let totalCost = 0;
   let inputCost = 0;
@@ -360,11 +417,7 @@ export async function getCostSummary(filter: AnalyticsFilter) {
     byWorkspace.set(ws, (byWorkspace.get(ws) ?? 0) + cost);
   }
 
-  const workspaces = await db.workspace.findMany({
-    where: { userId: filter.userId },
-    select: { id: true, name: true },
-  });
-  const nameById = new Map(workspaces.map(w => [w.id, w.name]));
+  const nameById = await workspaceNameMap(filter.userId);
 
   const routingSavings = Math.max(0, baselineCost - totalCost);
   const avgCost = pricedRequests > 0 ? totalCost / pricedRequests : null;

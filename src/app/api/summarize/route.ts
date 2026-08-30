@@ -14,6 +14,8 @@ import { streamGroqChat } from "@/lib/models/groq";
 import { routeModel } from "@/lib/models/router";
 import { db } from "@/lib/db";
 import { getIdentity } from "@/lib/identity";
+import { usesHostedAppStore } from "@/lib/workspaces/store";
+import { hostedAppStore } from "@/lib/workspaces/hosted-dynamo";
 
 export const runtime = "nodejs";
 
@@ -130,6 +132,44 @@ export async function POST(req: NextRequest) {
 
     // Persist to database (fire-and-forget style — don't block the response)
     if (sessionId) {
+      if (usesHostedAppStore() && workspaceId) {
+        const store = hostedAppStore();
+        const ts = new Date().toISOString();
+        const existingSummary = await store.getSessionSummary(userId, workspaceId, sessionId);
+        void store.putSessionSummary({
+          id: existingSummary?.id ?? crypto.randomUUID(),
+          userId,
+          workspaceId,
+          sessionId,
+          summary: newSummary,
+          turnsCovered,
+          updatedAt: ts,
+        }).catch(err => console.error("[summarize] hosted summary persist failed:", err));
+
+        void (async () => {
+          for (const [key, value] of Object.entries(newFacts)) {
+            const serialized = serializeFactValue(value);
+            if (!serialized) continue;
+            const existing = (await store.listFacts(userId, workspaceId)).find(f => f.key === key);
+            if (existing?.pinned || existing?.forgotten) continue;
+            await store.putFact({
+              id: existing?.id ?? crypto.randomUUID(),
+              userId,
+              workspaceId,
+              key,
+              value: serialized,
+              confidence: existing?.confidence ?? 0.8,
+              source: sessionId,
+              pinned: false,
+              forgotten: false,
+              correctedAt: existing?.correctedAt ?? null,
+              correctedByUserId: existing?.correctedByUserId ?? null,
+              createdAt: existing?.createdAt ?? ts,
+              updatedAt: ts,
+            });
+          }
+        })().catch(err => console.error("[summarize] hosted fact persist failed:", err));
+      } else if (!usesHostedAppStore()) {
       Promise.all([
         // Upsert the session summary
         db.sessionSummary.upsert({
@@ -156,6 +196,7 @@ export async function POST(req: NextRequest) {
           : [] // No workspaceId = no fact persistence (should never happen in practice)
         ),
       ]).catch(err => console.error("[summarize] DB persist failed:", err));
+      }
     }
 
     return Response.json({
