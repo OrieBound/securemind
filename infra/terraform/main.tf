@@ -115,15 +115,16 @@ module "api" {
 }
 
 module "amplify" {
-  source               = "./modules/amplify"
-  env_name             = var.env_name
-  api_base_url         = module.api.api_base_url
-  cognito_user_pool_id = module.auth_cognito.user_pool_id
-  cognito_client_id    = module.auth_cognito.client_id
-  cognito_region       = var.aws_region
-  cognito_issuer       = module.auth_cognito.issuer
-  auth_mode            = var.auth_mode
-  branch_name          = var.amplify_branch
+  source                 = "./modules/amplify"
+  env_name               = var.env_name
+  api_base_url           = module.api.api_base_url
+  cognito_user_pool_id   = module.auth_cognito.user_pool_id
+  cognito_user_pool_arn  = module.auth_cognito.user_pool_arn
+  cognito_client_id      = module.auth_cognito.client_id
+  cognito_region         = var.aws_region
+  cognito_issuer         = module.auth_cognito.issuer
+  auth_mode              = var.auth_mode
+  branch_name            = var.amplify_branch
 }
 
 output "api_base_url" {
@@ -164,6 +165,12 @@ output "amplify_console_url" {
 
 output "amplify_branch" {
   value = module.amplify.branch_name
+}
+
+output "setup_claim_secret" {
+  value       = module.amplify.setup_claim_secret
+  sensitive   = true
+  description = "One-time hosted first-admin code. terraform output -raw setup_claim_secret — never shown on the Amplify page."
 }
 
 output "chat_function_name" {

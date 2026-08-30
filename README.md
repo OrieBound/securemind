@@ -55,7 +55,7 @@ Full stack: Postgres + Floci + Ollama + app. **No Node on the host.**
 docker compose up --build
 ```
 
-Sign in: `admin@example.test` / `<demo-password>!`
+Sign in: create the first Owner in the app (your email + password). There is no demo account.
 
 See **[docs/deploy/on-prem-docker.md](docs/deploy/on-prem-docker.md)** for tear-down, Groq BYOK, and developer vs shipping workflows.
 
@@ -71,11 +71,7 @@ npm run floci:cognito         # writes scripts/.floci-cognito.env — merge into
 
 For a disposable local instance, point `DATABASE_URL` / `DIRECT_URL` at Compose Postgres (see the doc), not your daily Neon.
 
-Demo Cognito users (after setup), password `<demo-password>!`:
-
-- `admin@example.test` (group Admin)
-- `member@securemind.local` (group Member)
-- `demo@securemind.local` (legacy Admin)
+The Floci pool starts empty. Open the app and choose your Owner email and password. Public sign-up stays off after that; invite additional users from Admin.
 
 ### Without Ollama
 
@@ -122,12 +118,33 @@ These are **risk-reduction** controls, not a security or compliance guarantee. D
 
 ## Limitations
 
-- Not multi-tenant production auth. Floci Cognito is local; real AWS Cognito is not wired as a hosted login product yet.
+- Not multi-tenant production auth. Floci Cognito is local. Hosted Cognito Sign in works against a real pool; as of 2026-08-29 that pool was empty and first-run claim is **not** on the live Amplify build yet.
 - Regex detection misses free-form names and unusual formats.
 - Image extract depends on Groq vision; OCR quality varies by screenshot.
 - Citation audit is heuristic (markers / claim units), not an LLM judge.
 - Safe terms, sensitivity, and the detection log still live in `localStorage`.
 - Do not claim Bedrock/KMS/Macie as live product features unless you have configured them.
+
+## Discoveries and roadblocks (dated)
+
+**Last stamped: 2026-08-29.** First AWS sandbox apply (account `your-aws-profile` / `543828674400`). Full symptom → cause → fix notes: [`docs/deploy/hosted-sandbox-roadblocks.md`](docs/deploy/hosted-sandbox-roadblocks.md).
+
+**Not live until GitHub Actions finishes.** First-run Owner claim was pushed to `main` on 2026-08-29 so CI can `terraform apply` (environment `aws-sandbox`) and `amplify start-job`. Until that workflow is green, the live Amplify URL is still the job-12 Sign in build against an **empty** Cognito pool. After a green apply: `terraform output -raw setup_claim_secret` (Actions logs will not print it; use the CLI or the Terraform state output). Local try: empty Floci pool (`docker compose down -v` if old demo users exist) → `npm run dev`.
+
+| When | What we hit | What we learned |
+|------|-------------|-----------------|
+| 2026-08 (sandbox apply) | CLI landed in the org/management account | Always `--profile your-aws-profile`. Never put the app in management. |
+| 2026-08 | Uncertainty about destroy vs laptop state | App stack state is remote S3; bootstrap state is still local. |
+| 2026-08 | CI missing `@/lib/aws-credentials` | `.gitignore` `aws-credentials*` swallowed the source file. |
+| 2026-08 | Prisma generate failed in CI / Amplify | Dummy `DATABASE_URL` is generate-only. Hosted data is DynamoDB — do not provision Neon for Amplify. |
+| 2026-08 | Plan green, apply died on OIDC | GitHub `sub` (immutable repo IDs after 2026-07-15) must `StringLike` in **bootstrap** trust, not `infra:up`. |
+| 2026-08 | Amplify died ~30s after clone | `AMPLIFY_MONOREPO_APP_ROOT=.` on a single-root Next app. |
+| 2026-08 | Build output > 220 MB | Amplify WEB_COMPUTE cap. Chat is on API Gateway; remaining Next `/api/*` still traces Prisma into the UI bundle. |
+| 2026-08-29 | Jobs “SUCCEED” but site HTTP 500 empty HTML | Turbopack NFT traced the whole repo (`process.cwd()`); prune then dropped `@swc/helpers` which Next needs at runtime. CloudWatch was 0 bytes until SSR log IAM. Job 12: HTTP 200 Sign in. |
+| 2026-08-29 | `admin@example.test` / `<demo-password>!` failed on Amplify | Those users exist only on **local Floci**. Hosted pool is invite-only and was **empty**. Public Sign up UI was a lie. |
+| 2026-08-29 | First-run Owner claim designed | Hosted: CLI setup code ≠ password. On-prem: choose email+password, no code. No product demo users. **Shipped to `main` for Actions apply; not live until that job succeeds.** |
+
+Production is a **second stack** in `your-aws-profile`, not a retarget of sandbox.
 
 ## Docs
 
@@ -136,5 +153,5 @@ These are **risk-reduction** controls, not a security or compliance guarantee. D
 - [`docs/adr/0002-storage-choice.md`](docs/adr/0002-storage-choice.md) — why Neon/Postgres + pgvector
 - [`docs/adr/0003-local-aws-scaffolding.md`](docs/adr/0003-local-aws-scaffolding.md) — Floci + Compose
 - [`docs/adr/0004-amplify-lambda-hosting.md`](docs/adr/0004-amplify-lambda-hosting.md) — Amplify UI + API Gateway + Lambda
-- [`docs/deploy/hosted-sandbox-roadblocks.md`](docs/deploy/hosted-sandbox-roadblocks.md) — sandbox AWS apply: OIDC, Amplify monorepo, 220 MB cap, two pipelines
+- [`docs/deploy/hosted-sandbox-roadblocks.md`](docs/deploy/hosted-sandbox-roadblocks.md) — dated sandbox timeline: OIDC, Amplify 220 MB, HTTP 500, empty Cognito pool
 - [`AGENTS.md`](AGENTS.md) — rules for agents working in this repo

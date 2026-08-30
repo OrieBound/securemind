@@ -44,6 +44,7 @@ export async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname;
   if (!path.startsWith("/api/")) return NextResponse.next();
   if (path.startsWith("/api/auth")) return NextResponse.next();
+  if (path === "/api/setup/status" || path === "/api/setup/claim") return NextResponse.next();
 
   const fallback = process.env.AUTH_ALLOW_LOCAL_FALLBACK;
   const allowFallback = fallback === undefined || fallback === "" || fallback === "true" || fallback === "1";

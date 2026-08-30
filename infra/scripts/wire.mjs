@@ -114,18 +114,24 @@ function updateLambdaCors(functionName, allowedOrigin) {
 function updateAmplifyEnv({ appId, branch, apiBaseUrl, authOut, region }) {
   if (!appId) return;
 
-  const envVars = [
-    { Name: "NEXT_PUBLIC_API_BASE_URL", Value: apiBaseUrl || "" },
-    { Name: "AUTH_MODE", Value: process.env.AUTH_MODE || "cognito" },
-    { Name: "AUTH_ALLOW_LOCAL_FALLBACK", Value: "false" },
-    { Name: "COGNITO_USER_POOL_ID", Value: authOut.UserPoolId || "" },
-    { Name: "COGNITO_CLIENT_ID", Value: authOut.ClientId || "" },
-    { Name: "COGNITO_REGION", Value: process.env.COGNITO_REGION || region },
-    { Name: "COGNITO_ISSUER", Value: authOut.Issuer || "" },
-  ];
+  const existing = awsJson(["amplify", "get-app", "--app-id", appId]);
+  const current = existing?.app?.environmentVariables || {};
 
-  // App-level (CLI map shorthand)
-  const map = envVars.map((e) => `${e.Name}=${e.Value}`).join(",");
+  const envVars = {
+    ...current,
+    NEXT_PUBLIC_API_BASE_URL: apiBaseUrl || current.NEXT_PUBLIC_API_BASE_URL || "",
+    AUTH_MODE: process.env.AUTH_MODE || current.AUTH_MODE || "cognito",
+    AUTH_ALLOW_LOCAL_FALLBACK: "false",
+    COGNITO_USER_POOL_ID: authOut.UserPoolId || current.COGNITO_USER_POOL_ID || "",
+    COGNITO_CLIENT_ID: authOut.ClientId || current.COGNITO_CLIENT_ID || "",
+    COGNITO_REGION: process.env.COGNITO_REGION || region || current.COGNITO_REGION || "",
+    COGNITO_ISSUER: authOut.Issuer || current.COGNITO_ISSUER || "",
+  };
+
+  const map = Object.entries(envVars)
+    .filter(([, v]) => v !== undefined && v !== null)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(",");
   aws(["amplify", "update-app", "--app-id", appId, "--environment-variables", map]);
 
   if (branch) {
@@ -141,6 +147,22 @@ function updateAmplifyEnv({ appId, branch, apiBaseUrl, authOut, region }) {
         branch,
         "--no-enable-auto-build",
       ]);
+      const branchDesc = awsJson([
+        "amplify",
+        "get-branch",
+        "--app-id",
+        appId,
+        "--branch-name",
+        branch,
+      ]);
+      const branchEnv = {
+        ...(branchDesc?.branch?.environmentVariables || {}),
+        ...envVars,
+      };
+      const branchMap = Object.entries(branchEnv)
+        .filter(([, v]) => v !== undefined && v !== null)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(",");
       aws([
         "amplify",
         "update-branch",
@@ -149,61 +171,11 @@ function updateAmplifyEnv({ appId, branch, apiBaseUrl, authOut, region }) {
         "--branch-name",
         branch,
         "--environment-variables",
-        map,
+        branchMap,
       ]);
     }
   }
-  console.log(`Amplify app ${appId} env updated (API + Cognito).`);
-}
-
-function maybeInviteAdmin(authOut) {
-  const email = process.env.ADMIN_EMAIL?.trim();
-  if (!email || !authOut.UserPoolId) return;
-
-  const temp =
-    process.env.ADMIN_TEMP_PASSWORD?.trim() ||
-    `Tmp-${Math.random().toString(36).slice(2, 10)}-Aa1`;
-
-  const create = aws(
-    [
-      "cognito-idp",
-      "admin-create-user",
-      "--user-pool-id",
-      authOut.UserPoolId,
-      "--username",
-      email,
-      "--temporary-password",
-      temp,
-      "--user-attributes",
-      `Name=email,Value=${email}`,
-      "Name=email_verified,Value=true",
-      "--message-action",
-      "SUPPRESS",
-    ],
-    { check: false, stdio: "inherit" },
-  );
-
-  if (create.status !== 0) {
-    console.log(`(admin invite skipped or user exists for ${email})`);
-  } else {
-    console.log(`Invited Admin user ${email} (temporary password printed once below).`);
-    console.log(`  TEMP PASSWORD: ${temp}`);
-    console.log("  User must change password on first sign-in.");
-  }
-
-  aws(
-    [
-      "cognito-idp",
-      "admin-add-user-to-group",
-      "--user-pool-id",
-      authOut.UserPoolId,
-      "--username",
-      email,
-      "--group-name",
-      "Admin",
-    ],
-    { check: false, stdio: "inherit" },
-  );
+  console.log(`Amplify app ${appId} env updated (API + Cognito; existing secrets kept).`);
 }
 
 function main() {
@@ -256,14 +228,16 @@ API: ${apiOut.ApiBaseUrl}
     region: args.region,
   });
 
-  maybeInviteAdmin(authOut);
-
   console.log(`
 Wired.
   API:     ${apiOut.ApiBaseUrl}
   Cognito: ${authOut.UserPoolId}
   UI:      ${siteUrl || "(connect Amplify branch, then npm run infra:wire)"}
   Console: ${amplifyOut.AmplifyConsoleHint || ""}
+
+First admin (hosted): open the UI. The setup code is only in Terraform:
+  terraform -chdir=infra/terraform output -raw setup_claim_secret
+Do not print that value on the public page. Do not use ADMIN_EMAIL to seed a user.
 `);
 }
 

@@ -250,6 +250,12 @@ model InstanceConfig {
   defaultMonthlyCostCapUsd Float @default(10)
   /// Cognito `sub` (or local userId) of the single protected Owner account.
   ownerUserId       String?
+  /// First-run wizard finished (data plane choice + risk acknowledgement).
+  setupCompletedAt  DateTime?
+  /// First-admin claim succeeded. Further claims are refused even if listing lags.
+  setupClaimUsedAt  DateTime?
+  /// Recorded vector-plane preference: postgres | dynamodb. Env STORAGE_BACKEND still wins at runtime.
+  storageBackend    String?
   updatedAt         DateTime  @updatedAt
   updatedByUserId   String?
 }

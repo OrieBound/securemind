@@ -4,7 +4,7 @@
 #
 # First boot runs `ollama-init` (default chat + embed weights) then `init`
 # (schema, Floci Cognito) then starts the app.
-# Open http://localhost:3000 — sign in with admin@example.test / <demo-password>!
+# Open http://localhost:3000 — first visit creates the Owner (your email + password).
 #
 # Host dev (app on npm run dev, infra only in Docker):
 #   docker compose up -d db floci ollama ollama-init

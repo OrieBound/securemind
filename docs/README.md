@@ -13,4 +13,4 @@ SecureMind is a privacy-aware AI workspace for managing models, knowledge, memor
 - [ADR 0008: Terraform + GitHub Actions OIDC](./adr/0008-terraform-github-oidc.md)
 - [Deploy: Floci Local](./deploy/floci-local.md)
 - [Deploy: On-Prem Docker](./deploy/on-prem-docker.md)
-- [Deploy: Hosted sandbox roadblocks](./deploy/hosted-sandbox-roadblocks.md)
+- [Deploy: Hosted sandbox roadblocks](./deploy/hosted-sandbox-roadblocks.md) — dated timeline (last stamped 2026-08-29)

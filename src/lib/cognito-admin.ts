@@ -70,18 +70,28 @@ function cognitoEndpoint(): string | undefined {
   return LOCAL_AWS_ENDPOINT;
 }
 
+/** Floci / LocalStack only. Real Cognito must use the IAM/SSO default chain. */
+function useFlociStub(): boolean {
+  const origin = cognitoEndpoint();
+  if (!origin) return false;
+  return !origin.includes("amazonaws.com");
+}
+
 let _client: CognitoIdentityProviderClient | null = null;
 let _endpoint: string | undefined;
+let _floci: boolean | undefined;
 
 function cip(): CognitoIdentityProviderClient {
-  const endpoint = cognitoEndpoint();
-  if (!_client || _endpoint !== endpoint) {
+  const floci = useFlociStub();
+  const endpoint = floci ? cognitoEndpoint() : undefined;
+  if (!_client || _endpoint !== endpoint || _floci !== floci) {
     _client = new CognitoIdentityProviderClient({
       region: region(),
       ...(endpoint ? { endpoint } : {}),
-      credentials: LOCAL_AWS_CREDENTIALS,
+      ...(floci ? { credentials: LOCAL_AWS_CREDENTIALS } : {}),
     });
     _endpoint = endpoint;
+    _floci = floci;
   }
   return _client;
 }
@@ -97,6 +107,57 @@ export class CognitoAdminError extends Error {
 
 export function cognitoAdminAvailable(): boolean {
   return Boolean(process.env.COGNITO_USER_POOL_ID && process.env.COGNITO_CLIENT_ID);
+}
+
+/** True when ListUsers returns no users. Throws if the pool cannot be read. */
+export async function cognitoDirectoryIsEmpty(): Promise<boolean> {
+  const page = await cip().send(
+    new ListUsersCommand({
+      UserPoolId: requirePoolId(),
+      Limit: 1,
+    }),
+  );
+  return (page.Users?.length ?? 0) === 0;
+}
+
+/**
+ * Create the first Owner (Admin + Owner group + InstanceConfig.ownerUserId).
+ * Caller must have already verified the directory is empty and any setup code.
+ */
+export async function claimFirstAdmin(input: {
+  email: string;
+  password: string;
+}): Promise<DirectoryUser> {
+  const empty = await cognitoDirectoryIsEmpty();
+  if (!empty) {
+    throw new CognitoAdminError("This instance already has an owner.", 409);
+  }
+
+  const created = await createDirectoryUser({
+    email: input.email,
+    password: input.password,
+    role: "admin",
+  });
+  await ensureOwnerGroup(created.username);
+  if (created.sub) {
+    try {
+      await setOwnerUserId(created.sub);
+    } catch (err) {
+      console.warn(
+        "[cognito-admin] ownerUserId persist failed",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  const groups = created.groups.includes(GROUP_OWNER)
+    ? created.groups
+    : [...created.groups, GROUP_OWNER];
+  return {
+    ...created,
+    groups,
+    role: "super_admin",
+    isOwner: true,
+  };
 }
 
 function attr(user: UserType, name: string): string | null {

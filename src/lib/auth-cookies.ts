@@ -26,6 +26,31 @@ export function clearAccessCookieHeader(): string {
   return parts.join("; ");
 }
 
+export const SETUP_COMPLETE_COOKIE = "sm_setup_complete";
+
+export function setupCompleteCookieHeader(): string {
+  const parts = [
+    `${SETUP_COMPLETE_COOKIE}=1`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${60 * 60 * 24 * 365}`,
+  ];
+  if (process.env.NODE_ENV === "production") parts.push("Secure");
+  return parts.join("; ");
+}
+
+export function readSetupCompleteCookie(req: Request): boolean {
+  const cookie = req.headers.get("cookie") ?? "";
+  for (const part of cookie.split(";")) {
+    const [k, ...rest] = part.trim().split("=");
+    if (k === SETUP_COMPLETE_COOKIE) {
+      return rest.join("=") === "1";
+    }
+  }
+  return false;
+}
+
 export function readAccessTokenFromRequest(req: Request): string | null {
   const header = req.headers.get("authorization") ?? req.headers.get("Authorization");
   if (header) {
