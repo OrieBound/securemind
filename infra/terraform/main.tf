@@ -125,6 +125,8 @@ module "amplify" {
   cognito_issuer         = module.auth_cognito.issuer
   auth_mode              = var.auth_mode
   branch_name            = var.amplify_branch
+  fragments_table_name   = module.data_dynamodb.table_name
+  fragments_table_arn    = module.data_dynamodb.table_arn
 }
 
 output "api_base_url" {

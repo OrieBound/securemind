@@ -10,9 +10,12 @@
  */
 
 import { NextRequest } from "next/server";
-import type { Prisma } from "@prisma/client";
-import { db } from "@/lib/db";
 import { getIdentity } from "@/lib/identity";
+import {
+  deleteWorkspace,
+  getWorkspaceWithFacts,
+  updateWorkspace,
+} from "@/lib/workspaces/store";
 
 export const runtime = "nodejs";
 
@@ -38,11 +41,7 @@ export async function GET(
   const { id } = await params;
   const { userId } = await getIdentity(req);
 
-  const workspace = await db.workspace.findFirst({
-    where:   { id, userId },
-    include: { facts: true },
-  });
-
+  const workspace = await getWorkspaceWithFacts(userId, id);
   if (!workspace) return NOT_FOUND();
   return Response.json(workspace);
 }
@@ -63,25 +62,23 @@ export async function PATCH(
     modelOverride?: unknown;
   };
 
-  const existing = await db.workspace.findFirst({ where: { id, userId }, select: { id: true } });
-  if (!existing) return NOT_FOUND();
-
   const name = optional(body.name, MAX_NAME);
   if (name === null) {
     return Response.json({ error: "A workspace name is required" }, { status: 400 });
   }
 
-  const data: Prisma.WorkspaceUpdateInput = {
-    ...(name                  !== undefined && { name }),
-    ...(optional(body.emoji, 8)  !== undefined && { emoji: optional(body.emoji, 8) ?? "🗂️" }),
+  const data = {
+    ...(name !== undefined && { name }),
+    ...(optional(body.emoji, 8) !== undefined && { emoji: optional(body.emoji, 8) ?? "🗂️" }),
     ...(optional(body.color, 32) !== undefined && { color: optional(body.color, 32) ?? "#6366f1" }),
-    ...(body.description        !== undefined && { description: optional(body.description, MAX_DESCRIPTION) }),
-    ...(body.context            !== undefined && { context:     optional(body.context, MAX_CONTEXT) }),
-    ...(body.modelOverride      !== undefined && { modelOverride: optional(body.modelOverride, 128) }),
+    ...(body.description !== undefined && { description: optional(body.description, MAX_DESCRIPTION) }),
+    ...(body.context !== undefined && { context: optional(body.context, MAX_CONTEXT) }),
+    ...(body.modelOverride !== undefined && { modelOverride: optional(body.modelOverride, 128) }),
   };
 
   try {
-    const workspace = await db.workspace.update({ where: { id }, data });
+    const workspace = await updateWorkspace(userId, id, data);
+    if (!workspace) return NOT_FOUND();
     return Response.json(workspace);
   } catch (err) {
     console.error("[workspaces PATCH]", err);
@@ -97,14 +94,10 @@ export async function DELETE(
   const { id } = await params;
   const { userId } = await getIdentity(req);
 
-  const workspace = await db.workspace.findFirst({ where: { id, userId }, select: { id: true } });
-  if (!workspace) return NOT_FOUND();
-
-  const count = await db.workspace.count({ where: { userId } });
-  if (count <= 1) {
+  const result = await deleteWorkspace(userId, id);
+  if (!result.ok && result.reason === "not_found") return NOT_FOUND();
+  if (!result.ok && result.reason === "last") {
     return Response.json({ error: "Cannot delete your only workspace" }, { status: 400 });
   }
-
-  await db.workspace.delete({ where: { id } });
   return Response.json({ deleted: true });
 }

@@ -26,7 +26,7 @@ type SetupStatus = {
   claimRequiresCode: boolean;
   codeConfigured: boolean;
   setupComplete: boolean;
-  preferredStorage: "postgres" | "dynamodb";
+  preferredStorage: "postgres" | "dynamodb" | "neon" | "aurora";
   minPasswordLength: number;
 };
 

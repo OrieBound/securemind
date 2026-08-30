@@ -3,26 +3,77 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PRODUCT_NAME } from "@/lib/branding";
+import { cn } from "@/lib/utils";
+import type { WizardStorageChoice } from "@/lib/wizard-storage";
 
-type StorageChoice = "postgres" | "dynamodb";
+type CloudChoice = "dynamodb" | "neon" | "aurora";
+type LocalChoice = "postgres" | "dynamodb";
 
 type Props = {
   edition: "local" | "cloud";
-  preferredStorage: StorageChoice;
+  preferredStorage: WizardStorageChoice;
   onDone: () => void;
 };
 
+function initialCloud(preferred: WizardStorageChoice): CloudChoice {
+  if (preferred === "neon" || preferred === "aurora" || preferred === "dynamodb") return preferred;
+  return "dynamodb";
+}
+
+function initialLocal(preferred: WizardStorageChoice): LocalChoice {
+  return preferred === "dynamodb" ? "dynamodb" : "postgres";
+}
+
+const CLOUD_OPTIONS: Array<{
+  id: CloudChoice;
+  title: string;
+  badge?: string;
+  points: string[];
+}> = [
+  {
+    id: "dynamodb",
+    title: "DynamoDB",
+    badge: "Default",
+    points: [
+      "Ready on this hosted install — Knowledge search and workspaces use it today.",
+      "You pay for what you use (reads, writes, and stored data), not a database server sitting idle.",
+      "Scales without patching a SQL instance. Cost can rise with heavy traffic.",
+    ],
+  },
+  {
+    id: "neon",
+    title: "Neon",
+    points: [
+      "Managed Postgres with a more predictable monthly-style bill than pay-per-request DynamoDB.",
+      "A good later path if you want SQL and pgvector in the cloud.",
+      "Not created from this screen. Choosing it records a preference for an operator to connect later.",
+    ],
+  },
+  {
+    id: "aurora",
+    title: "Aurora",
+    points: [
+      "AWS-managed Postgres with a flatter instance-style cost than DynamoDB’s pay-per-use model.",
+      "Stays in your AWS account if you want a relational data plane there.",
+      "Costs more at idle than serverless options. Not provisioned from this screen.",
+    ],
+  },
+];
+
 /**
  * Blocking first-run wizard after the owner is signed in.
- * Records a vector-plane preference and a risk acknowledgement.
+ * Records a storage preference and a risk acknowledgement.
  * Does not provision databases from the UI.
  */
 export function InstanceSetupWizard({ edition, preferredStorage, onDone }: Props) {
   const [step, setStep] = useState<1 | 2>(1);
-  const [storage, setStorage] = useState<StorageChoice>(preferredStorage);
+  const [cloudStorage, setCloudStorage] = useState<CloudChoice>(() => initialCloud(preferredStorage));
+  const [localStorage, setLocalStorage] = useState<LocalChoice>(() => initialLocal(preferredStorage));
   const [riskAck, setRiskAck] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const storage: WizardStorageChoice = edition === "cloud" ? cloudStorage : localStorage;
 
   async function finish() {
     setBusy(true);
@@ -49,40 +100,91 @@ export function InstanceSetupWizard({ edition, preferredStorage, onDone }: Props
 
   return (
     <div className="flex h-dvh items-center justify-center bg-background px-4">
-      <div className="w-full max-w-md rounded-2xl border border-foreground/10 bg-popover p-6 shadow-2xl space-y-5">
+      <div className="w-full max-w-lg rounded-2xl border border-foreground/10 bg-popover p-6 shadow-2xl space-y-5">
         <div>
           <p className="text-meta uppercase tracking-[0.2em] text-[var(--primary-soft-foreground)] font-medium">
             {PRODUCT_NAME}
           </p>
           <h1 className="text-title mt-1.5">
-            {step === 1 ? "Data plane" : "Risk acknowledgement"}
+            {step === 1
+              ? edition === "cloud"
+                ? "Choose your data store"
+                : "Choose your data store"
+              : "Before you start"}
           </h1>
           <p className="text-ui text-[var(--text-muted)] mt-2 leading-[var(--leading-body)]">
             {step === 1
               ? edition === "cloud"
-                ? "Hosted installs use DynamoDB for Knowledge vectors (ADR 0007). Chat, workspaces, and settings still use the relational store on this build — this screen does not provision a new database."
-                : "On-prem and localhost default to Postgres + pgvector. Choosing DynamoDB only records a preference; it does not create AWS tables from this UI."
-              : "Detection and replacement reduce the chance that sensitive values leave this browser. They are not a guarantee of complete removal, security, or regulatory compliance. You remain responsible for reviewing content."}
+                ? "This hosted workspace uses Amazon DynamoDB by default. You can record a preference for Neon or Aurora instead — we do not create those databases from this screen."
+                : "On this machine the default is Postgres with pgvector. DynamoDB is optional and only records a preference until you connect a table."
+              : "SecureMind helps you work with AI in a workspace that detects and replaces sensitive values before they leave this browser. That reduces risk. It cannot catch everything, and it is not a promise of complete security or compliance."}
           </p>
         </div>
 
-        {step === 1 && (
+        {step === 1 && edition === "cloud" && (
           <fieldset className="space-y-3">
             <legend className="text-label uppercase tracking-wider text-[var(--text-muted)]">
-              Vector plane
+              Cloud options
+            </legend>
+            {CLOUD_OPTIONS.map(opt => (
+              <label
+                key={opt.id}
+                className={cn(
+                  "flex gap-3 items-start rounded-lg border p-3 cursor-pointer transition-colors",
+                  cloudStorage === opt.id
+                    ? "border-[var(--primary-soft-foreground)]/40 bg-foreground/[0.03]"
+                    : "border-foreground/10",
+                )}
+              >
+                <input
+                  type="radio"
+                  name="storage"
+                  checked={cloudStorage === opt.id}
+                  onChange={() => setCloudStorage(opt.id)}
+                  className="mt-1"
+                />
+                <span className="min-w-0">
+                  <span className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{opt.title}</span>
+                    {opt.badge ? (
+                      <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-indigo-200">
+                        {opt.badge}
+                      </span>
+                    ) : null}
+                  </span>
+                  <ul className="mt-1.5 space-y-1 text-ui text-[var(--text-muted)] list-disc pl-4">
+                    {opt.points.map(p => (
+                      <li key={p}>{p}</li>
+                    ))}
+                  </ul>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+        )}
+
+        {step === 1 && edition === "local" && (
+          <fieldset className="space-y-3">
+            <legend className="text-label uppercase tracking-wider text-[var(--text-muted)]">
+              Local options
             </legend>
             <label className="flex gap-3 items-start rounded-lg border border-foreground/10 p-3 cursor-pointer">
               <input
                 type="radio"
                 name="storage"
-                checked={storage === "dynamodb"}
-                onChange={() => setStorage("dynamodb")}
+                checked={localStorage === "postgres"}
+                onChange={() => setLocalStorage("postgres")}
                 className="mt-1"
               />
               <span>
-                <span className="block text-sm font-medium">DynamoDB</span>
+                <span className="flex items-center gap-2">
+                  <span className="text-sm font-medium">Postgres + pgvector</span>
+                  <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-indigo-200">
+                    Default
+                  </span>
+                </span>
                 <span className="text-ui text-[var(--text-muted)]">
-                  Hosted AWS default. Requires the Terraform data plane.
+                  Best for localhost and Docker. Flatter, always-on database cost if you host Postgres yourself.
                 </span>
               </span>
             </label>
@@ -90,14 +192,14 @@ export function InstanceSetupWizard({ edition, preferredStorage, onDone }: Props
               <input
                 type="radio"
                 name="storage"
-                checked={storage === "postgres"}
-                onChange={() => setStorage("postgres")}
+                checked={localStorage === "dynamodb"}
+                onChange={() => setLocalStorage("dynamodb")}
                 className="mt-1"
               />
               <span>
-                <span className="block text-sm font-medium">Postgres + pgvector</span>
+                <span className="block text-sm font-medium">DynamoDB</span>
                 <span className="text-ui text-[var(--text-muted)]">
-                  Local and on-prem default. Compose or your own Postgres.
+                  Pay-per-use. Records a preference only — this screen does not create AWS tables.
                 </span>
               </span>
             </label>
@@ -113,7 +215,9 @@ export function InstanceSetupWizard({ edition, preferredStorage, onDone }: Props
               className="mt-1"
             />
             <span className="text-ui leading-[var(--leading-body)]">
-              I understand that sanitization is risk reduction, not a guarantee, and that I must review content before relying on it.
+              I understand this is a help, not a guarantee. Filters can miss things.
+              I will review what I send, I use this at my own risk, and the operators
+              of this instance are not responsible if sensitive information gets past detection.
             </span>
           </label>
         )}

@@ -4,6 +4,7 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
+import { isHostedRuntime } from "@/lib/runtime-env";
 
 const PRISMA_SCHEMA_EPOCH = "2026-08-23-knowledge-memory";
 
@@ -13,6 +14,11 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createClient() {
+  if (isHostedRuntime()) {
+    throw new Error(
+      "Hosted SecureMind does not use Postgres. Workspaces, chat history, and Knowledge vectors use DynamoDB.",
+    );
+  }
   const connectionString = process.env.DATABASE_URL?.trim();
   if (!connectionString) {
     throw new Error("DATABASE_URL is not set.");

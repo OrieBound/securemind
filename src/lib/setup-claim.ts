@@ -23,8 +23,12 @@ import {
   isHostedRuntime,
   resolveStorageBackend,
   runtimeEdition,
-  type StorageBackendName,
 } from "@/lib/runtime-env";
+import {
+  isValidWizardStorage,
+  parseWizardStorage,
+  type WizardStorageChoice,
+} from "@/lib/wizard-storage";
 import { ensureUserProfile } from "@/lib/user-profile";
 
 export class SetupClaimError extends Error {
@@ -106,7 +110,7 @@ export type SetupStatus = {
   claimRequiresCode: boolean;
   codeConfigured: boolean;
   setupComplete: boolean;
-  preferredStorage: StorageBackendName;
+  preferredStorage: WizardStorageChoice;
   minPasswordLength: number;
 };
 
@@ -145,9 +149,11 @@ export async function getSetupStatus(opts?: {
     claimRequiresCode: claimRequiresSetupCode(),
     codeConfigured: setupClaimSecretConfigured(),
     setupComplete,
-    preferredStorage: (persist.storageBackend === "dynamodb" || persist.storageBackend === "postgres"
-      ? persist.storageBackend
-      : resolveStorageBackend()),
+    preferredStorage: parseWizardStorage(
+      persist.storageBackend,
+      runtimeEdition(),
+      resolveStorageBackend(),
+    ),
     minPasswordLength: minClaimPasswordLength(),
   };
 }
@@ -262,13 +268,18 @@ export async function runSetupComplete(
 ): Promise<{ ok: true; persisted: boolean; setupComplete: true }> {
   if (input.riskAck !== true) {
     throw new SetupClaimError(
-      "Acknowledge that detection reduces risk and is not a guarantee.",
+      "Confirm that you understand filters can miss things and that you use this at your own risk.",
       422,
     );
   }
   const backend = input.storageBackend;
-  if (backend !== "postgres" && backend !== "dynamodb") {
-    throw new SetupClaimError("Choose postgres or dynamodb as the vector plane.", 422);
+  if (!isValidWizardStorage(backend, runtimeEdition())) {
+    throw new SetupClaimError(
+      runtimeEdition() === "cloud"
+        ? "Choose DynamoDB, Neon, or Aurora."
+        : "Choose Postgres or DynamoDB.",
+      422,
+    );
   }
   const persisted = await completeInstanceSetup({
     storageBackend: backend,

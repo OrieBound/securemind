@@ -249,4 +249,43 @@ describe("POST /api/setup/complete", () => {
       userId: "sub-owner",
     });
   });
+
+  it("accepts DynamoDB, Neon, or Aurora on a hosted install", async () => {
+    process.env.SECUREMIND_EDITION = "cloud";
+    getIdentity.mockResolvedValue({
+      userId: "sub-owner",
+      authenticated: true,
+      email: "owner@example.com",
+      role: "super_admin",
+      groups: ["Owner"],
+    });
+    const { POST } = await import("@/app/api/setup/complete/route");
+    const res = await POST(jsonReq("http://localhost/api/setup/complete", {
+      storageBackend: "neon",
+      riskAck: true,
+    }));
+    expect(res.status).toBe(200);
+    expect(completeInstanceSetup).toHaveBeenCalledWith({
+      storageBackend: "neon",
+      userId: "sub-owner",
+    });
+  });
+
+  it("rejects Postgres on a hosted install", async () => {
+    process.env.SECUREMIND_EDITION = "cloud";
+    getIdentity.mockResolvedValue({
+      userId: "sub-owner",
+      authenticated: true,
+      email: "owner@example.com",
+      role: "super_admin",
+      groups: ["Owner"],
+    });
+    const { POST } = await import("@/app/api/setup/complete/route");
+    const res = await POST(jsonReq("http://localhost/api/setup/complete", {
+      storageBackend: "postgres",
+      riskAck: true,
+    }));
+    expect(res.status).toBe(422);
+    expect(completeInstanceSetup).not.toHaveBeenCalled();
+  });
 });
