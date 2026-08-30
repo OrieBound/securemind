@@ -11,6 +11,18 @@ vi.mock("@aws-sdk/credential-providers", () => ({
   fromNodeProviderChain: (...args: unknown[]) => fromNodeProviderChain(...args),
 }));
 
+vi.mock("@aws-sdk/client-sts", () => ({
+  STSClient: class {
+    send() {
+      return Promise.resolve({
+        Account: "123456789012",
+        Arn: "arn:aws:sts::123456789012:assumed-role/Example/user",
+      });
+    }
+  },
+  GetCallerIdentityCommand: class {},
+}));
+
 const saved: Record<string, string | undefined> = {};
 function setEnv(key: string, value: string | undefined) {
   if (!(key in saved)) saved[key] = process.env[key];

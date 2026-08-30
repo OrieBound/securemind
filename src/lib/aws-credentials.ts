@@ -254,7 +254,12 @@ async function describeCaller(
         region,
         ...(profile ? { credentials: fromNodeProviderChain({ profile }) } : {}),
       });
-      const out = await client.send(new GetCallerIdentityCommand({}));
+      const out = await Promise.race([
+        client.send(new GetCallerIdentityCommand({})),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("timeout")), DETECT_TIMEOUT_MS),
+        ),
+      ]);
       const arn = out.Arn ?? null;
       // arn:aws:sts::<acct>:assumed-role/<roleName>/<sessionName>
       const parts = arn?.split("/") ?? [];
