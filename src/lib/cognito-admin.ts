@@ -111,12 +111,17 @@ export function cognitoAdminAvailable(): boolean {
 
 /** True when ListUsers returns no users. Throws if the pool cannot be read. */
 export async function cognitoDirectoryIsEmpty(): Promise<boolean> {
-  const page = await cip().send(
-    new ListUsersCommand({
-      UserPoolId: requirePoolId(),
-      Limit: 1,
-    }),
-  );
+  const page = await Promise.race([
+    cip().send(
+      new ListUsersCommand({
+        UserPoolId: requirePoolId(),
+        Limit: 1,
+      }),
+    ),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("timeout listing Cognito users")), 4000),
+    ),
+  ]);
   return (page.Users?.length ?? 0) === 0;
 }
 

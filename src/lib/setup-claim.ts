@@ -119,13 +119,20 @@ export async function getSetupStatus(opts?: {
   if (cognitoConfigured) {
     try {
       directoryEmpty = await cognitoDirectoryIsEmpty();
-    } catch {
+    } catch (err) {
+      console.warn(
+        "[setup/status] ListUsers failed",
+        err instanceof Error ? `${err.name}: ${err.message.slice(0, 160)}` : err,
+      );
       directoryEmpty = null;
     }
   }
 
   const claimAvailable =
-    cognitoConfigured && directoryEmpty === true && !persist.setupClaimUsedAt;
+    cognitoConfigured &&
+    !persist.setupClaimUsedAt &&
+    directoryEmpty !== false &&
+    (directoryEmpty === true || (claimRequiresSetupCode() && setupClaimSecretConfigured()));
 
   const setupComplete = Boolean(persist.setupCompletedAt) || Boolean(opts?.cookieSetupComplete);
 
