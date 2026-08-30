@@ -183,8 +183,14 @@ jobs:
         if: vars.AWS_ROLE_ARN != '' && vars.TF_STATE_BUCKET != ''
         run: |
           APP_ID="$(terraform -chdir=infra/terraform output -raw amplify_app_id)"
-          JOB_ID="$(aws amplify start-job --app-id "$APP_ID" --branch-name "$AMPLIFY_BRANCH" --job-type RELEASE --query jobSummary.jobId --output text)"
-          echo "Started Amplify job $JOB_ID on $APP_ID"
+          RUNNING="$(aws amplify list-jobs --app-id "$APP_ID" --branch-name "$AMPLIFY_BRANCH" --max-items 8 --query "jobSummaries[?status=='RUNNING' || status=='PENDING'].jobId | [0]" --output text)"
+          if [ -n "$RUNNING" ] && [ "$RUNNING" != "None" ]; then
+            JOB_ID="$RUNNING"
+            echo "Amplify already has job $JOB_ID — waiting instead of StartJob"
+          else
+            JOB_ID="$(aws amplify start-job --app-id "$APP_ID" --branch-name "$AMPLIFY_BRANCH" --job-type RELEASE --query jobSummary.jobId --output text)"
+            echo "Started Amplify job $JOB_ID on $APP_ID"
+          fi
           node infra/scripts/amplify-wait-job.mjs --app-id "$APP_ID" --branch "$AMPLIFY_BRANCH" --job-id "$JOB_ID"
 
       - name: Skip apply (OIDC not configured)
