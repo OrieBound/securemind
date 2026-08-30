@@ -41,7 +41,10 @@ function walkUnlinkMaps(dir) {
 }
 
 const BUILD_ONLY = [
-  "node_modules/@swc",
+  // Keep @swc/helpers — Next's server requires it at boot (job 11 MODULE_NOT_FOUND).
+  "node_modules/@swc/core",
+  "node_modules/@swc/core-linux-x64-gnu",
+  "node_modules/@swc/core-linux-x64-musl",
   "node_modules/@esbuild",
   "node_modules/esbuild",
   "node_modules/@next/swc-linux-x64-gnu",
