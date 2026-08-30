@@ -26,6 +26,7 @@ describe("onboarding copy", () => {
     expect(reply).toContain("billable model requests");
     expect(reply).toContain("Getting started");
     expect(reply).toContain("I understand that enabling Bedrock");
+    expect(reply).toContain("not an IAM role");
   });
 
   it("does not tell hosted users to start a local dev server", () => {

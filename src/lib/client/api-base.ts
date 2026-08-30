@@ -52,6 +52,23 @@ export function apiAuthHeaders(): HeadersInit {
   return { Authorization: `Bearer ${token}` };
 }
 
+/**
+ * Copy the Amplify HttpOnly session onto sessionStorage for API Gateway chat.
+ * Login already stores the token; a new tab only has the cookie.
+ */
+export async function ensureClientAccessToken(): Promise<void> {
+  if (!usesRemoteApi()) return;
+  if (readClientAccessToken()) return;
+  try {
+    const res = await fetch("/api/auth/me", { credentials: "same-origin" });
+    if (!res.ok) return;
+    const data = (await res.json()) as { accessToken?: string };
+    if (data.accessToken) storeClientAccessToken(data.accessToken);
+  } catch {
+    /* chat will 401 without a token */
+  }
+}
+
 /** Fire-and-forget warm so the first chat token is less likely to hit a cold start. */
 export function warmChatConnection(): void {
   if (typeof window === "undefined") return;

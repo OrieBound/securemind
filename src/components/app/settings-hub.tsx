@@ -592,6 +592,7 @@ export function SettingsHub({
   onAcceptPendingSecurity,
   onDismissPendingSecurity,
   securityNotice = null,
+  onProvidersChanged,
 }: {
   section: SettingsSection;
   onSectionChange: (s: SettingsSection) => void;
@@ -623,6 +624,8 @@ export function SettingsHub({
   onAcceptPendingSecurity?: () => void;
   onDismissPendingSecurity?: () => void;
   securityNotice?: string | null;
+  /** Re-probe chatReady after Bedrock / vendor save. */
+  onProvidersChanged?: () => void;
 }) {
   useEffect(() => {
     if (section === "admin" && !isAdmin) {
@@ -878,6 +881,7 @@ export function SettingsHub({
               page="models"
               complexityTiers={complexityTiers}
               onOpenProviders={() => onSectionChange("providers")}
+              onProvidersChanged={onProvidersChanged}
             />
           )}
 
@@ -885,6 +889,7 @@ export function SettingsHub({
             <InferenceSettings
               page="providers"
               onOpenModels={() => onSectionChange("inference")}
+              onProvidersChanged={onProvidersChanged}
             />
           )}
 

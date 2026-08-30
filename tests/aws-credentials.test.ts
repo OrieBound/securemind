@@ -64,6 +64,17 @@ describe("canUseBedrock", () => {
     expect(await canUseBedrock({ allowRealAws: true, region: "us-east-1" })).toBe(true);
   });
 
+  it("on a hosted runtime the billing toggle is enough without probing this host's keys", async () => {
+    setEnv("SECUREMIND_EDITION", "cloud");
+    setEnv("ALLOW_REAL_AWS", undefined);
+    fromNodeProviderChain.mockReturnValue(async () => {
+      throw new Error("Could not load credentials from any providers");
+    });
+    const { canUseBedrock } = await import("@/lib/aws-credentials");
+    expect(await canUseBedrock({ allowRealAws: true, region: "us-east-1" })).toBe(true);
+    expect(await canUseBedrock({ allowRealAws: false, region: "us-east-1" })).toBe(false);
+  });
+
   it("lets ALLOW_REAL_AWS=false in the environment override the app toggle", async () => {
     setEnv("ALLOW_REAL_AWS", "false");
     const { canUseBedrock, getAwsCredentialStatus } = await import("@/lib/aws-credentials");

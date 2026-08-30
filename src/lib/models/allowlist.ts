@@ -8,7 +8,7 @@
 
 import { builtinChatModels } from "./router";
 import { getModelCatalogCached } from "./catalog";
-import { isChatUsableModelId } from "./catalog-shared";
+import { BEDROCK_TEXT_MODELS, isChatUsableModelId } from "./catalog-shared";
 import type { ModelProvider } from "./types";
 
 export type AllowedModel = {
@@ -30,6 +30,11 @@ export async function resolveAllowedModel(
   const builtinProvider = builtins.get(id);
   if (builtinProvider) {
     return { model: id, provider: builtinProvider };
+  }
+
+  const bedrockFallback = BEDROCK_TEXT_MODELS.find(m => m.id === id);
+  if (bedrockFallback) {
+    return { model: bedrockFallback.id, provider: "bedrock" };
   }
 
   try {

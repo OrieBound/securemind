@@ -15,6 +15,7 @@ type MeResponse = {
   mode: string;
   role?: "super_admin" | "admin" | "member";
   groups?: string[];
+  accessToken?: string;
 };
 
 type SetupStatus = {
@@ -83,6 +84,7 @@ export function AuthGate({ children }: Props) {
         return failed;
       }
       const data = (await res.json()) as MeResponse;
+      if (data.accessToken) storeClientAccessToken(data.accessToken);
       setMe(data);
       return data;
     } catch {

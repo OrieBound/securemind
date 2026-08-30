@@ -20,6 +20,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { isHostedRuntime } from "@/lib/runtime-env";
 
 export type AwsCredentialSource =
   | "env"
@@ -355,15 +356,22 @@ export async function getAwsCredentialStatus(
   return value;
 }
 
-/** Bedrock may run only with real credentials, a region, and the gate open. */
+/**
+ * Bedrock may run only with a region and the gate open.
+ *
+ * Hosted chat invokes through the chat Lambda IAM role, not whatever this
+ * process can detect (Amplify compute often has no Bedrock keys of its own).
+ * Local/on-prem still requires a real non-Floci credential on this host.
+ */
 export async function canUseBedrock(settings: AwsSettings = {}): Promise<boolean> {
+  const { allowed } = resolveAllowRealAws(settings);
+  if (!allowed) return false;
+  const region =
+    resolveRegion(settings) || (isHostedRuntime() ? "us-east-1" : null);
+  if (!region) return false;
+  if (isHostedRuntime()) return true;
   const status = await getAwsCredentialStatus(settings);
-  return (
-    status.allowRealAws &&
-    status.detected &&
-    !status.looksLikeFloci &&
-    Boolean(status.region)
-  );
+  return status.detected && !status.looksLikeFloci && Boolean(status.region);
 }
 
 /** Clears the detection cache. Call after settings change; also a test helper. */
