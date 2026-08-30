@@ -20,6 +20,7 @@ import {
 } from "@/lib/models/router";
 import { streamChat } from "@/lib/models/provider";
 import { HOSTED_DEFAULT_BEDROCK_MODEL } from "@/lib/models/catalog-shared";
+import { resolveAllowedModel } from "@/lib/models/allowlist";
 import { routeMessage } from "@/lib/models/route-message";
 import { decideChatRuntime } from "@/lib/models/resolve-chat-runtime";
 import { probeHardware } from "@/lib/models/local-recommendations";
