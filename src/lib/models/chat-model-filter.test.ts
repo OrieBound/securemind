@@ -107,6 +107,15 @@ describe("displayModelForTier", () => {
     })).toBe("llama-3.1-8b-instant");
   });
 
+  it("leaves a row unassigned when neither cloud defaults nor a local model apply", () => {
+    expect(displayModelForTier({
+      tier: "Micro",
+      overrides: {},
+      cloudDefaultsWillRun: false,
+      localFallbackModel: null,
+    })).toBe("");
+  });
+
   it("strips stored TTS ids", () => {
     expect(sanitizeTierOverrides({
       Light: "canopylabs/orpheus-v1-english",

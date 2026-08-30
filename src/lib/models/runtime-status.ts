@@ -14,7 +14,6 @@ import {
   type ChatSetupGuidance,
 } from "@/lib/models/resolve-chat-runtime";
 import { probeHardware } from "@/lib/models/local-recommendations";
-import { HOSTED_DEFAULT_BEDROCK_MODEL } from "@/lib/models/catalog-shared";
 import { runtimeEdition } from "@/lib/runtime-env";
 import { SUPPORTED_DOC_FORMATS_SHORT } from "@/lib/documents/constants";
 
@@ -56,14 +55,10 @@ export async function getRuntimeStatus(): Promise<RuntimeStatus> {
 
   const ollamaChatModels = ollama.tags.filter(t => !isOllamaEmbedModel(t));
   const routed = routeModel("chat", undefined);
-  const routedModel =
-    edition === "cloud" && bedrockOk
-      ? (secrets.bedrockChatModel?.trim() || HOSTED_DEFAULT_BEDROCK_MODEL)
-      : routed.model;
   const decision = decideChatRuntime({
     edition,
-    routedProvider: edition === "cloud" && bedrockOk ? "bedrock" : routed.provider,
-    routedModel,
+    routedProvider: routed.provider,
+    routedModel: routed.model,
     activeMode: "Standard",
     hasImages: false,
     primaryProvider: secrets.primaryProvider,
@@ -109,7 +104,10 @@ export async function getRuntimeStatus(): Promise<RuntimeStatus> {
     model: decision.ok
       ? {
           provider: decision.provider,
-          model: decision.model,
+          model:
+            decision.provider === "bedrock" && decision.source === "bedrock"
+              ? (secrets.bedrockChatModel?.trim() || null)
+              : decision.model,
           connected: true,
           source: decision.source,
         }
