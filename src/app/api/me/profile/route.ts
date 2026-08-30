@@ -7,7 +7,7 @@ import {
   patchUserProfile,
   type ProfilePatch,
 } from "@/lib/user-profile";
-import { db } from "@/lib/db";
+import { listWorkspaces } from "@/lib/workspaces/store";
 import { getUserCostCapStatus } from "@/lib/cost-cap";
 
 export async function GET(req: NextRequest) {
@@ -19,12 +19,16 @@ export async function GET(req: NextRequest) {
         email: identity.email ?? null,
       }),
       getUserCostCapStatus(identity.userId),
-      db.workspace.findMany({
-        where: { userId: identity.userId },
-        select: { id: true, name: true, emoji: true, isDefault: true },
-        orderBy: { updatedAt: "desc" },
-        take: 50,
-      }),
+      listWorkspaces(identity.userId).then(rows =>
+        rows
+          .map(w => ({
+            id: w.id,
+            name: w.name,
+            emoji: w.emoji,
+            isDefault: w.isDefault,
+          }))
+          .slice(0, 50),
+      ),
     ]);
     return Response.json({
       profile,

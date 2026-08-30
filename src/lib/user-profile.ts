@@ -3,6 +3,8 @@
  */
 
 import { db } from "@/lib/db";
+import { usesHostedAppStore } from "@/lib/workspaces/store";
+import { hostedAppStore, type HostedProfile } from "@/lib/workspaces/hosted-dynamo";
 import {
   DEFAULT_AVATAR_PRESET,
   isAvatarPresetId,
@@ -107,6 +109,65 @@ function toPublic(row: {
   };
 }
 
+function hostedToPublic(row: HostedProfile): UserProfilePublic {
+  return toPublic({
+    userId: row.userId,
+    email: row.email,
+    displayName: row.displayName,
+    handle: row.handle,
+    jobTitle: row.jobTitle,
+    bio: row.bio,
+    timezone: row.timezone,
+    locale: row.locale,
+    avatarPreset: row.avatarPreset,
+    themePreference: row.themePreference,
+    density: row.density,
+    defaultLanding: row.defaultLanding,
+    defaultWorkspaceId: row.defaultWorkspaceId,
+    preferredModelId: row.preferredModelId,
+    notificationPrefs: row.notificationPrefs,
+    status: row.status,
+    monthlyCostCapUsd: row.monthlyCostCapUsd,
+    lastSignInAt: row.lastSignInAt ? new Date(row.lastSignInAt) : null,
+    deletedAt: row.deletedAt ? new Date(row.deletedAt) : null,
+    createdAt: new Date(row.createdAt),
+    updatedAt: new Date(row.updatedAt),
+  });
+}
+
+function newHostedProfile(opts: {
+  userId: string;
+  email?: string | null;
+  monthlyCostCapUsd: number | null;
+  touchSignIn?: boolean;
+}): HostedProfile {
+  const ts = new Date().toISOString();
+  return {
+    userId: opts.userId,
+    email: opts.email ?? null,
+    displayName: opts.email?.split("@")[0] ?? null,
+    handle: null,
+    jobTitle: null,
+    bio: null,
+    timezone: null,
+    locale: null,
+    avatarPreset: DEFAULT_AVATAR_PRESET,
+    themePreference: null,
+    density: null,
+    defaultLanding: null,
+    defaultWorkspaceId: null,
+    preferredModelId: null,
+    notificationPrefs: null,
+    status: "active",
+    monthlyCostCapUsd: opts.monthlyCostCapUsd,
+    lastSignInAt: opts.touchSignIn ? ts : null,
+    deletedAt: null,
+    deletedByUserId: null,
+    createdAt: ts,
+    updatedAt: ts,
+  };
+}
+
 export function normalizeHandle(raw: string): string {
   return raw.trim().toLowerCase().replace(/^@/, "");
 }
@@ -133,6 +194,34 @@ export async function ensureUserProfile(opts: {
   email?: string | null;
   touchSignIn?: boolean;
 }): Promise<UserProfilePublic> {
+  if (usesHostedAppStore()) {
+    const store = hostedAppStore();
+    const existing = await store.getProfile(opts.userId);
+    if (existing) {
+      let next = existing;
+      if (opts.email && opts.email !== existing.email) {
+        next = { ...next, email: opts.email, updatedAt: new Date().toISOString() };
+      }
+      if (opts.touchSignIn) {
+        next = { ...next, lastSignInAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+      }
+      if (next !== existing) await store.putProfile(next);
+      return hostedToPublic(next);
+    }
+    const defaultCap =
+      opts.userId === LOCAL_USER_ID
+        ? null
+        : await getDefaultMonthlyCostCapUsd().catch(() => DEFAULT_MONTHLY_COST_CAP_USD);
+    const created = newHostedProfile({
+      userId: opts.userId,
+      email: opts.email,
+      monthlyCostCapUsd: defaultCap,
+      touchSignIn: opts.touchSignIn,
+    });
+    await store.putProfile(created);
+    return hostedToPublic(created);
+  }
+
   const existing = await db.userProfile.findUnique({ where: { userId: opts.userId } });
   if (existing) {
     const data: { email?: string; lastSignInAt?: Date } = {};
@@ -173,6 +262,17 @@ export async function setUserMonthlyCostCap(
   monthlyCostCapUsd: number | null,
 ): Promise<UserProfilePublic> {
   await ensureUserProfile({ userId });
+  if (usesHostedAppStore()) {
+    const store = hostedAppStore();
+    const existing = await store.getProfile(userId);
+    if (!existing) throw new Error("Profile missing after ensure.");
+    const updated = await store.putProfile({
+      ...existing,
+      monthlyCostCapUsd,
+      updatedAt: new Date().toISOString(),
+    });
+    return hostedToPublic(updated);
+  }
   const updated = await db.userProfile.update({
     where: { userId },
     data: { monthlyCostCapUsd },
@@ -181,6 +281,10 @@ export async function setUserMonthlyCostCap(
 }
 
 export async function getUserProfile(userId: string): Promise<UserProfilePublic | null> {
+  if (usesHostedAppStore()) {
+    const row = await hostedAppStore().getProfile(userId);
+    return row ? hostedToPublic(row) : null;
+  }
   const row = await db.userProfile.findUnique({ where: { userId } });
   return row ? toPublic(row) : null;
 }
@@ -220,10 +324,12 @@ export async function patchUserProfile(
     } else {
       const check = validateHandle(patch.handle);
       if (!check.ok) throw Object.assign(new Error(check.reason), { status: 422 });
-      const clash = await db.userProfile.findFirst({
-        where: { handle: check.handle, NOT: { userId } },
-      });
-      if (clash) throw Object.assign(new Error("That handle is already taken."), { status: 409 });
+      if (!usesHostedAppStore()) {
+        const clash = await db.userProfile.findFirst({
+          where: { handle: check.handle, NOT: { userId } },
+        });
+        if (clash) throw Object.assign(new Error("That handle is already taken."), { status: 409 });
+      }
       data.handle = check.handle;
     }
   }
@@ -264,6 +370,18 @@ export async function patchUserProfile(
   if ("preferredModelId" in patch) data.preferredModelId = patch.preferredModelId?.trim() || null;
   if ("notificationPrefs" in patch) data.notificationPrefs = patch.notificationPrefs ?? null;
 
+  if (usesHostedAppStore()) {
+    const store = hostedAppStore();
+    const existing = await store.getProfile(userId);
+    if (!existing) throw new Error("Profile missing after ensure.");
+    const updated = await store.putProfile({
+      ...existing,
+      ...data,
+      updatedAt: new Date().toISOString(),
+    } as HostedProfile);
+    return hostedToPublic(updated);
+  }
+
   const updated = await db.userProfile.update({
     where: { userId },
     data,
@@ -277,6 +395,20 @@ export async function setProfileStatus(opts: {
   actorUserId: string;
 }): Promise<UserProfilePublic> {
   await ensureUserProfile({ userId: opts.userId });
+  if (usesHostedAppStore()) {
+    const store = hostedAppStore();
+    const existing = await store.getProfile(opts.userId);
+    if (!existing) throw new Error("Profile missing after ensure.");
+    const ts = new Date().toISOString();
+    const updated = await store.putProfile({
+      ...existing,
+      status: opts.status,
+      deletedAt: opts.status === "deleted" ? ts : null,
+      deletedByUserId: opts.status === "deleted" ? opts.actorUserId : null,
+      updatedAt: ts,
+    });
+    return hostedToPublic(updated);
+  }
   const updated = await db.userProfile.update({
     where: { userId: opts.userId },
     data: {
@@ -292,6 +424,11 @@ export async function findProfileByEmailOrSub(
   emailOrUsername: string,
 ): Promise<{ userId: string } | null> {
   const q = emailOrUsername.trim().toLowerCase();
+  if (usesHostedAppStore()) {
+    const row = await hostedAppStore().getProfile(q);
+    if (row) return { userId: row.userId };
+    return null;
+  }
   const byEmail = await db.userProfile.findFirst({
     where: { email: { equals: q, mode: "insensitive" } },
     select: { userId: true },

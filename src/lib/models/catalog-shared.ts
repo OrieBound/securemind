@@ -51,7 +51,7 @@ export type ModelCatalogBuckets = {
  * Vision chat models such as Llama 4 Scout stay usable.
  */
 const NON_CHAT_ID =
-  /whisper|tts|embed|orpheus|prompt-guard|safeguard|lyria|imagen|veo-|computer-use|nano-banana|robotics|deep-research|antigravity|clip-preview|dall-e|gpt-image|sora-|transcribe|moderation/;
+  /whisper|tts|embed|orpheus|prompt-guard|safeguard|lyria|imagen|veo-|computer-use|nano-banana|robotics|deep-research|antigravity|clip-preview|dall-e|gpt-image|sora-|transcribe|moderation|sonic/;
 
 const RETIRED_CHAT_IDS = new Set([
   "gemini-2.5-flash",

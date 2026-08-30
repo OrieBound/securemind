@@ -16,6 +16,7 @@
 import { db } from "@/lib/db";
 import { embedText } from "@/lib/models/embed";
 import { isHostedRuntime, resolveStorageBackend } from "@/lib/runtime-env";
+import { hostedAppStore } from "@/lib/workspaces/hosted-dynamo";
 
 import type { ChunkProvenance } from "@/lib/spreadsheet/types";
 
@@ -197,20 +198,30 @@ export async function retrieveCombinedContext(opts: {
 
   type FactRow = { key: string; value: string; pinned: boolean; updatedAt: Date };
   let rows: FactRow[] = [];
-  if (!isHostedRuntime() && resolveStorageBackend() !== "dynamodb") {
-    try {
+  try {
+    if (isHostedRuntime() || resolveStorageBackend() === "dynamodb") {
+      const facts = await hostedAppStore().listFacts(opts.userId, opts.workspaceId);
+      rows = facts
+        .filter(f => !f.forgotten)
+        .map(f => ({
+          key: f.key,
+          value: f.value,
+          pinned: f.pinned,
+          updatedAt: new Date(f.updatedAt),
+        }));
+    } else {
       rows = await db.workspaceFact.findMany({
         where: { workspaceId: opts.workspaceId, forgotten: false },
         select: { key: true, value: true, pinned: true, updatedAt: true },
         orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
         take: WORKSPACE_FACT_RETRIEVAL_LIMIT,
       });
-    } catch (err) {
-      console.warn(
-        "[memory] workspace facts unavailable",
-        err instanceof Error ? err.message : err,
-      );
     }
+  } catch (err) {
+    console.warn(
+      "[memory] workspace facts unavailable",
+      err instanceof Error ? err.message : err,
+    );
   }
 
   const merged = new Map<string, { value: string; pinned: boolean; updatedAt: number }>();

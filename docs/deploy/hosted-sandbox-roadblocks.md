@@ -1,6 +1,6 @@
 # Hosted sandbox: roadblocks we hit
 
-**Last stamped: 2026-08-29.** First real AWS apply of SecureMind (account `your-aws-profile` / `543828674400`, August 2026). Sandbox stays the automatic `main` pipeline. Production is a **second stack** in `your-aws-profile`, not a retarget of this one.
+**Last stamped: 2026-08-30.** First real AWS apply of SecureMind (account `your-aws-profile` / `543828674400`, August 2026). Sandbox stays the automatic `main` pipeline. Production is a **second stack** in `your-aws-profile`, not a retarget of this one.
 
 Use this as an operator log and as interview notes: each item is **symptom → cause → what we did**. Dated chronology is in [Timeline](#timeline) below; README carries a short copy of the same stamp.
 
@@ -10,7 +10,7 @@ IaC and IAM layers: [infra/README.md](../../infra/README.md). Hosting decision: 
 
 ## Timeline
 
-Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first returned the error. Items 1–7 were the August 2026 apply campaign (jobs 1–7 failed). Items 8–10 are 2026-08-29.
+Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first returned the error. Items 1–7 were the August 2026 apply campaign (jobs 1–7 failed). Items 8–10 are 2026-08-29. Items 11–13 are 2026-08-30 (in-repo; live Amplify until the next deploy still shows older API errors).
 
 | Date | # | Hurdle | Outcome |
 |------|---|--------|---------|
@@ -24,8 +24,11 @@ Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first r
 | 2026-08-29 | 8 | Green Amplify job, HTTP 500 empty HTML | NFT whole-repo + pruned `@swc/helpers`; job 12 = HTTP 200 Sign in |
 | 2026-08-29 | 9 | Hosted login rejected Floci demo users | Pool was **empty**; demo emails are local-only |
 | 2026-08-29 | 10 | First-run Owner claim | Pushed to `main` for Actions `terraform apply` + Amplify StartJob. **Not live until that workflow is green.** |
+| 2026-08-30 | 11 | Documents / Cost / Insights 500 with “restart after schema changes” | Prisma on Amplify with no Postgres. Map hosted app data to DynamoDB (`app#userId`). |
+| 2026-08-30 | 12 | Wizard listed Neon and Aurora on cloud | Preference-only, never provisioned. Cloud store = DynamoDB only. Park SQL as a future all-SQL path. |
+| 2026-08-30 | 13 | Image Knowledge treated Groq as required | Groq is optional BYOK. Hosted vision extract = Bedrock. No original files on hosted. |
 
-**As of 2026-08-29:** live UI `https://main.<app-id>.amplifyapp.com/` remains the job-12 Sign in build until the `main` Actions deploy job applies Terraform and Amplify SUCCEEDs.
+**As of 2026-08-30:** live UI `https://main.<app-id>.amplifyapp.com/` can still show item 11 until this mapping is committed and Amplify rebuilds. Chat/warm stay on API Gateway; remaining `/api/*` still run as Amplify Next until ADR 0004 is finished.
 
 ---
 
@@ -137,6 +140,44 @@ We did **not** delete `/api/workspaces` or `/api/documents` from the Amplify app
 
 **Fix (operator):** watch the `Terraform apply · Amplify StartJob` job. After apply, print the setup code from Terraform output (not the public page). Until SUCCEED, treat live Sign in as “empty pool, previous UI.”
 
+### 11. Prisma on Amplify: Documents and Insights 500 (2026-08-30)
+
+**Symptom:** Knowledge list and Settings → Cost/Usage/Security showed *Failed to load … Restart the dev server after schema changes.* Retry did nothing.
+
+**Cause:** That copy was a local Prisma catch. Amplify `SECUREMIND_EDITION=cloud` has no Postgres. Workspaces/chat already used Dynamo (`app#<userId>`). Documents, profile, Insights (`InferenceEvent` / `SecurityEvent`), memory facts, bookmarks, and cost-cap still called Prisma and threw *Hosted SecureMind does not use Postgres.* Chat/warm go to API Gateway; these routes still run as same-origin Amplify `/api/*`.
+
+**Fix (in-repo):** Persist those records on the same Dynamo app partition. Insights stay sanitized metadata only (no prompts, no raw detected values). Original files are not stored on hosted — extracted, scanned text only. **Not on the live Amplify job until this is committed and rebuilt.** Local `npm run dev` stays Postgres.
+
+### 12. Cloud store is DynamoDB only (2026-08-30)
+
+**Symptom:** First-run wizard offered Neon and Aurora on hosted as if they were data planes.
+
+**Cause:** Local Postgres was cheap (Compose / free-tier thinking). DynamoDB native vectors (ADR 0007) then became the hosted store. Neon/Aurora were left as wizard “preferences” that did not provision a database and did not switch Prisma on. A SQL choice mixed into a Dynamo install would have been a second hybrid.
+
+**Fix:** Hosted setup always records DynamoDB. Local default remains Postgres + pgvector. Neon/Aurora are **not** product options now; they may return later as an all-SQL install (same Prisma schema as local), never mixed with Dynamo on the same instance.
+
+### 13. Hosted image extract does not require Groq (2026-08-30)
+
+**Symptom:** Image Knowledge failed or looked like it needed a Groq key. Users on hosted will not necessarily have Groq.
+
+**Cause:** Vision extract used Groq only (`GROQ_API_KEY` / BYOK). Groq is optional. Hosted inference is Bedrock (IAM).
+
+**Fix:** Hosted image extract uses Bedrock (Nova Lite) when billable AWS is on. Groq remains optional BYOK. Pixels still leave the host to the vision provider; extracted text is scanned before storage.
+
+---
+
+## Roadmap (hosted)
+
+What is decided vs still leftover:
+
+| Now | Later |
+|-----|--------|
+| Local = Postgres + pgvector | — |
+| Cloud = DynamoDB for **all** app data (workspaces, chat, Knowledge, memory, Insights) | Finish ADR 0004: remaining `/api/*` off Amplify onto API Gateway + Lambda |
+| Chat/warm already on API Gateway (streaming) | Same |
+| Neon / Aurora | Optional future **all-SQL** cloud path if we ever want it — not mixed with Dynamo |
+| Original files off hosted | Revisit S3 only if we deliberately keep binaries |
+
 ---
 
 ## What we did *not* hit (yet) but is next-door
@@ -158,6 +199,6 @@ We did **not** delete `/api/workspaces` or `/api/documents` from the Amplify app
 | Deploy | UI rebuild ships API code | UI and API ship independently |
 | Auth | Same-origin cookies | Bearer + CORS (already used for chat) |
 | Limits | Amplify SSR timeouts/payloads | Lambda timeout/payload; streaming for chat |
-| Data plane | Prisma still expects Postgres; hosted store is DynamoDB | One API in front of DynamoDB |
+| Data plane | Hosted records now go to DynamoDB (`app#userId`); Prisma still exists for **local** Postgres | One API in front of DynamoDB |
 
 Local `npm run dev` should keep same-origin `/api/*` (`NEXT_PUBLIC_API_BASE_URL` unset). Hosted sets that URL so the **browser** talks to the gateway. Completing the split is the hosted end state; trimming SWC/esbuild is only how we stay under the cap until then.

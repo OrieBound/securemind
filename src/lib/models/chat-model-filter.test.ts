@@ -30,6 +30,7 @@ describe("isChatUsableModelId", () => {
     expect(isChatUsableModelId("lyria-3-clip-preview")).toBe(false);
     expect(isChatUsableModelId("gemini-2.5-flash")).toBe(false);
     expect(isChatUsableModelId("gemini-2.5-pro")).toBe(false);
+    expect(isChatUsableModelId("amazon.nova-2-sonic-v1:0")).toBe(false);
   });
 
   it("marks non-chat ids as other and Scout as vision", () => {

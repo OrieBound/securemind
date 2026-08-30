@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     console.error("[analytics/cost] GET failed:", err);
     return NextResponse.json(
-      { error: "Failed to load cost analytics. Restart the dev server after schema changes." },
+      { error: "Failed to load cost analytics." },
       { status: 500 },
     );
   }

@@ -7,7 +7,6 @@
 
 export const runtime = "nodejs";
 
-import { db } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 import {
   extractDocument,
@@ -18,6 +17,12 @@ import {
   type DocumentChunkDraft,
 } from "@/lib/documents";
 import {
+  createProcessingDocument,
+  findReusableDocument,
+  listPersistedDocuments,
+  updatePersistedDocument,
+} from "@/lib/documents/persist";
+import {
   MAX_ATTACHMENT_PROMPT_CHARS,
   MAX_FILE_BYTES,
   MAX_FILE_MB,
@@ -27,49 +32,12 @@ import { getIdentity } from "@/lib/identity";
 import { recordSecurityEvents } from "@/lib/analytics/write";
 import type { SecuritySource } from "@/lib/analytics/types";
 import { shouldSyncDocumentIngest } from "@/lib/runtime-env";
+import { usesHostedAppStore } from "@/lib/workspaces/store";
 import { ImageExtractError } from "@/lib/image-extract";
 import { inspectImagePrivacy } from "@/lib/image-privacy";
 
-const docSelect = {
-  id: true,
-  workspaceId: true,
-  name: true,
-  mimeType: true,
-  sizeBytes: true,
-  description: true,
-  status: true,
-  chunkCount: true,
-  redactionCount: true,
-  scrubEvents: true,
-  processingError: true,
-  storageKey: true,
-  extractMeta: true,
-  processedAt: true,
-  content: true,
-  createdAt: true,
-} as const;
-
-/** List payloads must not pull `content` — that column can be megabytes per row. */
-const listSelect = {
-  id: true,
-  workspaceId: true,
-  name: true,
-  mimeType: true,
-  sizeBytes: true,
-  description: true,
-  status: true,
-  chunkCount: true,
-  redactionCount: true,
-  scrubEvents: true,
-  processingError: true,
-  storageKey: true,
-  extractMeta: true,
-  processedAt: true,
-  createdAt: true,
-} as const;
-
 function listPublicDoc(doc: { content?: string; storageKey?: string | null } & Record<string, unknown>) {
-  const { content, storageKey, ...rest } = doc;
+  const { content, storageKey, fragmentIds, chunks, userId, ...rest } = doc;
   return {
     ...rest,
     hasOriginal: Boolean(storageKey),
@@ -90,22 +58,13 @@ export async function GET(req: NextRequest) {
   const workspaceId = new URL(req.url).searchParams.get("workspaceId");
 
   try {
-    const docs = await db.document.findMany({
-      where: {
-        userId,
-        ...(workspaceId
-          ? { OR: [{ workspaceId }, { workspaceId: null }] }
-          : {}),
-      },
-      orderBy: { createdAt: "desc" },
-      select: listSelect,
-    });
+    const docs = await listPersistedDocuments(userId, workspaceId);
 
     return NextResponse.json(docs.map(listPublicDoc));
   } catch (err) {
     console.error("[documents] GET failed:", err);
     return NextResponse.json(
-      { error: "Failed to load documents. Restart the dev server after schema changes." },
+      { error: "Failed to load documents." },
       { status: 500 },
     );
   }
@@ -141,18 +100,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const existing = await db.document.findFirst({
-    where: {
-      userId,
-      name: file.name,
-      sizeBytes: file.size,
-      ...(workspaceId ? { workspaceId } : { workspaceId: null }),
-    },
-    select: docSelect,
-    orderBy: { createdAt: "desc" },
-  });
+  const existing = await findReusableDocument(userId, file.name, file.size, workspaceId);
 
-  if (existing && existing.status !== "failed") {
+  if (existing) {
     return NextResponse.json(
       { ...publicDoc(existing), hadRedactions: (existing.redactionCount ?? 0) > 0, reused: true },
       { status: 200 },
@@ -161,47 +111,28 @@ export async function POST(req: NextRequest) {
 
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  const doc = existing
-    ? await db.document.update({
-        where: { id: existing.id },
-        data: {
-          mimeType,
-          description,
-          status: "processing",
-          processingError: null,
-          chunkCount: 0,
-        },
-        select: docSelect,
-      })
-    : await db.document.create({
-        data: {
-          userId,
-          workspaceId,
-          name: file.name,
-          mimeType,
-          sizeBytes: file.size,
-          content: "",
-          description,
-          status: "processing",
-          chunkCount: 0,
-        },
-        select: docSelect,
-      });
+  const doc = await createProcessingDocument({
+    userId,
+    workspaceId,
+    name: file.name,
+    mimeType,
+    sizeBytes: file.size,
+    description,
+  });
 
   let storageKey = doc.storageKey;
-  try {
-    storageKey = await writeOriginal({
-      userId,
-      documentId: doc.id,
-      filename: file.name,
-      buffer,
-    });
-    await db.document.update({
-      where: { id: doc.id },
-      data: { storageKey },
-    });
-  } catch (err) {
-    console.warn("[documents] original persist failed:", err);
+  if (!usesHostedAppStore()) {
+    try {
+      storageKey = await writeOriginal({
+        userId,
+        documentId: doc.id,
+        filename: file.name,
+        buffer,
+      });
+      await updatePersistedDocument(userId, doc.id, { storageKey });
+    } catch (err) {
+      console.warn("[documents] original persist failed:", err);
+    }
   }
 
   let extractedText = "";
@@ -266,62 +197,50 @@ export async function POST(req: NextRequest) {
   }
 
   if (errorCode) {
-    const failed = await db.document.update({
-      where: { id: doc.id },
-      data: {
-        status: "failed",
-        content: "",
-        chunkCount: 0,
-        processingError: errorCode,
-        processedAt: new Date(),
-        storageKey,
-        extractMeta: extractMeta as object | undefined,
-      },
-      select: docSelect,
+    const failed = await updatePersistedDocument(userId, doc.id, {
+      status: "failed",
+      content: "",
+      chunkCount: 0,
+      processingError: errorCode,
+      processedAt: new Date(),
+      storageKey,
+      extractMeta,
     });
     return NextResponse.json(
-      { ...publicDoc(failed), error: errorMessage, reused: Boolean(existing) },
+      { ...publicDoc(failed!), error: errorMessage, reused: false },
       { status: 201 },
     );
   }
 
   const scrubbed = await scrubDocumentText(extractedText);
   if (!scrubbed.content && drafts.length === 0) {
-    const failed = await db.document.update({
-      where: { id: doc.id },
-      data: {
-        status: "failed",
-        content: "",
-        processingError: "EMPTY_EXTRACT",
-        processedAt: new Date(),
-        storageKey,
-      },
-      select: docSelect,
+    const failed = await updatePersistedDocument(userId, doc.id, {
+      status: "failed",
+      content: "",
+      processingError: "EMPTY_EXTRACT",
+      processedAt: new Date(),
+      storageKey,
     });
     return NextResponse.json(
-      { ...publicDoc(failed), error: "No usable text remained after the sensitive-data scan" },
+      { ...publicDoc(failed!), error: "No usable text remained after the sensitive-data scan" },
       { status: 201 },
     );
   }
 
-  const updated = await db.document.update({
-    where: { id: doc.id },
-    data: {
-      content: scrubbed.content || drafts.map(d => d.content).join("\n\n"),
-      redactionCount: scrubbed.redactionCount,
-      scrubEvents: scrubbed.hadRedactions ? scrubbed.scrubEvents : undefined,
-      extractMeta: extractMeta as object | undefined,
-      storageKey,
-      processingError: null,
-      status: "processing",
-    },
-    select: docSelect,
+  const updated = await updatePersistedDocument(userId, doc.id, {
+    content: scrubbed.content || drafts.map(d => d.content).join("\n\n"),
+    redactionCount: scrubbed.redactionCount,
+    scrubEvents: scrubbed.hadRedactions ? scrubbed.scrubEvents : undefined,
+    extractMeta,
+    storageKey,
+    processingError: null,
+    status: "processing",
   });
 
   if (shouldSyncDocumentIngest()) {
-    await processDocument(updated.id, drafts);
+    await processDocument(updated!.id, drafts, userId);
   } else {
-    processDocument(updated.id, drafts).catch(err =>
+    processDocument(updated!.id, drafts, userId).catch(err =>
       console.error("[documents] background processDocument failed:", err),
     );
   }
@@ -339,7 +258,7 @@ export async function POST(req: NextRequest) {
         outcome: "redacted" as const,
         count: ev.count,
         resourceKind: "document" as const,
-        resourceId: updated.id,
+        resourceId: updated!.id,
       })),
     ).catch(err =>
       console.warn("[documents] security telemetry failed (non-critical):", String(err)),
@@ -347,7 +266,7 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json(
-    { ...publicDoc(updated), hadRedactions: scrubbed.hadRedactions, reused: Boolean(existing) },
-    { status: existing ? 200 : 201 },
+    { ...publicDoc(updated!), hadRedactions: scrubbed.hadRedactions, reused: false },
+    { status: 201 },
   );
 }

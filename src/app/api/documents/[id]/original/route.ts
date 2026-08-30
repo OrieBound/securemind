@@ -5,9 +5,10 @@
 
 export const runtime = "nodejs";
 
-import { db } from "@/lib/db";
 import { originalExists, readOriginal } from "@/lib/document-storage";
+import { getPersistedDocument } from "@/lib/documents/persist";
 import { getIdentity } from "@/lib/identity";
+import { usesHostedAppStore } from "@/lib/workspaces/store";
 import { NextRequest, NextResponse } from "next/server";
 
 type Params = { params: Promise<{ id: string }> };
@@ -16,10 +17,14 @@ export async function GET(req: NextRequest, { params }: Params) {
   const { id } = await params;
   const { userId } = await getIdentity(req);
 
-  const doc = await db.document.findFirst({
-    where: { id, userId },
-    select: { name: true, mimeType: true, storageKey: true },
-  });
+  if (usesHostedAppStore()) {
+    return NextResponse.json(
+      { error: "Original files are not stored on the hosted install." },
+      { status: 404 },
+    );
+  }
+
+  const doc = await getPersistedDocument(userId, id);
   if (!doc) {
     return NextResponse.json({ error: "Document not found" }, { status: 404 });
   }

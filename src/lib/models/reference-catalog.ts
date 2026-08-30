@@ -101,7 +101,9 @@ export function mergeCatalogWithReference(catalog: ReferenceCatalogSlice): Catal
     ...mergeProviderModels(catalog.openai, REFERENCE_OPENAI),
     ...mergeProviderModels(catalog.anthropic, REFERENCE_ANTHROPIC),
     ...mergeProviderModels(catalog.google, REFERENCE_GOOGLE),
-    ...mergeProviderModels(catalog.bedrock, BEDROCK_TEXT_MODELS),
+    ...(catalog.bedrock.length > 0
+      ? catalog.bedrock
+      : mergeProviderModels(catalog.bedrock, BEDROCK_TEXT_MODELS)),
     ...mergeProviderModels(catalog.ollama, REFERENCE_OLLAMA),
   ];
 }

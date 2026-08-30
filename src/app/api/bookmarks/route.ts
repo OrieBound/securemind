@@ -10,12 +10,41 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getIdentity } from "@/lib/identity";
+import { hostedAppStore, type HostedSavedItem } from "@/lib/workspaces/hosted-dynamo";
+import { findOwnedWorkspace, usesHostedAppStore } from "@/lib/workspaces/store";
 
 async function assertWorkspace(userId: string, workspaceId: string) {
+  if (usesHostedAppStore()) {
+    return findOwnedWorkspace(userId, workspaceId);
+  }
   return db.workspace.findFirst({
     where: { id: workspaceId, userId },
     select: { id: true },
   });
+}
+
+function hostedBookmark(input: {
+  userId: string;
+  workspaceId: string;
+  messageId: string;
+  label?: string;
+  preview?: string;
+  role?: string | null;
+  heavy?: boolean;
+  createdAt?: string;
+  existing?: HostedSavedItem | null;
+}): HostedSavedItem {
+  return {
+    id: input.existing?.id ?? crypto.randomUUID(),
+    userId: input.userId,
+    workspaceId: input.workspaceId,
+    messageId: input.messageId,
+    label: (input.label ?? input.existing?.label ?? "Saved").slice(0, 120),
+    preview: (input.preview ?? input.existing?.preview ?? "").slice(0, 400),
+    role: input.role ?? input.existing?.role ?? null,
+    heavy: Boolean(input.heavy ?? input.existing?.heavy),
+    createdAt: input.existing?.createdAt ?? input.createdAt ?? new Date().toISOString(),
+  };
 }
 
 export async function GET(req: NextRequest) {
@@ -27,6 +56,11 @@ export async function GET(req: NextRequest) {
   const owned = await assertWorkspace(userId, workspaceId);
   if (!owned) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
+  }
+
+  if (usesHostedAppStore()) {
+    const items = await hostedAppStore().listBookmarks(userId, workspaceId);
+    return NextResponse.json({ items });
   }
 
   const items = await db.savedItem.findMany({
@@ -71,6 +105,28 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.migrate && Array.isArray(body.items)) {
+    if (usesHostedAppStore()) {
+      const store = hostedAppStore();
+      const existing = await store.listBookmarks(userId, workspaceId);
+      const byMessage = new Map(existing.map(i => [i.messageId, i]));
+      for (const item of body.items.slice(0, 200)) {
+        if (!item.messageId || byMessage.has(item.messageId)) continue;
+        const row = hostedBookmark({
+          userId,
+          workspaceId,
+          messageId: item.messageId,
+          label: item.label,
+          preview: item.preview,
+          role: item.role,
+          heavy: item.heavy,
+          createdAt: item.createdAt,
+        });
+        await store.putBookmark(row);
+        byMessage.set(item.messageId, row);
+      }
+      const items = await store.listBookmarks(userId, workspaceId);
+      return NextResponse.json({ items, migrated: true });
+    }
     for (const item of body.items.slice(0, 200)) {
       if (!item.messageId) continue;
       await db.savedItem.upsert({
@@ -102,6 +158,26 @@ export async function POST(req: NextRequest) {
 
   if (!body.messageId) {
     return NextResponse.json({ error: "messageId required" }, { status: 400 });
+  }
+
+  if (usesHostedAppStore()) {
+    const store = hostedAppStore();
+    const existing = (await store.listBookmarks(userId, workspaceId)).find(
+      i => i.messageId === body.messageId,
+    );
+    const item = await store.putBookmark(
+      hostedBookmark({
+        userId,
+        workspaceId,
+        messageId: body.messageId,
+        label: body.label,
+        preview: body.preview,
+        role: body.role,
+        heavy: body.heavy,
+        existing,
+      }),
+    );
+    return NextResponse.json(item, { status: 201 });
   }
 
   const item = await db.savedItem.upsert({
@@ -142,6 +218,14 @@ export async function DELETE(req: NextRequest) {
   const owned = await assertWorkspace(userId, workspaceId);
   if (!owned) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
+  }
+
+  if (usesHostedAppStore()) {
+    const deleted = await hostedAppStore().deleteBookmark(userId, workspaceId, messageId);
+    if (!deleted) {
+      return NextResponse.json({ error: "Bookmark not found" }, { status: 404 });
+    }
+    return new Response(null, { status: 204 });
   }
 
   const existing = await db.savedItem.findFirst({

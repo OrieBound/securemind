@@ -8,6 +8,8 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { getIdentity } from "@/lib/identity";
 import { postgresMemory } from "@/lib/storage/postgres";
+import { hostedAppStore } from "@/lib/workspaces/hosted-dynamo";
+import { usesHostedAppStore } from "@/lib/workspaces/store";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -37,6 +39,24 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
+  if (usesHostedAppStore()) {
+    const store = hostedAppStore();
+    const existing = await store.getFactById(userId, workspaceId, id);
+    if (!existing) {
+      return NextResponse.json({ error: "Fact not found" }, { status: 404 });
+    }
+    const updated = await store.putFact({
+      ...existing,
+      value: typeof body.value === "string" ? body.value : existing.value,
+      pinned: typeof body.pinned === "boolean" ? body.pinned : existing.pinned,
+      forgotten: typeof body.forgotten === "boolean" ? body.forgotten : existing.forgotten,
+      correctedAt: new Date().toISOString(),
+      correctedByUserId: userId,
+      updatedAt: new Date().toISOString(),
+    });
+    return NextResponse.json(updated);
+  }
+
   const updated = await postgresMemory.patchFact(userId, workspaceId, id, {
     value: typeof body.value === "string" ? body.value : undefined,
     pinned: typeof body.pinned === "boolean" ? body.pinned : undefined,
@@ -54,6 +74,13 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   const workspaceId = await workspaceIdOf(req);
   if (!workspaceId) {
     return NextResponse.json({ error: "workspaceId required" }, { status: 400 });
+  }
+  if (usesHostedAppStore()) {
+    const deleted = await hostedAppStore().deleteFact(userId, workspaceId, id);
+    if (!deleted) {
+      return NextResponse.json({ error: "Fact not found" }, { status: 404 });
+    }
+    return new Response(null, { status: 204 });
   }
 
   const ok = await postgresMemory.deleteFact(userId, workspaceId, id);

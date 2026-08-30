@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     console.error("[analytics/usage] GET failed:", err);
     return NextResponse.json(
-      { error: "Failed to load usage analytics. Restart the dev server after schema changes." },
+      { error: "Failed to load usage analytics." },
       { status: 500 },
     );
   }

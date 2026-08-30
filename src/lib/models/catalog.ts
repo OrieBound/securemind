@@ -16,6 +16,7 @@ import { listOpenAIModels } from "./openai";
 import { listAnthropicModels } from "./anthropic";
 import { listGoogleModels } from "./google";
 import { runtimeEdition } from "@/lib/runtime-env";
+import { selectInvocableBedrockModels } from "./bedrock-catalog";
 import {
   BEDROCK_TEXT_MODELS,
   formatBedrockCatalogError,
@@ -30,17 +31,42 @@ export { BEDROCK_TEXT_MODELS } from "./catalog-shared";
 /**
  * Live Bedrock text models for the selected profile and region.
  *
- * Filters to what this app can actually stream:
- *  - TEXT output, streaming supported, ACTIVE lifecycle (drops retired versions)
- *  - invocable on demand, or through a cross-region inference profile
+ * Filters to what this app can actually stream, using **list APIs only**:
+ *  - TEXT output, streaming supported, ACTIVE lifecycle (drops LEGACY versions)
+ *  - inference-profile ids when AWS publishes one (`us.*` / `global.*`)
+ *
+ * Never InvokeModel / Converse here. Bedrock bills tokens on inference, not
+ * on ListFoundationModels / ListInferenceProfiles. A per-model availability
+ * GET or a Test invoke would be a different, opt-in path.
  *
  * Models that are PROVISIONED-only are dropped — invoking one needs a
  * provisioned throughput ARN this app does not manage.
  */
+async function listAllInferenceProfiles(
+  client: InstanceType<typeof import("@aws-sdk/client-bedrock").BedrockClient>,
+  ListInferenceProfilesCommand: typeof import("@aws-sdk/client-bedrock").ListInferenceProfilesCommand,
+) {
+  const summaries: NonNullable<
+    import("@aws-sdk/client-bedrock").ListInferenceProfilesCommandOutput["inferenceProfileSummaries"]
+  > = [];
+  let nextToken: string | undefined;
+  do {
+    const page = await client.send(
+      new ListInferenceProfilesCommand({ maxResults: 200, nextToken }),
+    );
+    summaries.push(...(page.inferenceProfileSummaries ?? []));
+    nextToken = page.nextToken;
+  } while (nextToken);
+  return summaries;
+}
+
 async function listBedrockModels(region: string, profile: string | null): Promise<CatalogModel[]> {
   return withRealAwsEndpoints(async () => {
-    const { BedrockClient, ListFoundationModelsCommand, ListInferenceProfilesCommand } =
-      await import("@aws-sdk/client-bedrock");
+    const {
+      BedrockClient,
+      ListFoundationModelsCommand,
+      ListInferenceProfilesCommand,
+    } = await import("@aws-sdk/client-bedrock");
     const { fromNodeProviderChain } = await import("@aws-sdk/credential-providers");
 
     const client = new BedrockClient({
@@ -51,54 +77,15 @@ async function listBedrockModels(region: string, profile: string | null): Promis
     const listed = await client.send(new ListFoundationModelsCommand({ byOutputModality: "TEXT" }));
     const summaries = listed.modelSummaries ?? [];
 
-    // Cross-region profile ids (us.*) keyed by the underlying model ARN.
-    const profileByModelArn = new Map<string, string>();
+    let profiles: Awaited<ReturnType<typeof listAllInferenceProfiles>> = [];
     try {
-      const profiles = await client.send(new ListInferenceProfilesCommand({ maxResults: 200 }));
-      for (const p of profiles.inferenceProfileSummaries ?? []) {
-        if (p.status && p.status !== "ACTIVE") continue;
-        for (const m of p.models ?? []) {
-          if (m.modelArn && p.inferenceProfileId && !profileByModelArn.has(m.modelArn)) {
-            profileByModelArn.set(m.modelArn, p.inferenceProfileId);
-          }
-        }
-      }
+      profiles = await listAllInferenceProfiles(client, ListInferenceProfilesCommand);
     } catch {
-      // Without profiles we simply offer the on-demand subset.
+      // Without profiles we still offer the on-demand ACTIVE subset.
     }
 
-    const models: CatalogModel[] = [];
-    for (const m of summaries) {
-      if (!m.modelId || !m.responseStreamingSupported) continue;
-      if ((m.modelLifecycle?.status ?? "ACTIVE") !== "ACTIVE") continue;
-
-      // The API returns INFERENCE_PROFILE, which the SDK's enum does not model yet.
-      const types: string[] = m.inferenceTypesSupported ?? [];
-      let id: string | null = null;
-      let note: string | undefined;
-
-      if (types.includes("ON_DEMAND")) {
-        id = m.modelId;
-      } else if (types.includes("INFERENCE_PROFILE")) {
-        const viaProfile = m.modelArn ? profileByModelArn.get(m.modelArn) : undefined;
-        if (!viaProfile) continue;
-        id = viaProfile;
-        note = "Cross-region inference profile";
-      }
-      if (!id) continue;
-
-      models.push({
-        id,
-        name: m.modelName ? `${m.providerName ?? ""} ${m.modelName}`.trim() : id,
-        provider: "bedrock",
-        modality: "text",
-        ...(note ? { note } : {}),
-      });
-    }
-
-    const seen = new Set<string>();
-    return models
-      .filter(m => (seen.has(m.id) ? false : (seen.add(m.id), true)))
+    return selectInvocableBedrockModels(summaries, profiles)
+      .map(c => c.model)
       .sort((a, b) => a.name.localeCompare(b.name));
   });
 }

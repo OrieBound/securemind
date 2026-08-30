@@ -272,11 +272,16 @@ export async function runSetupComplete(
       422,
     );
   }
-  const backend = input.storageBackend;
-  if (!isValidWizardStorage(backend, runtimeEdition())) {
+  const edition = runtimeEdition();
+  const backend = parseWizardStorage(
+    typeof input.storageBackend === "string" ? input.storageBackend : null,
+    edition,
+    "postgres",
+  );
+  if (!isValidWizardStorage(backend, edition)) {
     throw new SetupClaimError(
-      runtimeEdition() === "cloud"
-        ? "Choose DynamoDB, Neon, or Aurora."
+      edition === "cloud"
+        ? "This hosted install uses DynamoDB."
         : "Choose Postgres or DynamoDB.",
       422,
     );

@@ -250,7 +250,7 @@ describe("POST /api/setup/complete", () => {
     });
   });
 
-  it("accepts DynamoDB, Neon, or Aurora on a hosted install", async () => {
+  it("persists DynamoDB on a hosted install even if the client sends SQL", async () => {
     process.env.SECUREMIND_EDITION = "cloud";
     getIdentity.mockResolvedValue({
       userId: "sub-owner",
@@ -266,12 +266,12 @@ describe("POST /api/setup/complete", () => {
     }));
     expect(res.status).toBe(200);
     expect(completeInstanceSetup).toHaveBeenCalledWith({
-      storageBackend: "neon",
+      storageBackend: "dynamodb",
       userId: "sub-owner",
     });
   });
 
-  it("rejects Postgres on a hosted install", async () => {
+  it("maps Postgres on a hosted install to DynamoDB", async () => {
     process.env.SECUREMIND_EDITION = "cloud";
     getIdentity.mockResolvedValue({
       userId: "sub-owner",
@@ -285,7 +285,10 @@ describe("POST /api/setup/complete", () => {
       storageBackend: "postgres",
       riskAck: true,
     }));
-    expect(res.status).toBe(422);
-    expect(completeInstanceSetup).not.toHaveBeenCalled();
+    expect(res.status).toBe(200);
+    expect(completeInstanceSetup).toHaveBeenCalledWith({
+      storageBackend: "dynamodb",
+      userId: "sub-owner",
+    });
   });
 });

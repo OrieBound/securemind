@@ -5,7 +5,7 @@
 
 export const runtime = "nodejs";
 
-import { db } from "@/lib/db";
+import { getPersistedDocument } from "@/lib/documents/persist";
 import { originalExists, readSpreadsheetTables } from "@/lib/document-storage";
 import { getIdentity } from "@/lib/identity";
 import { querySpreadsheet } from "@/lib/spreadsheet/query";
@@ -20,10 +20,7 @@ export async function POST(req: NextRequest, { params }: Params) {
   const { id } = await params;
   const { userId } = await getIdentity(req);
 
-  const doc = await db.document.findFirst({
-    where: { id, userId },
-    select: { id: true, storageKey: true },
-  });
+  const doc = await getPersistedDocument(userId, id);
   if (!doc) {
     return NextResponse.json({ error: "Document not found" }, { status: 404 });
   }

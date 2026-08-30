@@ -57,7 +57,7 @@ export async function GET(req: NextRequest) {
   } catch (err) {
     console.error("[analytics/security] GET failed:", err);
     return NextResponse.json(
-      { error: "Failed to load security analytics. Restart the dev server after schema changes." },
+      { error: "Failed to load security analytics." },
       { status: 500 },
     );
   }
