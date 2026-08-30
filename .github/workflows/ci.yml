@@ -15,6 +15,8 @@ jobs:
       DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
       DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
       AUTH_MODE: local
+      # IMDS hangs ~5s on GitHub-hosted runners and flakes aws-credentials tests.
+      AWS_EC2_METADATA_DISABLED: "true"
 
     steps:
       - uses: actions/checkout@v4
