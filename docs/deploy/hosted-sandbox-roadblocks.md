@@ -92,6 +92,14 @@ We did **not** delete `/api/workspaces` or `/api/documents` from the Amplify app
 
 **Real shrink:** Finish ADR 0004 — Amplify serves UI only; remaining `/api/*` move to API Gateway + Lambda (and off Prisma on the hosted path). See below.
 
+### 8. Amplify: HTTP 500 empty HTML after a green deploy
+
+**Symptom:** `https://main.<app-id>.amplifyapp.com/` returns **500**, empty `<html><head></head><body></body></html>`, `X-Cache: Error from cloudfront`. Job 9 **SUCCEED**. CloudWatch `/aws/amplify/<app-id>` stays at **0 bytes**. Static paths (`/`, `/icon.png`) also 500.
+
+**Cause:** Turbopack NFT traced the **whole repo** because `secret-at-rest.ts` used `process.cwd()` without a `turbopackIgnore` comment. Amplify’s compute `run.sh` then `ln -sf` every standalone root entry, including `src/`, `docs/`, and a nested `amplify-compute-bundle-output`. Those recursive symlinks fail on the read-only compute FS, so the Node server never starts. Missing CloudWatch permissions on the custom Amplify role hid the crash.
+
+**Fix:** `turbopackIgnore` on `process.cwd()` in `secret-at-rest.ts` / `document-storage.ts`; prune standalone to an allowlist (`server.js`, `.next`, `node_modules`, `public`, `prisma`, package files); add SSR log IAM; set dummy `DATABASE_URL` + `INSTANCE_ENCRYPTION_KEY` on the Amplify **runtime** env (not build-only). Do not Redeploy job 9 — StartJob a new commit.
+
 ---
 
 ## What we did *not* hit (yet) but is next-door

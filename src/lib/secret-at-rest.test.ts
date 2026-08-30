@@ -7,12 +7,16 @@ import { decryptSecret, encryptSecret, isEncryptedSecret } from "./secret-at-res
 describe("secret-at-rest", () => {
   const prevKey = process.env.INSTANCE_ENCRYPTION_KEY;
   const prevFile = process.env.INSTANCE_KEY_FILE;
+  const prevAmplify = process.env.AMPLIFY_HOSTING;
+  const prevEdition = process.env.SECUREMIND_EDITION;
   let dir: string;
 
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), "sm-enc-"));
     process.env.INSTANCE_ENCRYPTION_KEY = "a".repeat(64);
     delete process.env.INSTANCE_KEY_FILE;
+    delete process.env.AMPLIFY_HOSTING;
+    delete process.env.SECUREMIND_EDITION;
   });
 
   afterEach(() => {
@@ -20,6 +24,10 @@ describe("secret-at-rest", () => {
     else process.env.INSTANCE_ENCRYPTION_KEY = prevKey;
     if (prevFile === undefined) delete process.env.INSTANCE_KEY_FILE;
     else process.env.INSTANCE_KEY_FILE = prevFile;
+    if (prevAmplify === undefined) delete process.env.AMPLIFY_HOSTING;
+    else process.env.AMPLIFY_HOSTING = prevAmplify;
+    if (prevEdition === undefined) delete process.env.SECUREMIND_EDITION;
+    else process.env.SECUREMIND_EDITION = prevEdition;
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -36,5 +44,11 @@ describe("secret-at-rest", () => {
     expect(decryptSecret("plain-legacy-key")).toBe("plain-legacy-key");
     const once = encryptSecret("abc");
     expect(encryptSecret(once)).toBe(once);
+  });
+
+  it("refuses to write a key file on hosted runtimes", () => {
+    delete process.env.INSTANCE_ENCRYPTION_KEY;
+    process.env.AMPLIFY_HOSTING = "true";
+    expect(() => encryptSecret("x")).toThrow(/INSTANCE_ENCRYPTION_KEY/);
   });
 });

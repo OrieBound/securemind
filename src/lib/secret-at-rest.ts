@@ -8,18 +8,25 @@
 
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join } from "node:path";
 
 const PREFIX = "smenc:v1:";
 const ALGO = "aes-256-gcm";
 
-function dataDir(): string {
-  return resolve(process.cwd(), ".data");
+function isHostedRuntime(): boolean {
+  return Boolean(
+    process.env.AMPLIFY_HOSTING ||
+      process.env.AWS_LAMBDA_FUNCTION_NAME ||
+      process.env.SECUREMIND_EDITION === "cloud" ||
+      process.env.SECUREMIND_EDITION === "hosted",
+  );
 }
 
 function keyFilePath(): string {
-  return process.env.INSTANCE_KEY_FILE?.trim()
-    || resolve(dataDir(), "instance.key");
+  if (process.env.INSTANCE_KEY_FILE?.trim()) return process.env.INSTANCE_KEY_FILE.trim();
+  // turbopackIgnore: do not NFT-trace the whole repo from process.cwd()
+  // (that leak put AGENTS.md / src / amplify-compute-bundle-output into Amplify compute).
+  return join(/* turbopackIgnore: true */ process.cwd(), ".data", "instance.key");
 }
 
 function materialFromPassphrase(raw: string): Buffer {
@@ -31,6 +38,10 @@ function materialFromPassphrase(raw: string): Buffer {
 function loadOrCreateKey(): Buffer {
   const env = process.env.INSTANCE_ENCRYPTION_KEY?.trim();
   if (env) return materialFromPassphrase(env);
+
+  if (isHostedRuntime()) {
+    throw new Error("INSTANCE_ENCRYPTION_KEY is required on hosted runtimes.");
+  }
 
   const file = keyFilePath();
   if (existsSync(file)) {
