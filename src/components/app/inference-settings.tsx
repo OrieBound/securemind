@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, Cloud, ExternalLink, HardDrive, LayoutList, RefreshCw, Shield, SlidersHorizontal, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SelectMenu } from "@/components/ui/select-menu";
@@ -19,6 +19,8 @@ import {
   groqVendorStatusLabel,
   GROQ_VPN_SETTINGS_NOTE,
 } from "@/lib/models/groq-connectivity";
+import { consumeBedrockHighlight, HIGHLIGHT_BEDROCK_KEY } from "@/lib/onboarding";
+import type { RuntimeEdition } from "@/lib/runtime-env";
 import {
   detectProviderKey,
   isRejectedKeyKind,
@@ -70,6 +72,7 @@ type AwsStatus = {
 };
 
 type ProviderStatus = {
+  edition?: RuntimeEdition;
   primaryProvider: "auto" | "groq" | "bedrock" | "ollama";
   hasGroqKey: boolean;
   hasEnvGroqKey: boolean;
@@ -132,8 +135,9 @@ export function InferenceSettings(props: Props) {
   >("all");
   /** One open module at a time. Click again to collapse. Models starts closed so you choose. */
   const [openModule, setOpenModule] = useState<SettingsModuleId | null>(
-    page === "providers" ? "vendor" : null,
+    page === "providers" ? "bedrock" : null,
   );
+  const pickedProviderDefault = useRef(false);
   const { results, test } = useModelTester();
   const sharedCatalog = useModelCatalog();
   // modelFilter only scopes the picker chips when a credential row is selected.
@@ -286,6 +290,22 @@ export function InferenceSettings(props: Props) {
   }, [refresh]);
 
   useEffect(() => {
+    if (page !== "providers" || pickedProviderDefault.current) return;
+    try {
+      if (sessionStorage.getItem(HIGHLIGHT_BEDROCK_KEY) === "1") {
+        pickedProviderDefault.current = true;
+        setOpenModule("bedrock");
+        return;
+      }
+    } catch {
+      /* private browsing */
+    }
+    if (!status?.edition) return;
+    pickedProviderDefault.current = true;
+    setOpenModule(status.edition === "cloud" ? "bedrock" : "local");
+  }, [page, status?.edition]);
+
+  useEffect(() => {
     if (page === "models") void sharedCatalog.ensureLoaded();
   }, [page, sharedCatalog.ensureLoaded]);
 
@@ -299,9 +319,15 @@ export function InferenceSettings(props: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
+      let data: { error?: string } & Partial<ProviderStatus> = {};
+      try {
+        data = (await res.json()) as { error?: string } & Partial<ProviderStatus>;
+      } catch {
+        setNote(res.ok ? okMsg : `Save failed (HTTP ${res.status}).`);
+        return;
+      }
       if (!res.ok) {
-        setNote(data.error ?? "Save failed");
+        setNote(data.error ?? `Save failed (HTTP ${res.status}).`);
         return;
       }
       setStatus(data as ProviderStatus);
@@ -336,6 +362,8 @@ export function InferenceSettings(props: Props) {
         }
       }
       setNote(okMsg);
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Could not save provider settings.");
     } finally {
       setBusy(false);
     }
@@ -408,8 +436,12 @@ export function InferenceSettings(props: Props) {
   }
 
   const aws = status?.aws ?? null;
+  const hosted = status?.edition === "cloud";
   const bedrockReady = Boolean(
-    aws && aws.allowRealAws && aws.detected && !aws.looksLikeFloci && status?.bedrockRegion,
+    aws &&
+      aws.allowRealAws &&
+      !aws.lockedByEnvironment &&
+      (hosted || (aws.detected && !aws.looksLikeFloci && status?.bedrockRegion)),
   );
   const ollamaKey = localAwsKeys.find(k => k.catalog === "ollama");
   const ollamaChatCount = ollamaChatModels.length;
@@ -515,9 +547,10 @@ export function InferenceSettings(props: Props) {
       )}
 
       {page === "providers" && (
-      <>
+      <div className="flex flex-col gap-3">
       <SettingsModule
         id="vendor"
+        className={hosted ? "order-2" : "order-1"}
         open={openModule === "vendor"}
         onToggle={() => toggleModule("vendor")}
         onRefresh={() => void refreshModule("vendor")}
@@ -785,6 +818,7 @@ export function InferenceSettings(props: Props) {
 
       <SettingsModule
         id="bedrock"
+        className={hosted ? "order-1" : "order-2"}
         open={openModule === "bedrock"}
         onToggle={() => toggleModule("bedrock")}
         onRefresh={() => void refreshModule("bedrock")}
@@ -805,6 +839,7 @@ export function InferenceSettings(props: Props) {
               region={status.bedrockRegion}
               canEdit={canEdit}
               busy={busy || refreshingModule === "bedrock"}
+              hosted={hosted}
               embedded
               onSave={save}
               onRecheck={() => refreshModule("bedrock")}
@@ -812,6 +847,7 @@ export function InferenceSettings(props: Props) {
         </div>
       </SettingsModule>
 
+      {!hosted && (
       <SettingsModule
         id="local"
         open={openModule === "local"}
@@ -820,6 +856,7 @@ export function InferenceSettings(props: Props) {
         refreshing={refreshingModule === "local"}
         icon={<HardDrive className={cn("size-4", PROVIDER_THEME.ollama.icon)} aria-hidden />}
         title="Local models"
+        className="order-3"
         subtitle="Ollama on this machine — chat fallback and embeddings"
         badge={
           <ModuleBadge tone={ollamaChatCount > 0 ? "ok" : ollamaReady ? "warn" : "warn"}>
@@ -960,7 +997,8 @@ export function InferenceSettings(props: Props) {
           )}
         </div>
       </SettingsModule>
-      </>
+      )}
+      </div>
       )}
 
       {page === "models" && onOpenProviders && (
@@ -969,7 +1007,7 @@ export function InferenceSettings(props: Props) {
           onClick={onOpenProviders}
           className="text-[0.72rem] font-medium text-indigo-300/80 hover:text-indigo-200 underline underline-offset-2 cursor-pointer px-0.5"
         >
-          Connect APIs, Bedrock, or Ollama in Providers →
+          Connect APIs{hosted ? " or Bedrock" : ", Bedrock, or Ollama"} in Providers →
         </button>
       )}
       {page === "providers" && onOpenModels && (
@@ -1019,6 +1057,7 @@ function SettingsModule({
   subtitle,
   badge,
   theme,
+  className,
   children,
 }: {
   id: string;
@@ -1031,6 +1070,7 @@ function SettingsModule({
   subtitle: string;
   badge: ReactNode;
   theme: ProviderTheme | typeof CATALOG_THEME;
+  className?: string;
   children: ReactNode;
 }) {
   return (
@@ -1041,6 +1081,7 @@ function SettingsModule({
         open
           ? cn(theme.borderOpen, "shadow-[var(--shadow-md)]")
           : "border-[var(--border-strong)]",
+        className,
       )}
     >
       <div className="flex items-stretch gap-0.5 pr-2">
@@ -1128,6 +1169,7 @@ function BedrockEnvironmentCard({
   region,
   canEdit,
   busy,
+  hosted = false,
   embedded = false,
   onSave,
   onRecheck,
@@ -1136,13 +1178,32 @@ function BedrockEnvironmentCard({
   region: string | null;
   canEdit: boolean;
   busy: boolean;
+  /** Hosted install: chat uses Lambda IAM, not a laptop profile. */
+  hosted?: boolean;
   /** When true, omit outer card chrome (parent SettingsModule already provides it). */
   embedded?: boolean;
   onSave: (body: Record<string, unknown>, okMsg: string) => Promise<void>;
   onRecheck: () => Promise<void>;
 }) {
-  const usable = aws.allowRealAws && aws.detected && !aws.looksLikeFloci && Boolean(region);
+  const usable = hosted
+    ? aws.allowRealAws && !aws.lockedByEnvironment
+    : aws.allowRealAws && aws.detected && !aws.looksLikeFloci && Boolean(region);
   const profiles = aws.availableProfiles ?? [];
+  const ackRef = useRef<HTMLLabelElement>(null);
+  const [spotlight, setSpotlight] = useState(false);
+
+  useEffect(() => {
+    if (!consumeBedrockHighlight()) return;
+    setSpotlight(true);
+    const id = window.setTimeout(() => {
+      ackRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 250);
+    const off = window.setTimeout(() => setSpotlight(false), 6000);
+    return () => {
+      window.clearTimeout(id);
+      window.clearTimeout(off);
+    };
+  }, []);
 
   const body = (
     <>
@@ -1178,12 +1239,16 @@ function BedrockEnvironmentCard({
 
       {embedded && (
         <p className="text-[0.75rem] text-foreground/60 leading-relaxed">
-          Enable Amazon Bedrock. SecureMind cannot enable model access or set AWS billing limits for you.
+          {hosted
+            ? "Enable Amazon Bedrock for this hosted install. Chat runs through this deployment’s IAM role — never paste AWS access keys. SecureMind cannot enable model access or set AWS billing limits for you."
+            : "Enable Amazon Bedrock. SecureMind cannot enable model access or set AWS billing limits for you."}
         </p>
       )}
 
       {canEdit && (
         <label
+          ref={ackRef}
+          id="bedrock-acknowledgement"
           className={cn(
             "flex items-start gap-3 rounded-lg border px-3 py-3 text-[0.78rem] transition-colors",
             aws.lockedByEnvironment
@@ -1191,11 +1256,12 @@ function BedrockEnvironmentCard({
               : aws.allowRealAws
                 ? "text-foreground cursor-pointer border-emerald-500/35 bg-emerald-500/10 hover:bg-emerald-500/[0.14]"
                 : "text-foreground cursor-pointer border-amber-500/35 bg-amber-500/[0.08] hover:bg-amber-500/[0.12]",
+            spotlight && "ring-4 ring-indigo-400/90 shadow-[0_0_0_6px_rgba(99,102,241,0.25)]",
           )}
         >
           <input
             type="checkbox"
-            className="mt-0.5 size-5 shrink-0 accent-[var(--primary)]"
+            className="mt-0.5 size-5 shrink-0 accent-[var(--primary)] cursor-pointer disabled:cursor-not-allowed"
             checked={aws.allowRealAws}
             disabled={busy || aws.lockedByEnvironment}
             onChange={e =>
@@ -1206,6 +1272,11 @@ function BedrockEnvironmentCard({
             }
           />
           <span className="leading-snug">
+            {spotlight ? (
+              <span className="mb-1.5 block text-[0.68rem] font-semibold uppercase tracking-wide text-indigo-300">
+                Check this box
+              </span>
+            ) : null}
             I understand that enabling Bedrock permits SecureMind to make billable model requests in
             my AWS account.
             {aws.lockedByEnvironment
@@ -1216,15 +1287,32 @@ function BedrockEnvironmentCard({
       )}
 
       {!aws.allowRealAws && (
-        <details className="text-[0.68rem] text-foreground/45">
+        <details className="text-[0.68rem] text-foreground/45" open={hosted}>
           <summary className="cursor-pointer text-foreground/55">What you need</summary>
-          <ul className="mt-2 space-y-1 list-disc list-inside leading-relaxed">
-            <li>An AWS profile or SSO session on this host</li>
-            <li>Bedrock model access in the AWS console</li>
-            <li>
-              IAM permissions for invoke and model listing
-            </li>
-          </ul>
+          {hosted ? (
+            <ol className="mt-2 space-y-1.5 list-decimal list-inside leading-relaxed">
+              <li>Check the box above (Admin). That is the app-side billing acknowledgement.</li>
+              <li>
+                In the same AWS account as this install, open{" "}
+                <a
+                  href="https://console.aws.amazon.com/bedrock/home#/modelaccess"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="text-indigo-300/80 underline underline-offset-2"
+                >
+                  Bedrock model access
+                </a>{" "}
+                and enable at least one text chat model.
+              </li>
+              <li>Come back to chat and send a message. IAM for invoke is already on this deployment.</li>
+            </ol>
+          ) : (
+            <ul className="mt-2 space-y-1 list-disc list-inside leading-relaxed">
+              <li>An AWS profile or SSO session on this host</li>
+              <li>Bedrock model access in the AWS console</li>
+              <li>IAM permissions for invoke and model listing</li>
+            </ul>
+          )}
           <a
             href="https://console.aws.amazon.com/billing/home#/budgets"
             target="_blank"
@@ -1241,8 +1329,14 @@ function BedrockEnvironmentCard({
         <>
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-[0.65rem]">
             <dt className="text-foreground/35">Credentials</dt>
-            <dd className={aws.detected && !aws.looksLikeFloci ? "text-emerald-200/85" : "text-amber-200/85"}>
-              {aws.detected
+            <dd className={
+              hosted || (aws.detected && !aws.looksLikeFloci)
+                ? "text-emerald-200/85"
+                : "text-amber-200/85"
+            }>
+              {hosted
+                ? "This deployment’s IAM role (chat Lambda)"
+                : aws.detected
                 ? aws.looksLikeFloci
                   ? "Placeholder only (Floci) — need a real profile"
                   : `Found${aws.hint ? ` (${aws.hint})` : ""}`
@@ -1264,6 +1358,7 @@ function BedrockEnvironmentCard({
 
           {canEdit && (
             <div className="space-y-2.5">
+              {!hosted && (
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <label className="text-[0.6rem] uppercase tracking-wider text-foreground/30 font-semibold">
@@ -1295,6 +1390,7 @@ function BedrockEnvironmentCard({
                   }
                 />
               </div>
+              )}
               <div>
                 <label className="block text-[0.6rem] uppercase tracking-wider text-foreground/30 font-semibold mb-1">
                   Region

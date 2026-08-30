@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { apiAuthHeaders, apiUrl, usesRemoteApi } from "@/lib/client/api-base";
+import { markBedrockHighlight } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
 import type { SettingsSection } from "@/components/app/settings-hub";
 
@@ -254,13 +255,24 @@ export function ModelSetupPanel({
         </div>
       )}
 
-      <button
-        type="button"
-        onClick={() => onOpenSettings(setup.settingsSection ?? "providers")}
-        className="text-[0.72rem] font-medium text-indigo-200 underline underline-offset-2 hover:text-indigo-100 cursor-pointer"
-      >
-        Open Settings → {setup.settingsSection === "inference" ? "Models" : "Providers"}
-      </button>
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        <button
+          type="button"
+          onClick={() => {
+            markBedrockHighlight();
+            onOpenSettings(setup.settingsSection ?? "providers");
+          }}
+          className="text-[0.72rem] font-medium text-indigo-200 underline underline-offset-2 hover:text-indigo-100 cursor-pointer"
+        >
+          Open Settings → {setup.settingsSection === "inference" ? "Models" : "Providers"}
+        </button>
+        <a
+          href="/getting-started"
+          className="text-[0.72rem] font-medium text-indigo-200 underline underline-offset-2 hover:text-indigo-100"
+        >
+          Open Getting started (pictures)
+        </a>
+      </div>
     </div>
   );
 }

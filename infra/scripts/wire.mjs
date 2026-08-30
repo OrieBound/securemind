@@ -111,6 +111,60 @@ function updateLambdaCors(functionName, allowedOrigin) {
   console.log(`Lambda ${functionName} ALLOWED_ORIGIN=${vars.ALLOWED_ORIGIN}`);
 }
 
+/**
+ * Chat OPTIONS is a MOCK (not Lambda). Preflight never sees Lambda ALLOWED_ORIGIN.
+ * Without this patch, the browser reports Failed to fetch and the UI used to say
+ * "confirm the dev server is running".
+ */
+function updateApiGatewayChatCors(apiBaseUrl, allowedOrigin) {
+  const host = apiBaseUrl.replace(/^https?:\/\//, "").split("/")[0];
+  const restApiId = host.split(".")[0];
+  if (!restApiId) {
+    console.warn("Could not parse API id from", apiBaseUrl);
+    return;
+  }
+  const resources = awsJson(["apigateway", "get-resources", "--rest-api-id", restApiId]);
+  const chat = (resources?.items || []).find((r) => r.path === "/chat");
+  if (!chat?.id) {
+    console.warn("No /chat resource on API", restApiId);
+    return;
+  }
+  const patchFile = path.join(ROOT, "infra/terraform/.build/cors-patch.json");
+  writeFileSync(
+    patchFile,
+    JSON.stringify({
+      restApiId,
+      resourceId: chat.id,
+      httpMethod: "OPTIONS",
+      statusCode: "200",
+      patchOperations: [
+        {
+          op: "replace",
+          path: "/responseParameters/method.response.header.Access-Control-Allow-Origin",
+          value: `'${allowedOrigin}'`,
+        },
+      ],
+    }),
+  );
+  aws([
+    "apigateway",
+    "update-integration-response",
+    "--cli-input-json",
+    `file://${patchFile.replace(/\\/g, "/")}`,
+  ]);
+  aws([
+    "apigateway",
+    "create-deployment",
+    "--rest-api-id",
+    restApiId,
+    "--stage-name",
+    "prod",
+    "--description",
+    `CORS origin ${allowedOrigin}`,
+  ]);
+  console.log(`API Gateway /chat OPTIONS Allow-Origin=${allowedOrigin}`);
+}
+
 function updateAmplifyEnv({ appId, branch, apiBaseUrl, authOut, region }) {
   if (!appId) return;
 
@@ -218,6 +272,7 @@ API: ${apiOut.ApiBaseUrl}
     const envName = args.envName;
     updateLambdaCors(`securemind-chat-${envName}`, siteUrl);
     updateLambdaCors(`securemind-warm-${envName}`, siteUrl);
+    updateApiGatewayChatCors(apiOut.ApiBaseUrl, siteUrl);
   }
 
   updateAmplifyEnv({

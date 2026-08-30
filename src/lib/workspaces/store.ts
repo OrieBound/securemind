@@ -12,8 +12,8 @@ import {
   DEFAULT_WORKSPACE_EMOJI,
   DEFAULT_WORKSPACE_NAME,
   LEGACY_DEFAULT_NAMES,
-  defaultWorkspaceHello,
 } from "./defaults";
+import { defaultWorkspaceHello, isLegacyDefaultHello } from "@/lib/onboarding";
 import { hostedAppStore } from "./hosted-dynamo";
 
 export function usesHostedAppStore(): boolean {
@@ -228,6 +228,14 @@ export async function loadSession(userId: string, workspaceId: string) {
     }),
   ]);
   const messages = recentDesc.reverse();
+  if (owned.isDefault) {
+    const first = messages.find(m => m.role === "assistant");
+    if (first && isLegacyDefaultHello(first.content)) {
+      const content = defaultWorkspaceHello(owned.name);
+      await db.message.update({ where: { id: first.id }, data: { content } });
+      first.content = content;
+    }
+  }
   const skipped = Math.max(0, totalCount - messages.length);
   const rawSummarized = session.summary?.turnsCovered ?? 0;
   const summarizedCount = Math.max(0, rawSummarized - skipped);
