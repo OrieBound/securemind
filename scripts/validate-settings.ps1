@@ -1,8 +1,13 @@
 # Ad-hoc validation of Settings -> Inference & API against a running dev server.
-# Logs in as the Floci admin, then exercises every write the UI can perform.
+# Log in as an Owner/Admin you created in first-run setup (no product demo users).
 $ErrorActionPreference = "Stop"
 $base = "http://localhost:3000"
 $s = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+$adminEmail = $env:SECUREMIND_ADMIN_EMAIL
+$adminPassword = $env:SECUREMIND_ADMIN_PASSWORD
+if (-not $adminEmail -or -not $adminPassword) {
+  throw "Set SECUREMIND_ADMIN_EMAIL and SECUREMIND_ADMIN_PASSWORD to an Owner/Admin you created in the app."
+}
 
 function Show($label, $ok, $detail) {
   $mark = if ($ok) { "PASS" } else { "FAIL" }
@@ -17,7 +22,7 @@ function Put($body) {
 }
 
 # 1. Login (the login route returns only {ok, expiresIn}; role comes from /me)
-$login = @{ email = "admin@example.test"; password = "<demo-password>!" } | ConvertTo-Json
+$login = @{ email = $adminEmail; password = $adminPassword } | ConvertTo-Json
 Invoke-RestMethod -Uri "$base/api/auth/login" -Method POST -Body $login `
   -ContentType "application/json" -WebSession $s | Out-Null
 $me = Invoke-RestMethod -Uri "$base/api/auth/me" -WebSession $s
@@ -78,18 +83,24 @@ foreach ($k in @($ak, $gk)) {
 $left = $st.keys | Where-Object { $_.id -eq $ak.id -or $_.id -eq $gk.id }
 Show "validation keys removed" ($null -eq $left) "remaining keys=$($st.keys.Count)"
 
-# 12. Member is read-only
-$s2 = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-$login2 = @{ email = "member@securemind.local"; password = "<demo-password>!" } | ConvertTo-Json
-Invoke-RestMethod -Uri "$base/api/auth/login" -Method POST -Body $login2 -ContentType "application/json" -WebSession $s2 | Out-Null
-$me2 = Invoke-RestMethod -Uri "$base/api/auth/me" -WebSession $s2
-Show "login as member" ($me2.role -eq "member") "role=$($me2.role)"
-try {
-  Invoke-RestMethod -Uri "$base/api/settings/providers" -Method PUT -Body '{"allowRealAws":true}' `
-    -ContentType "application/json" -WebSession $s2 | Out-Null
-  Show "member write blocked" $false "expected 403"
-} catch {
-  Show "member write blocked" ($_.Exception.Response.StatusCode.value__ -eq 403) "status=$($_.Exception.Response.StatusCode.value__)"
+# 12. Member is read-only (optional second account you invited)
+$memberEmail = $env:SECUREMIND_MEMBER_EMAIL
+$memberPassword = $env:SECUREMIND_MEMBER_PASSWORD
+if ($memberEmail -and $memberPassword) {
+  $s2 = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+  $login2 = @{ email = $memberEmail; password = $memberPassword } | ConvertTo-Json
+  Invoke-RestMethod -Uri "$base/api/auth/login" -Method POST -Body $login2 -ContentType "application/json" -WebSession $s2 | Out-Null
+  $me2 = Invoke-RestMethod -Uri "$base/api/auth/me" -WebSession $s2
+  Show "login as member" ($me2.role -eq "member") "role=$($me2.role)"
+  try {
+    Invoke-RestMethod -Uri "$base/api/settings/providers" -Method PUT -Body '{"allowRealAws":true}' `
+      -ContentType "application/json" -WebSession $s2 | Out-Null
+    Show "member write blocked" $false "expected 403"
+  } catch {
+    Show "member write blocked" ($_.Exception.Response.StatusCode.value__ -eq 403) "status=$($_.Exception.Response.StatusCode.value__)"
+  }
+} else {
+  Show "member write blocked" $true "skipped (set SECUREMIND_MEMBER_EMAIL / SECUREMIND_MEMBER_PASSWORD)"
 }
 
 # 13. Catalog with Bedrock off

@@ -56,6 +56,13 @@ Copy the `backend_hcl` output to `infra/terraform/backend.hcl` (gitignored).
 6. **`.env.deploy`:** `AWS_PROFILE=your-aws-profile` and `ENV_NAME=uat`.
 7. Laptop apply: `npm run infra:up`  
    Or push `main` after OIDC vars exist (Actions apply + StartJob). After the first Amplify URL: `npm run infra:wire`.
+8. **First admin (hosted):** the pool stays empty. Print the setup code once from the CLI — it is **not** shown on the Amplify page:
+
+```bash
+terraform -chdir=infra/terraform output -raw setup_claim_secret
+```
+
+Open the site, enter that code plus the email and password **you** choose. The setup code is not the Cognito password. If you lose the code and the pool is still empty, taint `module.amplify.random_password.setup_claim` and re-apply.
 
 | Command | What it does |
 |---|---|
@@ -71,11 +78,11 @@ Copy the `backend_hcl` output to `infra/terraform/backend.hcl` (gitignored).
 |---|---|
 | `bootstrap/` | S3 state, DynamoDB lock, GitHub OIDC role |
 | `modules/bedrock_lab` | Bedrock IAM managed policy + optional dashboard |
-| `modules/auth_cognito` | Invite-only user pool, app client, Admin/Member |
+| `modules/auth_cognito` | Invite-only user pool, app client, Owner/Admin/Member |
 | `modules/data_dynamodb` | Fragments table + vector index (1024, immutable) |
 | `modules/secrets` | fragments-table secret; optional Groq |
 | `modules/api` | API Gateway + streaming `/chat` + `/warm` |
-| `modules/amplify` | Amplify app (no GitHub token) |
+| `modules/amplify` | Amplify app (no GitHub token); first-run `SETUP_CLAIM_SECRET` |
 
 ## Secrets model
 

@@ -30,6 +30,10 @@ variable "cognito_user_pool_id" {
   type = string
 }
 
+variable "cognito_user_pool_arn" {
+  type = string
+}
+
 variable "cognito_client_id" {
   type = string
 }
@@ -101,8 +105,36 @@ resource "aws_iam_role_policy" "amplify_logs" {
   policy = data.aws_iam_policy_document.amplify_logs.json
 }
 
+# First-run claim uses AdminCreateUser from Amplify compute (not Lambda).
+data "aws_iam_policy_document" "amplify_cognito_admin" {
+  statement {
+    sid = "FirstAdminClaim"
+    actions = [
+      "cognito-idp:AdminCreateUser",
+      "cognito-idp:AdminSetUserPassword",
+      "cognito-idp:AdminAddUserToGroup",
+      "cognito-idp:ListUsers",
+      "cognito-idp:AdminListGroupsForUser",
+      "cognito-idp:AdminGetUser",
+    ]
+    resources = [var.cognito_user_pool_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "amplify_cognito_admin" {
+  name   = "securemind-amplify-cognito-admin-${var.env_name}"
+  role   = aws_iam_role.amplify.id
+  policy = data.aws_iam_policy_document.amplify_cognito_admin.json
+}
+
 resource "random_id" "instance_encryption" {
   byte_length = 32
+}
+
+# Printed once via `terraform output -raw setup_claim_secret`. Never put on the public page.
+resource "random_password" "setup_claim" {
+  length  = 32
+  special = false
 }
 
 resource "aws_amplify_app" "this" {
@@ -125,7 +157,7 @@ resource "aws_amplify_app" "this" {
           commands:
             - export DATABASE_URL="$${DATABASE_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
             - export DIRECT_URL="$${DIRECT_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
-            - node -e "const fs=require('fs'); const k=['DATABASE_URL','DIRECT_URL','AUTH_MODE','AUTH_ALLOW_LOCAL_FALLBACK','COGNITO_USER_POOL_ID','COGNITO_CLIENT_ID','COGNITO_REGION','COGNITO_ISSUER','NEXT_PUBLIC_API_BASE_URL','INSTANCE_ENCRYPTION_KEY']; fs.appendFileSync('.env.production', k.map(n=>n+'='+(process.env[n]||'')).join('\\n')+'\\nSECUREMIND_EDITION=cloud\\nSTORAGE_BACKEND=dynamodb\\n');"
+            - node -e "const fs=require('fs'); const k=['DATABASE_URL','DIRECT_URL','AUTH_MODE','AUTH_ALLOW_LOCAL_FALLBACK','COGNITO_USER_POOL_ID','COGNITO_CLIENT_ID','COGNITO_REGION','COGNITO_ISSUER','NEXT_PUBLIC_API_BASE_URL','INSTANCE_ENCRYPTION_KEY','SETUP_CLAIM_SECRET']; fs.appendFileSync('.env.production', k.map(n=>n+'='+(process.env[n]||'')).join('\\n')+'\\nSECUREMIND_EDITION=cloud\\nSTORAGE_BACKEND=dynamodb\\n');"
             - npm run build
             - node infra/scripts/amplify-prune-compute.mjs
       artifacts:
@@ -149,6 +181,7 @@ resource "aws_amplify_app" "this" {
     SECUREMIND_EDITION        = "cloud"
     STORAGE_BACKEND           = "dynamodb"
     INSTANCE_ENCRYPTION_KEY   = random_id.instance_encryption.hex
+    SETUP_CLAIM_SECRET        = random_password.setup_claim.result
     # Generate-only dummy; Amplify runtime has no Postgres.
     DATABASE_URL              = "postgresql://ci:ci@127.0.0.1:5432/ci"
     DIRECT_URL                = "postgresql://ci:ci@127.0.0.1:5432/ci"
@@ -179,4 +212,9 @@ output "console_url" {
 
 output "branch_name" {
   value = var.branch_name
+}
+
+output "setup_claim_secret" {
+  value     = random_password.setup_claim.result
+  sensitive = true
 }

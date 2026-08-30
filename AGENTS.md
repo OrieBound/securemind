@@ -127,9 +127,13 @@ src/
       auth/change-password/route.ts ← Cognito ChangePassword (clears session cookie)
       auth/forgot-password/route.ts ← Cognito ForgotPassword (enumeration-safe)
       auth/confirm-forgot-password/route.ts ← Cognito ConfirmForgotPassword
+      setup/status/route.ts   ← public first-run status (no secrets)
+      setup/claim/route.ts    ← empty-pool Owner claim (hosted setup code; local email+password)
+      setup/complete/route.ts ← authenticated wizard persist (storage preference + risk ack)
   lib/
     db.ts                     ← Prisma singleton (PrismaPg adapter)
     identity.ts               ← getIdentity(req) — the only source of userId
+    setup-claim.ts            ← empty-pool Owner claim; hosted SETUP_CLAIM_SECRET compare
     roles.ts                  ← requireAdmin
     user-profile.ts           ← UserProfile upsert/patch; soft status; handle validation
     avatar-presets.ts         ← curated avatar ids only (no upload/S3)

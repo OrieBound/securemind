@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { AuthSessionProvider } from "@/components/app/auth-session";
+import { InstanceSetupWizard } from "@/components/app/instance-setup-wizard";
 import { PRODUCT_NAME, PRODUCT_POSITIONING } from "@/lib/branding";
 import { cn } from "@/lib/utils";
 import { storeClientAccessToken } from "@/lib/client/api-base";
@@ -16,22 +17,39 @@ type MeResponse = {
   groups?: string[];
 };
 
+type SetupStatus = {
+  authMode: string;
+  edition: "local" | "cloud";
+  cognitoConfigured: boolean;
+  directoryEmpty: boolean | null;
+  claimAvailable: boolean;
+  claimRequiresCode: boolean;
+  codeConfigured: boolean;
+  setupComplete: boolean;
+  preferredStorage: "postgres" | "dynamodb";
+  minPasswordLength: number;
+};
+
 type Props = {
   children: React.ReactNode;
 };
 
-type GateMode = "login" | "signup" | "forgot" | "reset";
+type GateMode = "login" | "claim" | "forgot" | "reset";
 
 /**
  * When the server is in Cognito mode, require a session before showing the app.
- * Local mode renders children immediately.
+ * Local mode still runs the first-run wizard until setup is complete.
  */
 export function AuthGate({ children }: Props) {
   const [me, setMe] = useState<MeResponse | null>(null);
+  const [setup, setSetup] = useState<SetupStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<GateMode>("login");
   const [email, setEmail] = useState("");
+  const [emailConfirm, setEmailConfirm] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [setupCode, setSetupCode] = useState("");
   const [code, setCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -39,12 +57,13 @@ export function AuthGate({ children }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function refreshMe() {
+  async function refreshMe(): Promise<MeResponse | null> {
     try {
       const res = await fetch("/api/auth/me", { credentials: "same-origin" });
       if (res.status === 401) {
-        setMe({ userId: "", authenticated: false, email: null, mode: "cognito" });
-        return;
+        const unauth: MeResponse = { userId: "", authenticated: false, email: null, mode: "cognito" };
+        setMe(unauth);
+        return unauth;
       }
       if (!res.ok) {
         let modeHint = "cognito";
@@ -54,26 +73,46 @@ export function AuthGate({ children }: Props) {
         } catch {
           /* HTML 404 / empty body */
         }
-        setMe({ userId: "", authenticated: false, email: null, mode: modeHint });
+        const failed: MeResponse = { userId: "", authenticated: false, email: null, mode: modeHint };
+        setMe(failed);
         setError(
           res.status === 404
             ? "Session API unavailable. Restart npm run dev, or set AUTH_MODE=local in .env.local."
             : `Session check failed (${res.status}).`,
         );
-        return;
+        return failed;
       }
       const data = (await res.json()) as MeResponse;
       setMe(data);
+      return data;
     } catch {
-      setMe({ userId: "", authenticated: false, email: null, mode: "cognito" });
+      const failed: MeResponse = { userId: "", authenticated: false, email: null, mode: "cognito" };
+      setMe(failed);
       setError("Could not reach the server. Is npm run dev running?");
-    } finally {
-      setLoading(false);
+      return failed;
+    }
+  }
+
+  async function refreshSetup(): Promise<SetupStatus | null> {
+    try {
+      const res = await fetch("/api/setup/status", { credentials: "same-origin" });
+      if (!res.ok) return null;
+      const data = (await res.json()) as SetupStatus;
+      setSetup(data);
+      return data;
+    } catch {
+      return null;
     }
   }
 
   useEffect(() => {
-    void refreshMe();
+    void (async () => {
+      const [meData, setupData] = await Promise.all([refreshMe(), refreshSetup()]);
+      if (setupData?.claimAvailable && !meData?.authenticated) {
+        setMode("claim");
+      }
+      setLoading(false);
+    })();
   }, []);
 
   async function submit(e: React.FormEvent) {
@@ -125,8 +164,30 @@ export function AuthGate({ children }: Props) {
         return;
       }
 
-      const path = mode === "login" ? "/api/auth/login" : "/api/auth/signup";
-      const res = await fetch(path, {
+      if (mode === "claim") {
+        const res = await fetch("/api/setup/claim", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email,
+            emailConfirm,
+            password,
+            passwordConfirm,
+            setupCode: setup?.claimRequiresCode ? setupCode : undefined,
+          }),
+        });
+        const data = await res.json() as { error?: string; accessToken?: string };
+        if (!res.ok) {
+          setError(data.error ?? "Request failed");
+          return;
+        }
+        if (data.accessToken) storeClientAccessToken(data.accessToken);
+        await Promise.all([refreshMe(), refreshSetup()]);
+        return;
+      }
+
+      const res = await fetch("/api/auth/login", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
@@ -134,21 +195,14 @@ export function AuthGate({ children }: Props) {
       });
       const data = await res.json() as {
         error?: string;
-        confirmed?: boolean;
-        message?: string;
         accessToken?: string;
       };
       if (!res.ok) {
         setError(data.error ?? "Request failed");
         return;
       }
-      if (mode === "signup" && data.confirmed === false) {
-        setError(data.message ?? "Confirm your email, then sign in.");
-        setMode("login");
-        return;
-      }
       if (data.accessToken) storeClientAccessToken(data.accessToken);
-      await refreshMe();
+      await Promise.all([refreshMe(), refreshSetup()]);
     } catch {
       setError("Network error");
     } finally {
@@ -165,6 +219,8 @@ export function AuthGate({ children }: Props) {
       email: null,
       mode: prev?.mode ?? "cognito",
     }));
+    const next = await refreshSetup();
+    setMode(next?.claimAvailable ? "claim" : "login");
   }, []);
 
   const session = useMemo(
@@ -188,13 +244,25 @@ export function AuthGate({ children }: Props) {
     );
   }
 
-  if (me && me.mode === "local") {
-    return <AuthSessionProvider value={null}>{children}</AuthSessionProvider>;
+  const setupComplete = Boolean(setup?.setupComplete);
+  const isLocal = me?.mode === "local";
+  const signedIn = Boolean(me && (me.authenticated || isLocal));
+
+  if (signedIn && !setupComplete && setup) {
+    return (
+      <InstanceSetupWizard
+        edition={setup.edition}
+        preferredStorage={setup.preferredStorage}
+        onDone={() => {
+          void refreshSetup();
+        }}
+      />
+    );
   }
 
-  if (me && me.authenticated) {
+  if (signedIn) {
     return (
-      <AuthSessionProvider value={session}>
+      <AuthSessionProvider value={isLocal ? null : session}>
         {children}
       </AuthSessionProvider>
     );
@@ -202,9 +270,11 @@ export function AuthGate({ children }: Props) {
 
   const title =
     mode === "login" ? "Sign in"
-    : mode === "signup" ? "Create account"
+    : mode === "claim" ? "Create the first owner"
     : mode === "forgot" ? "Forgot password"
     : "Reset password";
+
+  const minPw = setup?.minPasswordLength ?? 8;
 
   return (
     <div className="flex h-dvh items-center justify-center bg-background px-4">
@@ -217,9 +287,19 @@ export function AuthGate({ children }: Props) {
           <p className="text-ui text-[var(--text-muted)] mt-2 leading-[var(--leading-body)]">
             {mode === "forgot" || mode === "reset"
               ? "We will never confirm whether an email is registered."
-              : PRODUCT_POSITIONING}
+              : mode === "claim"
+                ? setup?.claimRequiresCode
+                  ? "Enter the setup code printed once when the stack was applied (terraform output -raw setup_claim_secret). Choose the email and password you will use. The setup code is not your password."
+                  : "Choose the email and password you will use as Owner. There is no demo account."
+                : PRODUCT_POSITIONING}
           </p>
         </div>
+
+        {mode === "claim" && setup?.claimRequiresCode && !setup.codeConfigured && (
+          <p role="alert" className="text-meta text-amber-300/90">
+            SETUP_CLAIM_SECRET is not configured on this host. Apply Terraform and retry — the code is never shown on this page.
+          </p>
+        )}
 
         <form onSubmit={submit} className="space-y-3.5">
           <label className="block space-y-1.5">
@@ -234,7 +314,21 @@ export function AuthGate({ children }: Props) {
             />
           </label>
 
-          {(mode === "login" || mode === "signup") && (
+          {mode === "claim" && (
+            <label className="block space-y-1.5">
+              <span className="text-label uppercase tracking-wider text-[var(--text-muted)]">Confirm email</span>
+              <input
+                type="email"
+                autoComplete="off"
+                value={emailConfirm}
+                onChange={e => setEmailConfirm(e.target.value)}
+                className="w-full h-10 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-3 text-[length:var(--font-size-body)] font-normal text-[var(--text-body)] focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
+                required
+              />
+            </label>
+          )}
+
+          {(mode === "login" || mode === "claim") && (
             <label className="block space-y-1.5">
               <span className="text-label uppercase tracking-wider text-[var(--text-muted)]">Password</span>
               <input
@@ -244,7 +338,36 @@ export function AuthGate({ children }: Props) {
                 onChange={e => setPassword(e.target.value)}
                 className="w-full h-10 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-3 text-[length:var(--font-size-body)] font-normal text-[var(--text-body)] focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
                 required
-                minLength={8}
+                minLength={mode === "claim" ? minPw : 8}
+              />
+            </label>
+          )}
+
+          {mode === "claim" && (
+            <label className="block space-y-1.5">
+              <span className="text-label uppercase tracking-wider text-[var(--text-muted)]">Confirm password</span>
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={passwordConfirm}
+                onChange={e => setPasswordConfirm(e.target.value)}
+                className="w-full h-10 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-3 text-[length:var(--font-size-body)] font-normal text-[var(--text-body)] focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
+                required
+                minLength={minPw}
+              />
+            </label>
+          )}
+
+          {mode === "claim" && setup?.claimRequiresCode && (
+            <label className="block space-y-1.5">
+              <span className="text-label uppercase tracking-wider text-[var(--text-muted)]">Setup code</span>
+              <input
+                type="text"
+                autoComplete="off"
+                value={setupCode}
+                onChange={e => setSetupCode(e.target.value)}
+                className="w-full h-10 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-3 text-sm font-mono"
+                required
               />
             </label>
           )}
@@ -298,7 +421,7 @@ export function AuthGate({ children }: Props) {
             {busy
               ? "Working…"
               : mode === "login" ? "Sign in"
-              : mode === "signup" ? "Create account"
+              : mode === "claim" ? "Create owner account"
               : mode === "forgot" ? "Send reset code"
               : "Set new password"}
           </Button>
@@ -323,17 +446,22 @@ export function AuthGate({ children }: Props) {
               Back to sign in
             </button>
           )}
-          {(mode === "login" || mode === "signup") && (
+          {mode === "claim" && !setup?.claimAvailable && (
             <button
               type="button"
-              onClick={() => {
-                setMode(mode === "login" ? "signup" : "login");
-                setError(null);
-                setNotice(null);
-              }}
+              onClick={() => { setMode("login"); setError(null); setNotice(null); }}
               className={cn("text-ui text-[var(--text-muted)] hover:text-foreground/70 w-full text-center")}
             >
-              {mode === "login" ? "Need an account? Sign up" : "Already have an account? Sign in"}
+              Already have an account? Sign in
+            </button>
+          )}
+          {mode === "login" && setup?.claimAvailable && (
+            <button
+              type="button"
+              onClick={() => { setMode("claim"); setError(null); setNotice(null); }}
+              className={cn("text-ui text-[var(--text-muted)] hover:text-foreground/70 w-full text-center")}
+            >
+              First time here? Create the owner account
             </button>
           )}
         </div>

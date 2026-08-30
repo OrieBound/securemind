@@ -1,10 +1,31 @@
 # Hosted sandbox: roadblocks we hit
 
-First real AWS apply of SecureMind (account `your-aws-profile` / `123456789012`, August 2026). Sandbox stays the automatic `main` pipeline. Production is a **second stack** in `your-aws-profile`, not a retarget of this one.
+**Last stamped: 2026-08-29.** First real AWS apply of SecureMind (account `your-aws-profile` / `123456789012`, August 2026). Sandbox stays the automatic `main` pipeline. Production is a **second stack** in `your-aws-profile`, not a retarget of this one.
 
-Use this as an operator log and as interview notes: each item is **symptom → cause → what we did**.
+Use this as an operator log and as interview notes: each item is **symptom → cause → what we did**. Dated chronology is in [Timeline](#timeline) below; README carries a short copy of the same stamp.
 
 IaC and IAM layers: [infra/README.md](../../infra/README.md). Hosting decision: [ADR 0004](../adr/0004-amplify-lambda-hosting.md). Pipeline: [ADR 0008](../adr/0008-terraform-github-oidc.md).
+
+---
+
+## Timeline
+
+Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first returned the error. Items 1–7 were the August 2026 apply campaign (jobs 1–7 failed). Items 8–10 are 2026-08-29.
+
+| Date | # | Hurdle | Outcome |
+|------|---|--------|---------|
+| 2026-08 | 1 | Wrong AWS account (SSO default = management) | Locked target: `--profile your-aws-profile` |
+| 2026-08 | 2 | App Terraform state vs laptop bootstrap state | App state remote S3; bootstrap still local |
+| 2026-08 | 3 | `.gitignore` hid `src/lib/aws-credentials.ts` | Ignore only repo-root `/aws-credentials*` |
+| 2026-08 | 4 | Prisma generate with no hosted Postgres | Dummy `DATABASE_URL` at build; DynamoDB at runtime |
+| 2026-08 | 5 | OIDC `AssumeRoleWithWebIdentity` on apply | Bootstrap `StringLike` for immutable GitHub `sub` |
+| 2026-08 | 6 | Amplify “Monorepo spec … without applications key” | Removed `AMPLIFY_MONOREPO_APP_ROOT=.` |
+| 2026-08 | 7 | WEB_COMPUTE 220 MB cap (~258 MB traced) | Keep standalone; prune after build |
+| 2026-08-29 | 8 | Green Amplify job, HTTP 500 empty HTML | NFT whole-repo + pruned `@swc/helpers`; job 12 = HTTP 200 Sign in |
+| 2026-08-29 | 9 | Hosted login rejected Floci demo users | Pool was **empty**; demo emails are local-only |
+| 2026-08-29 | 10 | First-run Owner claim | Pushed to `main` for Actions `terraform apply` + Amplify StartJob. **Not live until that workflow is green.** |
+
+**As of 2026-08-29:** live UI `https://main.<app-id>.amplifyapp.com/` remains the job-12 Sign in build until the `main` Actions deploy job applies Terraform and Amplify SUCCEEDs.
 
 ---
 
@@ -99,6 +120,22 @@ We did **not** delete `/api/workspaces` or `/api/documents` from the Amplify app
 **Cause:** Turbopack NFT traced the **whole repo** because `secret-at-rest.ts` used `process.cwd()` without a `turbopackIgnore` comment. Amplify’s compute `run.sh` then `ln -sf` every standalone root entry, including `src/`, `docs/`, and a nested `amplify-compute-bundle-output`. Those recursive symlinks fail on the read-only compute FS, so the Node server never starts. Missing CloudWatch permissions on the custom Amplify role hid the crash.
 
 **Fix:** Prune standalone to an allowlist; **also delete leftover workspace files on Amplify/CodeBuild** (`src`, `docs`, …) because the packager copies the clone. Job 10 still 500’d after standalone-only prune. Job 11 then failed at boot with `Cannot find module '@swc/helpers/_/_interop_require_default'` — we had excluded/pruned all of `@swc`, including the **runtime** helpers Next needs. Keep `@swc/helpers`; only drop `@swc/core` natives. Add SSR log IAM so compute crashes are visible. Do not Redeploy an old job — StartJob a new commit.
+
+### 9. Hosted Sign in: demo email / password failed (2026-08-29)
+
+**Symptom:** `admin@example.test` / `<demo-password>!` (and the Floci member/demo aliases) do not work on the Amplify URL. Sign up is visible but Cognito rejects it.
+
+**Cause:** Those users were seeded only by `scripts/floci-cognito-setup.mjs` against **local Floci**. The hosted pool (`us-east-1_zHbYTbq2F`) is invite-only (`allow_admin_create_user_only`) and `list-users` returned **none**. `ADMIN_EMAIL` / `maybeInviteAdmin` was never the product first-user path. `NEW_PASSWORD_REQUIRED` is still unimplemented — do not create users with a temporary password unless that challenge is handled.
+
+**Fix:** Stop seeding product demo users. Empty directory → first visitor claims Owner. Hosted claim requires a high-entropy setup code from `terraform output -raw setup_claim_secret` (not shown on the public page, not the long-term password). On-prem / localhost: email + chosen password only. Public `/api/auth/signup` returns 403; later users are Admin-invited.
+
+### 10. First-run claim is coded, not live (2026-08-29)
+
+**Symptom:** After (9), there is still no way to create the first hosted user on the **running** Amplify job.
+
+**Cause:** Claim APIs, AuthGate, wizard, Owner group, Amplify Cognito IAM, and `SETUP_CLAIM_SECRET` were written on 2026-08-29 and pushed to `main` so GitHub Actions (environment `aws-sandbox`) can apply Terraform and StartJob Amplify. They are **not** live until that workflow is green.
+
+**Fix (operator):** watch the `Terraform apply · Amplify StartJob` job. After apply, print the setup code from Terraform output (not the public page). Until SUCCEED, treat live Sign in as “empty pool, previous UI.”
 
 ---
 

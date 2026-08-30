@@ -2,6 +2,9 @@
 /**
  * Provision a Cognito user pool + app client on local Floci ($0, no AWS account).
  *
+ * The pool is left empty. The first person to open the app chooses their email
+ * and password (Owner). Do not seed demo accounts.
+ *
  * Prerequisites:
  *   docker compose up -d floci
  *   AWS CLI v2 installed
@@ -10,7 +13,6 @@
  *   node scripts/floci-cognito-setup.mjs
  *
  * Writes scripts/.floci-cognito.env (gitignored) and prints .env.local lines.
- * The same Pool Id / Client Id / Issuer shape is what you recreate in real AWS later.
  */
 
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -22,11 +24,7 @@ const ENDPOINT = process.env.AWS_ENDPOINT_URL || "http://localhost:4566";
 const REGION = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
 const POOL_NAME = "SecureMindLocal";
 const CLIENT_NAME = "securemind-web";
-const DEMO_PASSWORD = "<demo-password>!";
-/** Legacy single demo user (Admin). Prefer admin@ / member@ for role tests. */
-const DEMO_EMAIL = "demo@securemind.local";
-const ADMIN_EMAIL = "admin@example.test";
-const MEMBER_EMAIL = "member@securemind.local";
+const GROUP_OWNER = "Owner";
 const GROUP_ADMIN = "Admin";
 const GROUP_MEMBER = "Member";
 
@@ -109,7 +107,7 @@ function main() {
     console.log(`Created app client: ${clientId}`);
   }
 
-  for (const groupName of [GROUP_ADMIN, GROUP_MEMBER]) {
+  for (const groupName of [GROUP_OWNER, GROUP_ADMIN, GROUP_MEMBER]) {
     try {
       aws([
         "cognito-idp", "create-group",
@@ -126,50 +124,6 @@ function main() {
       }
     }
   }
-
-  function ensureUser(email, groups) {
-    try {
-      aws([
-        "cognito-idp", "admin-create-user",
-        "--user-pool-id", poolId,
-        "--username", email,
-        "--user-attributes", `Name=email,Value=${email}`, "Name=email_verified,Value=true",
-        "--message-action", "SUPPRESS",
-      ]);
-      console.log(`Created user: ${email}`);
-    } catch (err) {
-      if (!String(err.message).includes("UsernameExistsException")) {
-        console.warn(`admin-create-user ${email}:`, String(err.message).slice(0, 200));
-      } else {
-        console.log(`User already exists: ${email}`);
-      }
-    }
-    aws([
-      "cognito-idp", "admin-set-user-password",
-      "--user-pool-id", poolId,
-      "--username", email,
-      "--password", DEMO_PASSWORD,
-      "--permanent",
-    ]);
-    for (const groupName of groups) {
-      try {
-        aws([
-          "cognito-idp", "admin-add-user-to-group",
-          "--user-pool-id", poolId,
-          "--username", email,
-          "--group-name", groupName,
-        ]);
-      } catch (err) {
-        if (!/already|exists/i.test(String(err.message))) {
-          console.warn(`add-to-group ${email}→${groupName}:`, String(err.message).slice(0, 160));
-        }
-      }
-    }
-  }
-
-  ensureUser(ADMIN_EMAIL, [GROUP_ADMIN]);
-  ensureUser(MEMBER_EMAIL, [GROUP_MEMBER]);
-  ensureUser(DEMO_EMAIL, [GROUP_ADMIN]);
 
   const issuer = `${ENDPOINT.replace(/\/$/, "")}/${poolId}`;
   const jwks = `${issuer}/.well-known/jwks.json`;
@@ -188,10 +142,7 @@ function main() {
     `COGNITO_CLIENT_ID=${clientId}`,
     `COGNITO_ISSUER=${issuer}`,
     `COGNITO_JWKS_URL=${jwks}`,
-    `# Logins (password ${DEMO_PASSWORD}):`,
-    `#   Admin:  ${ADMIN_EMAIL}  (group ${GROUP_ADMIN})`,
-    `#   Member: ${MEMBER_EMAIL} (group ${GROUP_MEMBER})`,
-    `#   Legacy: ${DEMO_EMAIL}   (group ${GROUP_ADMIN})`,
+    `# Directory starts empty. Open the app and create the first Owner account.`,
     "",
   ].join("\n");
 
@@ -207,6 +158,7 @@ function main() {
     console.log(`  App client name: ${CLIENT_NAME} (USER_PASSWORD_AUTH, no secret)`);
     console.log(`  Issuer shape:   https://cognito-idp.<region>.amazonaws.com/<poolId>`);
     console.log(`  (Floci uses):   ${issuer}`);
+    console.log("\nNo demo users are created. Open http://localhost:3000 and choose your email + password.");
   }
 }
 

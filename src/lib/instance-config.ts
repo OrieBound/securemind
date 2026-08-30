@@ -44,6 +44,9 @@ export type InstanceConfigRow = {
   pendingNote: string | null;
   defaultMonthlyCostCapUsd: number;
   ownerUserId: string | null;
+  setupCompletedAt: Date | null;
+  setupClaimUsedAt: Date | null;
+  storageBackend: string | null;
   updatedAt: Date;
   updatedByUserId: string | null;
 };
@@ -495,4 +498,84 @@ export async function resolveRuntimeSecrets(): Promise<{
       row?.bedrockChatModel?.trim() || process.env.BEDROCK_CHAT_MODEL || null,
     externalRiskAcknowledged: Boolean(row?.externalRiskAckAt),
   };
+}
+
+export type InstanceSetupPersist = {
+  setupCompletedAt: Date | null;
+  setupClaimUsedAt: Date | null;
+  storageBackend: string | null;
+};
+
+/** Best-effort read. Hosted Amplify may have no Postgres — returns nulls. */
+export async function getInstanceSetupPersist(): Promise<InstanceSetupPersist> {
+  try {
+    const row = await db.instanceConfig.findUnique({
+      where: { id: "singleton" },
+      select: {
+        setupCompletedAt: true,
+        setupClaimUsedAt: true,
+        storageBackend: true,
+      },
+    });
+    return {
+      setupCompletedAt: row?.setupCompletedAt ?? null,
+      setupClaimUsedAt: row?.setupClaimUsedAt ?? null,
+      storageBackend: row?.storageBackend ?? null,
+    };
+  } catch {
+    return { setupCompletedAt: null, setupClaimUsedAt: null, storageBackend: null };
+  }
+}
+
+export async function markSetupClaimUsed(ownerUserId: string | null): Promise<boolean> {
+  try {
+    await db.instanceConfig.upsert({
+      where: { id: "singleton" },
+      create: {
+        id: "singleton",
+        setupClaimUsedAt: new Date(),
+        ...(ownerUserId ? { ownerUserId } : {}),
+      },
+      update: {
+        setupClaimUsedAt: new Date(),
+        ...(ownerUserId ? { ownerUserId } : {}),
+      },
+    });
+    return true;
+  } catch (err) {
+    console.warn(
+      "[setup] could not persist claim-used (data plane may be unavailable)",
+      err instanceof Error ? err.message : err,
+    );
+    return false;
+  }
+}
+
+export async function completeInstanceSetup(input: {
+  storageBackend: "postgres" | "dynamodb";
+  userId: string;
+}): Promise<boolean> {
+  try {
+    await db.instanceConfig.upsert({
+      where: { id: "singleton" },
+      create: {
+        id: "singleton",
+        storageBackend: input.storageBackend,
+        setupCompletedAt: new Date(),
+        updatedByUserId: input.userId,
+      },
+      update: {
+        storageBackend: input.storageBackend,
+        setupCompletedAt: new Date(),
+        updatedByUserId: input.userId,
+      },
+    });
+    return true;
+  } catch (err) {
+    console.warn(
+      "[setup] could not persist wizard complete (data plane may be unavailable)",
+      err instanceof Error ? err.message : err,
+    );
+    return false;
+  }
 }

@@ -18,14 +18,9 @@ First boot takes longer while Compose downloads default Ollama weights and `init
 
 1. `ollama-init` pulls `nomic-embed-text` (Knowledge embeddings) and `llama3.2:3b` (local chat)  
 2. Postgres schema (`prisma db push` + pgvector column)  
-3. Floci Cognito pool + demo users  
+3. Floci Cognito pool (empty — first visitor becomes Owner)  
 
-Open **http://localhost:3000**
-
-| User | Password | Role |
-|------|----------|------|
-| `admin@example.test` | `<demo-password>!` | Admin |
-| `member@securemind.local` | `<demo-password>!` | Member |
+Open **http://localhost:3000** and create the first Owner (your email and a password you choose). There is no demo account. If you already ran an older Compose stack that seeded `admin@example.test`, `docker compose down -v` and bring it up again for an empty directory.
 
 Optional Groq (faster chat / vision):
 

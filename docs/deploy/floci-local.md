@@ -95,13 +95,7 @@ npm run floci:cognito
 
 Merge the printed block (also written to `scripts/.floci-cognito.env`) into `.env.local`.
 
-Demo users (after setup script):
-
-| Email | Password | Groups |
-|-------|----------|--------|
-| `admin@example.test` | `<demo-password>!` | `Admin` |
-| `member@securemind.local` | `<demo-password>!` | `Member` |
-| `demo@securemind.local` | `<demo-password>!` | `Admin` (legacy alias) |
+The pool is **empty**. Open the app and create the first Owner (email + password you choose). There are no demo users. If an older run seeded `admin@example.test`, wipe Floci with `docker compose down -v` and re-run setup.
 
 ### 4. Inference
 
@@ -144,8 +138,8 @@ Open http://localhost:3000 — sign in with a Floci Cognito user when `AUTH_MODE
 Use a **Compose DB** so teardown is `docker compose down -v` with no impact on Neon.
 
 - [ ] Unauthenticated API returns 401 when `AUTH_ALLOW_LOCAL_FALLBACK=false`  
-- [ ] Login as `admin@example.test` — top-right shows **admin**; can edit Inference & API keys  
-- [ ] Login as `member@securemind.local` — top-right shows **member**; Inference keys are view-only  
+- [ ] First visit: create Owner with your email + password — top-right shows **admin** / Owner; can edit Inference & API keys  
+- [ ] Admin invites a Member from the directory — that user is view-only on Inference keys  
 - [ ] Admin saves Groq key → Models list populates; click a text model → chat uses it  
 - [ ] (Optional) Admin saves real Bedrock IAM keys → Bedrock text catalog + chat via AWS  
 - [ ] Casual chat streams via Groq, Ollama, or Bedrock  
