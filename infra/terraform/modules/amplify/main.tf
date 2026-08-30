@@ -170,6 +170,30 @@ resource "aws_iam_role_policy" "amplify_dynamodb" {
   policy = data.aws_iam_policy_document.amplify_dynamodb.json
 }
 
+# Catalog (ListFoundationModels) and Models → Test run on Amplify compute.
+# Chat invoke stays on the API Lambda role. Attach to the existing Amplify
+# role — operators do not create a second role by hand.
+data "aws_iam_policy_document" "amplify_bedrock" {
+  statement {
+    sid    = "BedrockListAndInvoke"
+    effect = "Allow"
+    actions = [
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream",
+      "bedrock:ListFoundationModels",
+      "bedrock:GetFoundationModel",
+      "bedrock:ListInferenceProfiles",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "amplify_bedrock" {
+  name   = "securemind-amplify-bedrock-${var.env_name}"
+  role   = aws_iam_role.amplify.id
+  policy = data.aws_iam_policy_document.amplify_bedrock.json
+}
+
 resource "random_id" "instance_encryption" {
   byte_length = 32
 }

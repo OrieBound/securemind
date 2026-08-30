@@ -59,7 +59,7 @@ function diagnose(err: unknown, provider: string, modelId: string): Diagnosis {
       message: raw,
       remediation:
         provider === "bedrock"
-          ? "The signed-in principal lacks bedrock:InvokeModelWithResponseStream on this model, or model access has not been requested in the Bedrock console."
+          ? "This Test call runs as the Amplify UI role. Terraform attaches Bedrock invoke to that existing role — you do not create a role by hand. Chat already uses the chat Lambda role. Also enable the model in the AWS console under Bedrock → Model access (that step is not IAM)."
           : "The API key was rejected for this model. Check the key's plan and permissions.",
     };
   }

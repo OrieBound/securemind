@@ -15,8 +15,10 @@ import { resolveVendorApiKey } from "./vendor-secrets";
 import { listOpenAIModels } from "./openai";
 import { listAnthropicModels } from "./anthropic";
 import { listGoogleModels } from "./google";
+import { runtimeEdition } from "@/lib/runtime-env";
 import {
   BEDROCK_TEXT_MODELS,
+  formatBedrockCatalogError,
   modalityForListedModel,
   type CatalogModel,
   type ModelCatalogBuckets,
@@ -196,11 +198,7 @@ export async function getModelCatalog(): Promise<ModelCatalog> {
       bedrock = await listBedrockModels(aws.region ?? "us-east-1", aws.profile);
     } catch (err) {
       bedrock = BEDROCK_TEXT_MODELS;
-      errors.push(
-        `Bedrock catalog unavailable (${
-          err instanceof Error ? err.name : "error"
-        }) — showing a minimal fallback list. Grant bedrock:ListFoundationModels for the full catalog.`,
-      );
+      errors.push(formatBedrockCatalogError(err, runtimeEdition()));
     }
   }
 

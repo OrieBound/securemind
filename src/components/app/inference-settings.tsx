@@ -90,10 +90,12 @@ type Props =
       page: "models";
       complexityTiers: ComplexityTiersBind;
       onOpenProviders?: () => void;
+      onProvidersChanged?: () => void;
     }
   | {
       page: "providers";
       onOpenModels?: () => void;
+      onProvidersChanged?: () => void;
     };
 
 type VendorCatalogKind = "groq" | "google" | "openai" | "anthropic" | "none";
@@ -115,6 +117,7 @@ export function InferenceSettings(props: Props) {
   const complexityTiers = props.page === "models" ? props.complexityTiers : null;
   const onOpenProviders = props.page === "models" ? props.onOpenProviders : undefined;
   const onOpenModels = props.page === "providers" ? props.onOpenModels : undefined;
+  const onProvidersChanged = props.onProvidersChanged;
   const [status, setStatus] = useState<ProviderStatus | null>(null);
   const [groq, setGroq] = useState<CatalogModel[]>([]);
   const [bedrock, setBedrock] = useState<CatalogModel[]>([]);
@@ -354,6 +357,7 @@ export function InferenceSettings(props: Props) {
                 ? formatGroqConnectivityError(new Error(cat.errors.join(" ")))
                 : formatGroqConnectivityError(new Error("Groq returned no text models."));
               setNote(`Key saved, but Groq is not reachable yet — ${detail}`);
+              onProvidersChanged?.();
               return;
             }
           }
@@ -362,6 +366,7 @@ export function InferenceSettings(props: Props) {
         }
       }
       setNote(okMsg);
+      onProvidersChanged?.();
     } catch (err) {
       setNote(err instanceof Error ? err.message : "Could not save provider settings.");
     } finally {
@@ -1077,7 +1082,8 @@ function SettingsModule({
     <div
       className={cn(
         /* Solid card chrome — open state is a coloured border, not a pastel wash */
-        "rounded-xl border bg-card overflow-hidden transition-colors shadow-[var(--shadow-sm)]",
+        "rounded-xl border bg-card transition-colors shadow-[var(--shadow-sm)]",
+        open ? "overflow-visible" : "overflow-hidden",
         open
           ? cn(theme.borderOpen, "shadow-[var(--shadow-md)]")
           : "border-[var(--border-strong)]",
@@ -1137,7 +1143,7 @@ function SettingsModule({
           id={`inference-panel-${id}`}
           role="region"
           aria-labelledby={`inference-module-${id}`}
-          className="px-4 pb-4 pt-0 border-t border-border bg-elevated"
+          className="px-4 pb-5 pt-0 border-t border-border bg-elevated overflow-visible"
         >
           <div className="pt-3">{children}</div>
         </div>
@@ -1327,6 +1333,21 @@ function BedrockEnvironmentCard({
 
       {aws.allowRealAws && (
         <>
+          {hosted && (
+            <p className="text-[0.68rem] text-foreground/50 leading-relaxed">
+              Chat uses this deployment’s existing IAM roles (Terraform) — you do not create a role by
+              hand. Enable at least one text model (for example Amazon Nova) in{" "}
+              <a
+                href="https://console.aws.amazon.com/bedrock/home#/modelaccess"
+                target="_blank"
+                rel="noreferrer noopener"
+                className="text-indigo-300/80 underline underline-offset-2"
+              >
+                Bedrock model access
+              </a>
+              . That console step is not IAM; the app cannot turn it on for you.
+            </p>
+          )}
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-[0.65rem]">
             <dt className="text-foreground/35">Credentials</dt>
             <dd className={

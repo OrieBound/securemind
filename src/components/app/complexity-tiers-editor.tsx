@@ -55,6 +55,7 @@ export type ComplexityTiersEditorProps = {
   cloudDefaultsWillRun: boolean;
   groqCatalogReady: boolean;
   ollamaCatalogReady: boolean;
+  bedrockCatalogReady: boolean;
   localFallbackModel: string | null;
   onNeedCatalog?: () => void;
   onOpenSettings?: () => void;
@@ -86,6 +87,7 @@ export function ComplexityTiersEditor({
   cloudDefaultsWillRun,
   groqCatalogReady,
   ollamaCatalogReady,
+  bedrockCatalogReady,
   localFallbackModel,
   onNeedCatalog,
   onOpenSettings,
@@ -170,7 +172,7 @@ export function ComplexityTiersEditor({
         </p>
       )}
 
-      {modelSelectionMode === "auto" && !groqCatalogReady && !ollamaCatalogReady && (
+      {modelSelectionMode === "auto" && !groqCatalogReady && !ollamaCatalogReady && !bedrockCatalogReady && (
         <p className="text-[0.65rem] leading-relaxed text-amber-300/85 bg-amber-500/10 border border-amber-500/25 rounded-lg px-2.5 py-2 mb-2">
           <span className="font-semibold text-amber-200">No cloud or local chat model.</span>{" "}
           {isPage
@@ -198,7 +200,14 @@ export function ComplexityTiersEditor({
           )}
         </p>
       )}
-      {modelSelectionMode === "auto" && !groqCatalogReady && ollamaCatalogReady && (
+      {modelSelectionMode === "auto" && !groqCatalogReady && bedrockCatalogReady && (
+        <p className="text-[0.65rem] leading-relaxed text-foreground/45 bg-foreground/[0.04] border border-foreground/10 rounded-lg px-2.5 py-2 mb-2">
+          Live chat uses{" "}
+          <span className="font-medium text-foreground/70">Amazon Bedrock</span>
+          . Each row is the model that tier will run. Enable the model in AWS console → Bedrock → Model access if a send fails.
+        </p>
+      )}
+      {modelSelectionMode === "auto" && !groqCatalogReady && !bedrockCatalogReady && ollamaCatalogReady && (
         <p className="text-[0.65rem] leading-relaxed text-foreground/45 bg-foreground/[0.04] border border-foreground/10 rounded-lg px-2.5 py-2 mb-2">
           Live chat uses{" "}
           <span className="font-medium text-foreground/70">Ollama</span>
@@ -440,8 +449,8 @@ function TierRow({
           <code
             title={labelFor(displayModelId)}
             className={cn(
-              "text-[0.62rem] font-mono px-1.5 py-0.5 rounded-md truncate border",
-              isPage ? "max-w-full" : "max-w-[11rem]",
+              "text-[0.62rem] font-mono px-1.5 py-0.5 rounded-md truncate border min-w-0 flex-1",
+              isPage ? "max-w-full" : "max-w-none",
               justChanged
                 ? "text-emerald-200 bg-emerald-400/15 border-emerald-400/40"
                 : hasOverride

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isChatUsableModelId, modalityForListedModel } from "./catalog-shared";
+import { isChatUsableModelId, modalityForListedModel, formatBedrockCatalogError } from "./catalog-shared";
 import {
   DEFAULT_TIER_MODELS,
   displayModelForTier,
@@ -112,5 +112,22 @@ describe("displayModelForTier", () => {
       Light: "canopylabs/orpheus-v1-english",
       Micro: "llama-3.1-8b-instant",
     })).toEqual({ Micro: "llama-3.1-8b-instant" });
+  });
+});
+
+describe("formatBedrockCatalogError", () => {
+  it("tells a hosted operator not to create a role by hand", () => {
+    const err = Object.assign(new Error("not authorized"), { name: "AccessDeniedException" });
+    const msg = formatBedrockCatalogError(err, "cloud");
+    expect(msg).toContain("AccessDeniedException");
+    expect(msg).toMatch(/do not create an IAM role by hand/i);
+    expect(msg).toMatch(/Model access/i);
+    expect(msg).toMatch(/Lambda/i);
+  });
+
+  it("keeps the local grant-list copy off cloud", () => {
+    const err = Object.assign(new Error("denied"), { name: "AccessDeniedException" });
+    expect(formatBedrockCatalogError(err, "local")).toMatch(/ListFoundationModels/);
+    expect(formatBedrockCatalogError(err, "local")).not.toMatch(/Amplify/);
   });
 });

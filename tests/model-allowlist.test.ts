@@ -90,6 +90,15 @@ describe("resolveAllowedModel", () => {
     expect(await resolveAllowedModel("canopylabs/orpheus-v1-english")).toBeNull();
   });
 
+  it("allows the hosted Nova fallback even when the live catalog fails", async () => {
+    getModelCatalogCached.mockRejectedValue(new Error("network down"));
+    const { resolveAllowedModel } = await import("@/lib/models/allowlist");
+    expect(await resolveAllowedModel("amazon.nova-micro-v1:0")).toEqual({
+      model: "amazon.nova-micro-v1:0",
+      provider: "bedrock",
+    });
+  });
+
   it("denies when the catalog lookup fails", async () => {
     getModelCatalogCached.mockRejectedValue(new Error("network down"));
     const { resolveAllowedModel } = await import("@/lib/models/allowlist");

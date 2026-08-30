@@ -33,13 +33,14 @@ export async function bedrockBlockReason(): Promise<string | null> {
       ? "Billable AWS calls are blocked by ALLOW_REAL_AWS=false in the environment."
       : "Billable AWS calls are turned off. Enable them in Settings → Providers.";
   }
+  if (runtimeEdition() === "cloud") {
+    return null;
+  }
   if (status.looksLikeFloci) {
     return "Floci placeholder credentials are in use. Bedrock streaming requires real AWS credentials.";
   }
   if (!status.detected) {
-    return runtimeEdition() === "cloud"
-      ? "This hosted chat service could not use its IAM role. Check the Lambda role and Bedrock model access."
-      : "No AWS credentials found on this host. Sign in with the AWS CLI, then pick a profile in Settings → Providers.";
+    return "No AWS credentials found on this host. Sign in with the AWS CLI, then pick a profile in Settings → Providers.";
   }
   if (!status.region) {
     return "No AWS region configured. Choose one in Settings → Providers.";

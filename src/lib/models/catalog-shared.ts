@@ -18,7 +18,7 @@ export const BEDROCK_TEXT_MODELS: CatalogModel[] = [
     name: "Amazon Nova Pro",
     provider: "bedrock",
     modality: "text",
-    note: "Fallback list — grant bedrock:ListFoundationModels for the full catalog",
+    note: "Fallback list until this UI can list models — enable Nova in AWS console → Bedrock → Model access",
   },
   {
     id: "amazon.nova-lite-v1:0",
@@ -35,6 +35,9 @@ export const BEDROCK_TEXT_MODELS: CatalogModel[] = [
     note: "Fallback list",
   },
 ];
+
+/** Hosted chat default when Bedrock is on and no override is set. */
+export const HOSTED_DEFAULT_BEDROCK_MODEL = "amazon.nova-micro-v1:0";
 
 export type ModelCatalogBuckets = {
   groq: CatalogModel[];
@@ -57,6 +60,29 @@ const RETIRED_CHAT_IDS = new Set([
   "gemini-2.5-flash",
   "gemini-2.5-pro",
 ]);
+
+/** Operator-facing copy when ListFoundationModels fails. */
+export function formatBedrockCatalogError(
+  err: unknown,
+  edition: "local" | "cloud",
+): string {
+  const name = err instanceof Error ? err.name : "error";
+  const accessDenied = /AccessDenied|not authorized/i.test(
+    `${name} ${err instanceof Error ? err.message : ""}`,
+  );
+  if (edition === "cloud" && accessDenied) {
+    return (
+      `Bedrock catalog unavailable (${name}) — showing Amazon Nova Pro, Lite, and Micro as a fallback. ` +
+      `You do not create an IAM role by hand. Terraform already put invoke on the chat Lambda role; ` +
+      `the next apply attaches list/invoke to this UI’s Amplify role so the full catalog can load. ` +
+      `Separately, enable the model in the AWS console under Bedrock → Model access — that is not IAM.`
+    );
+  }
+  return (
+    `Bedrock catalog unavailable (${name}) — showing a minimal fallback list. ` +
+    `Grant bedrock:ListFoundationModels for the full catalog.`
+  );
+}
 
 export function isChatUsableModelId(id: string): boolean {
   const lower = id.trim().toLowerCase().replace(/^models\//, "");

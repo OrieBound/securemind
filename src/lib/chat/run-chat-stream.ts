@@ -19,7 +19,7 @@ import {
   DEFAULT_TIER,
 } from "@/lib/models/router";
 import { streamChat } from "@/lib/models/provider";
-import { resolveAllowedModel } from "@/lib/models/allowlist";
+import { HOSTED_DEFAULT_BEDROCK_MODEL } from "@/lib/models/catalog-shared";
 import { routeMessage } from "@/lib/models/route-message";
 import { decideChatRuntime } from "@/lib/models/resolve-chat-runtime";
 import { probeHardware } from "@/lib/models/local-recommendations";
@@ -230,8 +230,10 @@ export async function prepareChatTurn(
   let useGroq = decision.useGroq;
   let useBedrock = decision.useBedrock;
 
-  if (useBedrock && runtimeSecrets.bedrockChatModel && decision.source !== "override") {
-    model = runtimeSecrets.bedrockChatModel;
+  if (useBedrock && decision.source !== "override") {
+    model =
+      runtimeSecrets.bedrockChatModel?.trim() ||
+      (runtimeEdition() === "cloud" ? HOSTED_DEFAULT_BEDROCK_MODEL : model);
   }
 
   if (provider === "ollama") {

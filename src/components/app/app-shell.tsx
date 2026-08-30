@@ -169,6 +169,7 @@ import EmojiPicker, { Theme, type EmojiClickData } from "emoji-picker-react";
 import {
   apiAuthHeaders,
   apiUrl,
+  ensureClientAccessToken,
   usesRemoteApi,
   warmChatConnection,
 } from "@/lib/client/api-base";
@@ -2546,6 +2547,11 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     void refreshRuntimeStatus();
   }, [refreshRuntimeStatus]);
 
+  useEffect(() => {
+    if (activeNav === "settings") return;
+    void refreshRuntimeStatus();
+  }, [activeNav, refreshRuntimeStatus]);
+
   // ── voice input state ───────────────────────────────────────────────────────
   const [voiceState, setVoiceState]   = useState<"idle" | "requesting" | "listening" | "transcribing">("idle");
   // Rolling waveform history — values 0–1 from live mic amplitude
@@ -2713,6 +2719,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   );
   const groqCatalogReady = catalog.groq.length > 0 || vendorHasGroq;
   const ollamaCatalogReady = catalog.ollama.length > 0;
+  const bedrockCatalogReady = catalog.bedrock.length > 0;
   const openaiCatalogReady = catalog.openai.length > 0;
   const anthropicCatalogReady = catalog.anthropic.length > 0;
   const googleCatalogReady = catalog.google.length > 0;
@@ -3896,6 +3903,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
 
     // Pre-wake local Node or remote Lambda before the heavy chat request.
     warmChatConnection();
+    await ensureClientAccessToken();
 
     try {
       const res = await fetch(apiUrl("/api/chat"), {
@@ -3963,6 +3971,14 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
               : undefined),
         } : m));
         return;
+      }
+      if (res.status === 401) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(
+          body.error === "Authentication required."
+            ? "Chat is signed out of the API. Refresh the page and send again."
+            : `Server error: 401${body.error ? ` (${body.error})` : ""}`,
+        );
       }
       if (!res.ok || !res.body) throw new Error(`Server error: ${res.status}`);
 
@@ -5025,6 +5041,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     cloudDefaultsWillRun,
     groqCatalogReady,
     ollamaCatalogReady,
+    bedrockCatalogReady,
     localFallbackModel,
     onNeedCatalog: () => { void ensureLoaded(); },
   };
@@ -6857,7 +6874,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                   </span>
                   <p className="mt-3 text-sm font-semibold text-foreground">Getting started</p>
                   <p className="mt-1 text-xs text-[var(--text-muted)] leading-relaxed">
-                    Pictures of each click: open Providers, check the Bedrock billing box, then come back to chat.
+                    Pictures of each click: open Providers, check the Bedrock billing box, enable the model in the AWS console, then come back to chat.
                   </p>
                 </Link>
               )}
@@ -7258,6 +7275,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                   || authSession.role === "admin"
                 }
                 actorRole={authSession?.role ?? "super_admin"}
+                onProvidersChanged={() => { void refreshRuntimeStatus(); }}
               />
             )}
           </div>

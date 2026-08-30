@@ -173,9 +173,10 @@ export function GettingStartedGuide({ edition: editionProp }: { edition: "local"
 
             <Step n={3} title="Allow models in the AWS console">
               <p className="text-ui text-[var(--text-muted)] leading-[var(--leading-body)]">
-                In the same AWS account as this install, open Bedrock
-                and enable the models you want to use (at least one text chat model). Then check
-                the billing box in Settings → Providers.
+                IAM roles for this install already exist (Terraform created them). You do not
+                create a role by hand. What the app cannot do is enable <span className="text-foreground/80">model access</span>{" "}
+                — that is an AWS console checkbox in the same account and region. Turn on at least
+                one text chat model (Amazon Nova is a fine start).
               </p>
               <p className="text-ui">
                 <a

@@ -50,7 +50,7 @@ export function noModelAssistantReply(edition: RuntimeEdition): string {
       `**Amazon Bedrock (recommended here)**\n` +
       `1. Open **[Settings → Providers](${PROVIDERS_DEEP_LINK})**.\n` +
       `2. Under **Amazon Bedrock**, check **I understand that enabling Bedrock permits SecureMind to make billable model requests in my AWS account.**\n` +
-      `3. In the AWS console, allow Bedrock **model access** for this account and region. The app cannot turn that on for you.\n\n` +
+      `3. In the AWS console, allow Bedrock **model access** for this account and region (Amazon Nova, for example). That is not an IAM role — Terraform already created the roles. The app cannot turn model access on for you.\n\n` +
       `Pictures of each step: **[Getting started](${GETTING_STARTED_PATH})**.\n\n` +
       `**Or** add a vendor API key (Groq, OpenAI, Anthropic, Google) on the same Providers page. Do not paste AWS access keys — those are never stored in the app.`
     );

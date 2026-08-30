@@ -15,6 +15,7 @@
 
 import { db } from "@/lib/db";
 import { embedText } from "@/lib/models/embed";
+import { isHostedRuntime, resolveStorageBackend } from "@/lib/runtime-env";
 
 import type { ChunkProvenance } from "@/lib/spreadsheet/types";
 
@@ -171,8 +172,7 @@ async function retrieveDocumentHits(
   userId: string,
   limit: number,
 ) {
-  const { resolveStorageBackend } = await import("@/lib/runtime-env");
-  if (resolveStorageBackend() === "dynamodb") {
+  if (isHostedRuntime() || resolveStorageBackend() === "dynamodb") {
     const { getDynamoVectors } = await import("@/lib/storage/dynamodb-vectors");
     return getDynamoVectors().retrieve({ query, workspaceId, userId, limit });
   }
@@ -195,12 +195,23 @@ export async function retrieveCombinedContext(opts: {
     ? []
     : await retrieveDocumentHits(opts.query, opts.workspaceId, opts.userId, limit);
 
-  const rows = await db.workspaceFact.findMany({
-    where: { workspaceId: opts.workspaceId, forgotten: false },
-    select: { key: true, value: true, pinned: true, updatedAt: true },
-    orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
-    take: WORKSPACE_FACT_RETRIEVAL_LIMIT,
-  });
+  type FactRow = { key: string; value: string; pinned: boolean; updatedAt: Date };
+  let rows: FactRow[] = [];
+  if (!isHostedRuntime() && resolveStorageBackend() !== "dynamodb") {
+    try {
+      rows = await db.workspaceFact.findMany({
+        where: { workspaceId: opts.workspaceId, forgotten: false },
+        select: { key: true, value: true, pinned: true, updatedAt: true },
+        orderBy: [{ pinned: "desc" }, { updatedAt: "desc" }],
+        take: WORKSPACE_FACT_RETRIEVAL_LIMIT,
+      });
+    } catch (err) {
+      console.warn(
+        "[memory] workspace facts unavailable",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
 
   const merged = new Map<string, { value: string; pinned: boolean; updatedAt: number }>();
   for (const [key, value] of Object.entries(opts.clientFacts ?? {})) {

@@ -136,7 +136,13 @@ export function ModelInventory({
         <p className="text-xs text-foreground/35">Loading catalog…</p>
       )}
       {errors && errors.length > 0 && (
-        <p className="text-[0.65rem] text-amber-200/80">{errors.join(" · ")}</p>
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 space-y-1.5">
+          {errors.map(err => (
+            <p key={err} className="text-[0.65rem] text-amber-100/90 leading-relaxed">
+              {err}
+            </p>
+          ))}
+        </div>
       )}
 
       {(models.length > 0 || !loading) && (
