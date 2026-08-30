@@ -13,7 +13,11 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createClient() {
-  const pool    = new Pool({ connectionString: process.env.DATABASE_URL });
+  const connectionString = process.env.DATABASE_URL?.trim();
+  if (!connectionString) {
+    throw new Error("DATABASE_URL is not set.");
+  }
+  const pool    = new Pool({ connectionString });
   const adapter = new PrismaPg(pool);
   return new PrismaClient({
     adapter,
@@ -29,4 +33,14 @@ function getClient(): PrismaClient {
   return globalForPrisma.prisma;
 }
 
-export const db = getClient();
+/** Lazy so Amplify SSR can boot without opening Postgres on import. */
+export const db: PrismaClient = new Proxy({} as PrismaClient, {
+  get(_target, prop, _receiver) {
+    const client = getClient();
+    const value = Reflect.get(client, prop, client) as unknown;
+    if (typeof value === "function") {
+      return (value as (...args: unknown[]) => unknown).bind(client);
+    }
+    return value;
+  },
+});

@@ -1,6 +1,10 @@
 terraform {
   required_version = ">= 1.6.0"
   required_providers {
+    random = {
+      source  = "hashicorp/random"
+      version = ">= 3.6.0"
+    }
     aws = {
       source  = "hashicorp/aws"
       version = ">= 6.25.0, < 7.0.0"
@@ -13,6 +17,8 @@ terraform {
 provider "aws" {
   region = var.aws_region
 }
+
+provider "random" {}
 
 variable "aws_region" {
   type    = string

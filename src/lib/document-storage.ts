@@ -12,7 +12,11 @@ import type { SpreadsheetTable } from "@/lib/spreadsheet/types";
 
 function storageRoot(): string {
   const configured = process.env.DOCUMENT_STORAGE_PATH?.trim();
-  return resolve(configured && configured.length > 0 ? configured : join(process.cwd(), ".data", "uploads"));
+  return resolve(
+    configured && configured.length > 0
+      ? configured
+      : join(/* turbopackIgnore: true */ process.cwd(), ".data", "uploads"),
+  );
 }
 
 function safeSegment(value: string): string {
