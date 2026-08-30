@@ -3,6 +3,7 @@
 import {
   BarChart2,
   Bookmark,
+  BookOpen,
   Brain,
   Check,
   ChevronLeft,
@@ -48,6 +49,13 @@ import {
   readStashedInsightsSubject,
   stashInsightsSubject,
 } from "@/lib/analytics/insights-subject-client";
+
+import {
+  GETTING_STARTED_PATH,
+  chatUnreachableMessage,
+  markBedrockHighlight,
+  noModelAssistantReply,
+} from "@/lib/onboarding";
 
 /** Survives /analytics → / remount so Back to Admin reopens Settings → Admin. */
 const OPEN_SETTINGS_KEY = "sm_open_settings";
@@ -1420,20 +1428,51 @@ const MessageBubble = memo(function MessageBubble({
               onOpenSettings && (
               <button
                 type="button"
-                onClick={() =>
-                  onOpenSettings(message.errorSettingsSection ?? "providers")
-                }
+                onClick={() => {
+                  markBedrockHighlight();
+                  onOpenSettings(message.errorSettingsSection ?? "providers");
+                }}
                 className="self-start ml-6 text-[0.72rem] font-medium text-indigo-200 underline underline-offset-2 hover:text-indigo-100 cursor-pointer"
               >
                 Open Settings → {SETTINGS_SECTION_LABELS[message.errorSettingsSection ?? "providers"]}
               </button>
+            )}
+            {(message.errorCode === "VENDOR_RISK_REQUIRED" ||
+              message.errorCode === "GROQ_NOT_CONFIGURED" ||
+              message.errorCode === "BEDROCK_NOT_CONFIGURED" ||
+              message.errorCode === "MODEL_PROVIDER_REQUIRED" ||
+              /chat service|Getting started/i.test(message.error ?? "")) && (
+              <a
+                href={GETTING_STARTED_PATH}
+                className="self-start ml-6 text-[0.72rem] font-medium text-indigo-200 underline underline-offset-2 hover:text-indigo-100"
+              >
+                Open Getting started guide
+              </a>
             )}
           </span>
         )
         : displayContent
           ? (
             <div className="chat-prose min-w-0 max-w-full">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  a: ({ href, children }) => {
+                    const internal = Boolean(href?.startsWith("/") && !href.startsWith("//"));
+                    return (
+                      <a
+                        href={href}
+                        onClick={() => {
+                          if (href?.includes("highlight=bedrock")) markBedrockHighlight();
+                        }}
+                        {...(!internal ? { target: "_blank", rel: "noreferrer noopener" } : {})}
+                      >
+                        {children}
+                      </a>
+                    );
+                  },
+                }}
+              >
                 {isUser ? displayContent : message.content}
               </ReactMarkdown>
             </div>
@@ -2312,6 +2351,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     }
     if (!section || !isSettingsSection(section)) return;
     consumedSettingsDeepLink.current = true;
+    if (searchParams.get("highlight") === "bedrock") markBedrockHighlight();
     setSettingsSectionState(section);
     try { localStorage.setItem(SETTINGS_SECTION_KEY, section); } catch { /* quota */ }
     setActiveNav("settings");
@@ -2471,10 +2511,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
 
   const refreshRuntimeStatus = useCallback(async () => {
     try {
-      const res = await fetch(apiUrl("/api/runtime/status"), {
-        credentials: usesRemoteApi() ? "omit" : "same-origin",
-        headers: { ...apiAuthHeaders() },
-      });
+      const res = await fetch("/api/runtime/status", { credentials: "same-origin" });
       if (!res.ok) return;
       setRuntimeStatus((await res.json()) as RuntimeStatusPayload);
     } catch {
@@ -4087,8 +4124,11 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
           ? {
             ...m,
             error: msg.includes("Failed to fetch")
-              ? "Could not reach the chat API. Confirm the dev server is running, then try again."
+              ? chatUnreachableMessage(runtimeStatus?.edition === "local" ? "local" : "cloud")
               : msg,
+            ...(msg.includes("Failed to fetch")
+              ? { errorCode: "MODEL_PROVIDER_REQUIRED" as const, errorSettingsSection: "providers" as const }
+              : {}),
           }
           : m,
       ));
@@ -4114,16 +4154,37 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     }
   }, [
     turnCount, mode, workspaceName, activeWorkspace, activeWorkspaceId,
-    postedModelOverrides, messages, lastRouteInfo, piiSensitivity,
+    postedModelOverrides, messages, lastRouteInfo, piiSensitivity, runtimeStatus,
   ]);
 
   const handleSend = useCallback(async (textOverride?: string) => {
-    if (runtimeStatus && !runtimeStatus.chatReady) return;
     const raw = (textOverride ?? composerRef.current?.getValue() ?? "").trim();
     if (!raw && attachments.length === 0) return;
     if (isStreaming) return;
     if (sessionLoading || !sessionIdRef.current) {
       setSessionSaveError("Still loading your conversation — wait a moment and try again.");
+      return;
+    }
+
+    if (runtimeStatus && !runtimeStatus.chatReady) {
+      const edition = runtimeStatus.edition === "local" ? "local" : "cloud";
+      const now = new Date().toISOString();
+      const userId = crypto.randomUUID();
+      const asstId = crypto.randomUUID();
+      const guide = noModelAssistantReply(edition);
+      setSessionSaveError(null);
+      composerRef.current?.clear?.();
+      setMessages(p => [
+        ...p,
+        { id: userId, role: "user", content: raw, createdAt: now },
+        { id: asstId, role: "assistant", content: guide, createdAt: now },
+      ]);
+      try {
+        await persistMessage(sessionIdRef.current, "user", raw);
+        await persistMessage(sessionIdRef.current, "assistant", guide);
+      } catch {
+        setSessionSaveError("Message could not be saved. Check your connection and try again.");
+      }
       return;
     }
     setSessionSaveError(null);
@@ -5964,7 +6025,19 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
             </div>
           )}
 
-          <div className="px-3 pb-4 pt-2">
+          <div className="px-3 pb-4 pt-2 space-y-1.5">
+            {(!runtimeStatus || !runtimeStatus.chatReady) && (
+              <Link
+                href={GETTING_STARTED_PATH}
+                className={cn(
+                  "w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left",
+                  "text-indigo-200 hover:bg-indigo-500/10 hover:text-indigo-100",
+                )}
+              >
+                <BookOpen className="size-4 shrink-0" aria-hidden />
+                <span className="text-sm font-medium flex-1">Getting started</span>
+              </Link>
+            )}
             <button
               type="button"
               onClick={toggleSettings}
@@ -6774,6 +6847,21 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                 </p>
               </div>
 
+              {(!runtimeStatus || !runtimeStatus.chatReady) && (
+                <Link
+                  href={GETTING_STARTED_PATH}
+                  className="block rounded-xl border border-indigo-400/35 bg-indigo-500/[0.08] p-4 hover:bg-indigo-500/[0.12] transition-colors"
+                >
+                  <span className="flex size-9 items-center justify-center rounded-lg bg-indigo-500/20 border border-indigo-400/30">
+                    <BookOpen className="size-4 text-indigo-200" aria-hidden />
+                  </span>
+                  <p className="mt-3 text-sm font-semibold text-foreground">Getting started</p>
+                  <p className="mt-1 text-xs text-[var(--text-muted)] leading-relaxed">
+                    Pictures of each click: open Providers, check the Bedrock billing box, then come back to chat.
+                  </p>
+                </Link>
+              )}
+
               <div className="grid gap-3 sm:grid-cols-2">
                 {([
                   {
@@ -7055,7 +7143,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                       sessionLoading={sessionLoading}
                       sessionReady={sessionReady}
                       isStreaming={isStreaming}
-                      inferenceReady={!runtimeStatus || runtimeStatus.chatReady}
+                      inferenceReady
                       voiceInsert={voiceComposerInsert}
                       onVoiceInsertApplied={() => setVoiceComposerInsert(null)}
                       onSend={() => { handleSend(); setAttachments([]); }}

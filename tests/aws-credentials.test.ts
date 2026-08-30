@@ -100,6 +100,8 @@ describe("canUseBedrock", () => {
   it("refuses Bedrock when placeholders are all that is available", async () => {
     setEnv("AWS_ACCESS_KEY_ID", "test");
     setEnv("AWS_SECRET_ACCESS_KEY", "test");
+    setEnv("AWS_PROFILE", undefined);
+    setEnv("AWS_DEFAULT_PROFILE", undefined);
     fromNodeProviderChain.mockReturnValue(async () => {
       throw new Error("Could not load credentials from any providers");
     });

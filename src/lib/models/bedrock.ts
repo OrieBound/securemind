@@ -12,6 +12,7 @@
  * overrides the endpoint.
  */
 
+import { runtimeEdition } from "@/lib/runtime-env";
 import type { ChatMessage } from "./types";
 import { withRealAwsEndpoints } from "@/lib/aws-credentials";
 import {
@@ -36,7 +37,9 @@ export async function bedrockBlockReason(): Promise<string | null> {
     return "Floci placeholder credentials are in use. Bedrock streaming requires real AWS credentials.";
   }
   if (!status.detected) {
-    return "No AWS credentials found on this host. Sign in with the AWS CLI, then pick a profile in Settings → Providers.";
+    return runtimeEdition() === "cloud"
+      ? "This hosted chat service could not use its IAM role. Check the Lambda role and Bedrock model access."
+      : "No AWS credentials found on this host. Sign in with the AWS CLI, then pick a profile in Settings → Providers.";
   }
   if (!status.region) {
     return "No AWS region configured. Choose one in Settings → Providers.";

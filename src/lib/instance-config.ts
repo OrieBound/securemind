@@ -8,6 +8,8 @@
  */
 
 import { db } from "@/lib/db";
+import { isHostedRuntime, runtimeEdition } from "@/lib/runtime-env";
+import { hostedInstanceConfig } from "@/lib/instance-config-hosted";
 import type { WizardStorageChoice } from "@/lib/wizard-storage";
 import { decryptSecret, encryptSecret } from "@/lib/secret-at-rest";
 import {
@@ -70,6 +72,7 @@ export type KeyInventoryItem = {
 };
 
 export type PublicProviderStatus = {
+  edition: "local" | "cloud";
   primaryProvider: PrimaryProvider;
   hasGroqKey: boolean;
   groqKeyHint: string | null;
@@ -146,6 +149,14 @@ function decryptConfigRow(row: InstanceConfigRow): InstanceConfigRow {
 }
 
 export async function getInstanceConfig(): Promise<InstanceConfigRow | null> {
+  if (isHostedRuntime()) {
+    try {
+      const row = await hostedInstanceConfig().get();
+      return row ? decryptConfigRow(row) : null;
+    } catch {
+      return null;
+    }
+  }
   try {
     const row = await db.instanceConfig.findUnique({ where: { id: "singleton" } });
     return row ? decryptConfigRow(row) : null;
@@ -157,6 +168,10 @@ export async function getInstanceConfig(): Promise<InstanceConfigRow | null> {
 export async function ensureInstanceConfig(): Promise<InstanceConfigRow> {
   const existing = await getInstanceConfig();
   if (existing) return existing;
+  if (isHostedRuntime()) {
+    const row = await hostedInstanceConfig().ensure();
+    return decryptConfigRow(row);
+  }
   return db.instanceConfig.create({
     data: { id: "singleton", primaryProvider: "auto" },
   });
@@ -339,6 +354,7 @@ export async function getPublicProviderStatus(): Promise<PublicProviderStatus> {
   const aws = await getAwsCredentialStatus(awsSettingsFrom(row));
   const primary = (row?.primaryProvider ?? "auto") as PrimaryProvider;
   return {
+    edition: runtimeEdition(),
     primaryProvider: ["auto", "groq", "bedrock", "ollama"].includes(primary)
       ? primary
       : "auto",
@@ -457,7 +473,11 @@ export async function patchInstanceConfig(
     }
   }
 
-  await db.instanceConfig.update({ where: { id: "singleton" }, data });
+  if (isHostedRuntime()) {
+    await hostedInstanceConfig().merge(data);
+  } else {
+    await db.instanceConfig.update({ where: { id: "singleton" }, data });
+  }
   // Profile / region / gate changes must re-run detection immediately.
   resetAwsCredentialCache();
   if (
@@ -510,6 +530,14 @@ export type InstanceSetupPersist = {
 /** Best-effort read. Hosted Amplify may have no Postgres — returns nulls. */
 export async function getInstanceSetupPersist(): Promise<InstanceSetupPersist> {
   try {
+    if (isHostedRuntime()) {
+      const row = await hostedInstanceConfig().get();
+      return {
+        setupCompletedAt: row?.setupCompletedAt ?? null,
+        setupClaimUsedAt: row?.setupClaimUsedAt ?? null,
+        storageBackend: row?.storageBackend ?? null,
+      };
+    }
     const row = await db.instanceConfig.findUnique({
       where: { id: "singleton" },
       select: {
@@ -530,6 +558,13 @@ export async function getInstanceSetupPersist(): Promise<InstanceSetupPersist> {
 
 export async function markSetupClaimUsed(ownerUserId: string | null): Promise<boolean> {
   try {
+    if (isHostedRuntime()) {
+      await hostedInstanceConfig().merge({
+        setupClaimUsedAt: new Date(),
+        ...(ownerUserId ? { ownerUserId } : {}),
+      });
+      return true;
+    }
     await db.instanceConfig.upsert({
       where: { id: "singleton" },
       create: {
@@ -557,6 +592,14 @@ export async function completeInstanceSetup(input: {
   userId: string;
 }): Promise<boolean> {
   try {
+    if (isHostedRuntime()) {
+      await hostedInstanceConfig().merge({
+        storageBackend: input.storageBackend,
+        setupCompletedAt: new Date(),
+        updatedByUserId: input.userId,
+      });
+      return true;
+    }
     await db.instanceConfig.upsert({
       where: { id: "singleton" },
       create: {

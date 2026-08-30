@@ -171,6 +171,14 @@ jobs:
           terraform init -backend-config=backend.hcl -input=false
           terraform apply -auto-approve -input=false
 
+      - name: Wire Amplify origin into API CORS
+        if: vars.AWS_ROLE_ARN != '' && vars.TF_STATE_BUCKET != ''
+        run: |
+          DOMAIN="$(terraform -chdir=infra/terraform output -raw amplify_default_domain)"
+          export AMPLIFY_SITE_URL="https://main.${DOMAIN}"
+          export ENV_NAME=sandbox
+          npm run infra:wire
+
       - name: Trigger Amplify build
         if: vars.AWS_ROLE_ARN != '' && vars.TF_STATE_BUCKET != ''
         run: |

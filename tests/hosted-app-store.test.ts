@@ -34,10 +34,35 @@ describe("hosted app store", () => {
 
     const session = await store.loadSession("user-a", seed!.id);
     expect(session?.messages[0]?.role).toBe("assistant");
-    expect(session?.messages[0]?.content).toContain(DEFAULT_WORKSPACE_NAME);
+    expect(session?.messages[0]?.content).toContain("Getting started");
 
     const empty = await store.loadSession("user-a", extra.id);
     expect(empty?.messages).toEqual([]);
+  });
+
+  it("rewrites the legacy first-workspace hello on load", async () => {
+    const driver = createMemoryDriver();
+    const store = createHostedAppStore(driver);
+    const [seed] = await store.listWorkspaces("user-a");
+    const session = await store.loadSession("user-a", seed!.id);
+    const first = session?.messages[0];
+    expect(first).toBeTruthy();
+
+    const legacy =
+      "Hi — I'm **Mindy Locke**, your first workspace.\n\nFeel free to change my name anytime in **Workspace** settings. When you're ready, upload Knowledge or ask a question — I'll stay grounded in what you add here.";
+    await driver.put(
+      `app#user-a`,
+      `ms#${first!.sessionId}#${first!.createdAt}#${first!.id}`,
+      {
+        userId: { S: "user-a" },
+        category: { S: "app_meta" },
+        content: { S: JSON.stringify({ ...first, content: legacy }) },
+      },
+    );
+
+    const reloaded = await store.loadSession("user-a", seed!.id);
+    expect(reloaded?.messages[0]?.content).toContain("Getting started");
+    expect(reloaded?.messages[0]?.content).not.toContain("Feel free to change my name");
   });
 
   it("refuses to append to another user's session", async () => {

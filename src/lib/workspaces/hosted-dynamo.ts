@@ -24,8 +24,8 @@ import {
   DEFAULT_WORKSPACE_EMOJI,
   DEFAULT_WORKSPACE_NAME,
   LEGACY_DEFAULT_NAMES,
-  defaultWorkspaceHello,
 } from "./defaults";
+import { defaultWorkspaceHello, isLegacyDefaultHello } from "@/lib/onboarding";
 
 const CATEGORY = "app_meta";
 const WS = "ws#";
@@ -503,6 +503,13 @@ export function createHostedAppStore(driver: HostedDriver) {
         };
         await putMessage(userId, hello);
         messages = [hello];
+      } else if (owned.isDefault) {
+        const first = messages.find(m => m.role === "assistant");
+        if (first && isLegacyDefaultHello(first.content)) {
+          const next = { ...first, content: defaultWorkspaceHello(owned.name) };
+          await putMessage(userId, next);
+          messages = messages.map(m => (m.id === first.id ? next : m));
+        }
       }
 
       const limited = messages.slice(-200);
