@@ -3,6 +3,7 @@ import {
   parseVendorKeyBundle,
   readVendorKeyBundle,
   resetVendorKeyStoreForTests,
+  vendorKeyCacheIsLive,
   writeVendorKeyBundle,
 } from "@/lib/vendor-key-store";
 import {
@@ -30,6 +31,24 @@ describe("parseVendorKeyBundle", () => {
       groqApiKey: null,
       extra: [],
     });
+  });
+});
+
+describe("vendorKeyCacheIsLive", () => {
+  it("never treats an empty snapshot as a hit", () => {
+    expect(
+      vendorKeyCacheIsLive({ groqApiKey: null, extra: [] }, 1, 2),
+    ).toBe(false);
+    expect(vendorKeyCacheIsLive(null, 1, 2)).toBe(false);
+  });
+
+  it("hits a populated snapshot inside the TTL", () => {
+    expect(
+      vendorKeyCacheIsLive({ groqApiKey: "gsk_x", extra: [] }, 1000, 2500, 3000),
+    ).toBe(true);
+    expect(
+      vendorKeyCacheIsLive({ groqApiKey: "gsk_x", extra: [] }, 1000, 5000, 3000),
+    ).toBe(false);
   });
 });
 

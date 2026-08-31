@@ -31,8 +31,37 @@ export type VendorKeyBundle = {
 
 const EMPTY: VendorKeyBundle = { groqApiKey: null, extra: [] };
 
+/**
+ * In-process SM cache. Empty snapshots must not stick: Amplify SSR workers that
+ * GetSecretValue before a Put (voice setup, Providers paste) would keep showing
+ * "Not configured" / "No vendor keys stored yet" after the secret actually has a key.
+ */
+const CACHE_TTL_MS = 3_000;
 let cache: VendorKeyBundle | null = null;
+let cacheAt = 0;
 let testStore: VendorKeyBundle | null | undefined;
+
+function cloneBundle(bundle: VendorKeyBundle): VendorKeyBundle {
+  return {
+    groqApiKey: bundle.groqApiKey,
+    extra: bundle.extra.map(k => ({ ...k })),
+  };
+}
+
+function bundleIsEmpty(bundle: VendorKeyBundle): boolean {
+  return !bundle.groqApiKey && bundle.extra.length === 0;
+}
+
+/** Exported for tests — empty reads are never a cache hit. */
+export function vendorKeyCacheIsLive(
+  snapshot: VendorKeyBundle | null,
+  savedAt: number,
+  now: number,
+  ttlMs = CACHE_TTL_MS,
+): boolean {
+  if (!snapshot || bundleIsEmpty(snapshot)) return false;
+  return now - savedAt < ttlMs;
+}
 
 export function vendorKeysSecretId(): string | null {
   return process.env.VENDOR_KEYS_SECRET_ARN?.trim() || null;
@@ -41,6 +70,7 @@ export function vendorKeysSecretId(): string | null {
 /** Tests only — in-memory stand-in for Secrets Manager. */
 export function resetVendorKeyStoreForTests(bundle?: VendorKeyBundle | null): void {
   cache = null;
+  cacheAt = 0;
   testStore = bundle === undefined ? undefined : bundle;
 }
 
@@ -81,14 +111,10 @@ export function parseVendorKeyBundle(raw: unknown): VendorKeyBundle {
 export async function readVendorKeyBundle(): Promise<VendorKeyBundle> {
   if (!isHostedRuntime()) return { groqApiKey: null, extra: [] };
   if (testStore !== undefined) {
-    cache = testStore ?? { groqApiKey: null, extra: [] };
-    return {
-      groqApiKey: cache.groqApiKey,
-      extra: cache.extra.map(k => ({ ...k })),
-    };
+    return cloneBundle(testStore ?? EMPTY);
   }
-  if (cache) {
-    return { groqApiKey: cache.groqApiKey, extra: cache.extra.map(k => ({ ...k })) };
+  if (vendorKeyCacheIsLive(cache, cacheAt, Date.now())) {
+    return cloneBundle(cache!);
   }
   const id = vendorKeysSecretId();
   if (!id) return { groqApiKey: null, extra: [] };
@@ -107,8 +133,14 @@ export async function readVendorKeyBundle(): Promise<VendorKeyBundle> {
       return { groqApiKey: null, extra: [] as VendorExtraKey[] };
     }
   });
-  cache = bundle;
-  return { groqApiKey: bundle.groqApiKey, extra: bundle.extra.map(k => ({ ...k })) };
+  if (bundleIsEmpty(bundle)) {
+    cache = null;
+    cacheAt = 0;
+  } else {
+    cache = bundle;
+    cacheAt = Date.now();
+  }
+  return cloneBundle(bundle);
 }
 
 export async function writeVendorKeyBundle(bundle: VendorKeyBundle): Promise<void> {
@@ -120,6 +152,7 @@ export async function writeVendorKeyBundle(bundle: VendorKeyBundle): Promise<voi
   if (testStore !== undefined) {
     testStore = next;
     cache = next;
+    cacheAt = Date.now();
     return;
   }
   const id = vendorKeysSecretId();
@@ -140,4 +173,5 @@ export async function writeVendorKeyBundle(bundle: VendorKeyBundle): Promise<voi
     );
   });
   cache = next;
+  cacheAt = Date.now();
 }

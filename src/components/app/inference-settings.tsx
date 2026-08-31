@@ -638,13 +638,15 @@ export function InferenceSettings(props: Props) {
                 riskAck={riskAck}
               />
               <p className="text-[0.72rem] text-muted-foreground">
-                Paste a vendor API key. The issuer is detected automatically.
+                Paste a vendor API key. The issuer is detected automatically. A Groq key saved from
+                the voice microphone setup is the same key — it shows here, not only in chat.
               </p>
 
               <ul className="space-y-1.5">
                 {vendorKeys.length === 0 && (
                   <li className="text-[0.68rem] text-foreground/40 px-1 py-2">
-                    No vendor keys stored yet.
+                    No vendor keys stored yet. Keys pasted in voice setup or in this form appear in
+                    this list.
                   </li>
                 )}
                 {vendorKeys.map(k => {
@@ -1549,7 +1551,8 @@ function SupportedVendorsPanel({
   return (
     <ul className="divide-y divide-border rounded-lg border border-border bg-card">
       {WIRED_VENDOR_APIS.map(v => {
-        const configured = keyed(v.kind);
+        const stored = keys.find(k => k.kind === v.kind && (k.status === "ready" || k.status === "stored"));
+        const configured = Boolean(stored) || keyed(v.kind);
         const models = modelCounts[v.kind];
         const open = openKind === v.kind;
         const status = v.kind === "groq"
@@ -1572,9 +1575,19 @@ function SupportedVendorsPanel({
               onClick={() => setOpenKind(open ? null : v.kind)}
               className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-muted/60"
             >
-              <span className="text-[0.8rem] font-medium text-foreground/85">{v.productName}</span>
+              <span className="min-w-0 flex items-baseline gap-2">
+                <span className="text-[0.8rem] font-medium text-foreground/85">{v.productName}</span>
+                {stored?.hint && (
+                  <span
+                    className="font-mono text-[0.58rem] text-foreground/45"
+                    title="Masked key identifier — full secret is never shown"
+                  >
+                    {stored.hint}
+                  </span>
+                )}
+              </span>
               <span className={cn(
-                "text-[0.68rem]",
+                "text-[0.68rem] shrink-0",
                 warn ? "text-amber-200/80" : "text-foreground/45",
               )}>
                 {status}

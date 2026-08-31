@@ -15,13 +15,14 @@ export async function GET(req: NextRequest) {
   try {
     const identity = await getIdentity(req);
     // Chat chrome only needs Groq-key + consent — skip AWS STS / profile probe.
+    const noStore = { headers: { "Cache-Control": "no-store" } };
     if (req.nextUrl.searchParams.get("lite") === "1") {
       const flags = await getVendorConsentFlags();
       return Response.json({
         ...flags,
         role: identity.role,
         canEdit: isAdminRole(identity.role),
-      });
+      }, noStore);
     }
     // "Re-check host" — credentials may have appeared since the last lookup
     // (e.g. the operator just ran `aws sso login`), so skip the detection cache.
@@ -33,7 +34,7 @@ export async function GET(req: NextRequest) {
       ...status,
       role: identity.role,
       canEdit: isAdminRole(identity.role),
-    });
+    }, noStore);
   } catch (err) {
     const res = identityErrorResponse(err);
     if (res) return res;
