@@ -60,4 +60,13 @@ describe("groqVendorStatusLabel", () => {
       catalogErrors: [],
     })).toBe("Key saved · 11 models listed");
   });
+
+  it("stays Not configured until a key is actually stored", () => {
+    expect(groqVendorStatusLabel({
+      riskAck: true,
+      keySaved: false,
+      modelCount: 0,
+      catalogErrors: [],
+    })).toBe("Not configured");
+  });
 });

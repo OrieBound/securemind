@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
       transcribeAvailable: await instanceCanUseBedrock(),
       role: identity.role,
       canEdit: isAdminRole(identity.role),
-    });
+    }, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     const res = identityErrorResponse(err);
     if (res) return res;
