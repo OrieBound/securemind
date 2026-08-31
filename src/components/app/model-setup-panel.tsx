@@ -5,6 +5,7 @@ import { apiAuthHeaders, apiUrl, usesRemoteApi } from "@/lib/client/api-base";
 import { markBedrockHighlight } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
 import { themeForRuntime } from "@/lib/provider-theme";
+import { parseVoiceSttChoice, voiceProviderLabel } from "@/lib/transcribe/backend";
 import type { SettingsSection } from "@/components/app/settings-hub";
 
 export type RuntimeStatusPayload = {
@@ -119,11 +120,9 @@ export function RuntimeStatusBar({
       <Chip
         ok={status.capabilities.voiceStt?.ready === true}
         label={
-          status.capabilities.voiceStt?.provider === "transcribe"
-            ? "Voice · Transcribe"
-            : status.capabilities.voiceStt?.provider === "groq"
-              ? "Voice · Groq"
-              : "Voice"
+          parseVoiceSttChoice(status.capabilities.voiceStt?.provider)
+            ? `Voice · ${voiceProviderLabel(parseVoiceSttChoice(status.capabilities.voiceStt?.provider))}`
+            : "Voice"
         }
       />
     </div>

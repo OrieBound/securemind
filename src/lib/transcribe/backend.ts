@@ -51,6 +51,22 @@ export function transcribeUnavailableMessage(opts: {
   return "Transcription is not available.";
 }
 
+export function voiceProviderLabel(provider: VoiceSttChoice | null | undefined): string {
+  if (provider === "transcribe") return "Amazon Transcribe";
+  if (provider === "groq") return "Groq Whisper";
+  return "Not chosen";
+}
+
+export function voiceProviderDestination(provider: VoiceSttChoice | null | undefined): string {
+  if (provider === "transcribe") {
+    return "Spoken audio goes to Amazon Transcribe in this AWS account. Groq is not used.";
+  }
+  if (provider === "groq") {
+    return "Spoken audio goes to Groq Cloud. Amazon Transcribe is not used.";
+  }
+  return "Choose Groq Whisper or Amazon Transcribe before using the microphone.";
+}
+
 /**
  * How the composer shows words while the mic is open.
  * Amazon Transcribe on hosted Chromium streams partials; Groq (and Transcribe

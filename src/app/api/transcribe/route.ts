@@ -67,9 +67,13 @@ export async function POST(req: NextRequest) {
     const denied = /accessdenied|not authorized|unrecognizedclient/i.test(message);
     return NextResponse.json(
       {
-        error: denied
-          ? "Amazon Transcribe is not permitted for this role yet. Redeploy so the Amplify role includes transcribe:StartStreamTranscription."
-          : "Transcription failed",
+        error:
+          backend === "groq"
+            ? "Groq Whisper could not transcribe that audio."
+            : denied
+              ? "Amazon Transcribe is not permitted for this role yet. Redeploy so the Amplify role includes transcribe:StartStreamTranscription."
+              : "Amazon Transcribe could not transcribe that audio.",
+        provider: backend,
       },
       { status: 500 },
     );
