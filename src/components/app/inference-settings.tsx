@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, Cloud, ExternalLink, HardDrive, LayoutList, RefreshCw, Shield, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ChevronDown, Cloud, ExternalLink, HardDrive, LayoutList, Mic, RefreshCw, Shield, SlidersHorizontal, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SelectMenu } from "@/components/ui/select-menu";
 import {
@@ -20,6 +20,12 @@ import {
   GROQ_VPN_SETTINGS_NOTE,
 } from "@/lib/models/groq-connectivity";
 import { consumeBedrockHighlight, HIGHLIGHT_BEDROCK_KEY } from "@/lib/onboarding";
+import { VoiceSttSetupDialog } from "@/components/app/voice-stt-setup";
+import {
+  voiceProviderDestination,
+  voiceProviderLabel,
+  type VoiceSttChoice,
+} from "@/lib/transcribe/backend";
 import type { RuntimeEdition } from "@/lib/runtime-env";
 import {
   detectProviderKey,
@@ -79,6 +85,7 @@ type ProviderStatus = {
   bedrockRegion: string | null;
   bedrockChatModel: string | null;
   externalRiskAckAt: string | null;
+  voiceSttChoice?: VoiceSttChoice | null;
   canEdit: boolean;
   role: "super_admin" | "admin" | "member";
   aws: AwsStatus;
@@ -110,7 +117,7 @@ function isVendorCatalog(catalog: KeyInventoryItem["catalog"]): catalog is Vendo
   );
 }
 
-type SettingsModuleId = "tiers" | "vendor" | "bedrock" | "local" | "models";
+type SettingsModuleId = "tiers" | "vendor" | "bedrock" | "local" | "models" | "voice";
 
 export function InferenceSettings(props: Props) {
   const page = props.page;
@@ -148,6 +155,7 @@ export function InferenceSettings(props: Props) {
   const [keyDraft, setKeyDraft] = useState("");
   const [keyRegion, setKeyRegion] = useState("us-east-1");
   const [keyLabel, setKeyLabel] = useState("");
+  const [voiceSetupOpen, setVoiceSetupOpen] = useState(false);
 
   const detection = useMemo(() => detectProviderKey(keyDraft), [keyDraft]);
   const rejected = isRejectedKeyKind(detection.kind);
@@ -276,6 +284,10 @@ export function InferenceSettings(props: Props) {
           await refresh({ module: id, providers: true, catalog: true, recheckAws: false });
           await sharedCatalog.refresh();
           setNote("Local models refreshed");
+          break;
+        case "voice":
+          await refresh({ module: id, providers: true, catalog: false, recheckAws: false });
+          setNote("Voice transcription refreshed");
           break;
         case "tiers":
         case "models":
@@ -854,6 +866,55 @@ export function InferenceSettings(props: Props) {
         </div>
       </SettingsModule>
 
+      <SettingsModule
+        id="voice"
+        className="order-3"
+        open={openModule === "voice"}
+        onToggle={() => toggleModule("voice")}
+        onRefresh={() => void refreshModule("voice")}
+        refreshing={refreshingModule === "voice"}
+        icon={<Mic className="size-4 text-foreground/55" aria-hidden />}
+        title="Voice transcription"
+        subtitle={voiceProviderDestination(status.voiceSttChoice)}
+        badge={
+          <ModuleBadge tone={status.voiceSttChoice ? "ok" : "warn"}>
+            {voiceProviderLabel(status.voiceSttChoice)}
+          </ModuleBadge>
+        }
+        theme={CATALOG_THEME}
+      >
+        <div className="space-y-3">
+          {status.voiceSttChoice === "groq" && (
+            <p className="text-[0.75rem] text-foreground/70 leading-relaxed">
+              Microphone audio is sent to <span className="font-medium text-foreground/85">Groq Whisper</span>.
+              Amazon Transcribe is not called for voice.
+            </p>
+          )}
+          {status.voiceSttChoice === "transcribe" && (
+            <p className="text-[0.75rem] text-foreground/70 leading-relaxed">
+              Microphone audio is sent to{" "}
+              <span className="font-medium text-foreground/85">Amazon Transcribe</span> in this AWS
+              account. Groq is not called for voice.
+            </p>
+          )}
+          {!status.voiceSttChoice && (
+            <p className="text-[0.75rem] text-foreground/60 leading-relaxed">
+              The first microphone use asks you to pick Groq Whisper or Amazon Transcribe. Only the
+              one you pick receives spoken audio.
+            </p>
+          )}
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => setVoiceSetupOpen(true)}
+              className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-[0.75rem] font-semibold border border-[var(--border-strong)] bg-muted text-foreground/80 hover:bg-[var(--surface-hover)]"
+            >
+              {status.voiceSttChoice ? "Change voice provider" : "Choose voice provider"}
+            </button>
+          )}
+        </div>
+      </SettingsModule>
+
       {!hosted && (
       <SettingsModule
         id="local"
@@ -1028,6 +1089,16 @@ export function InferenceSettings(props: Props) {
       )}
 
       {note && <p className="text-[0.68rem] text-indigo-200/80 px-0.5">{note}</p>}
+
+      <VoiceSttSetupDialog
+        open={voiceSetupOpen}
+        onClose={() => setVoiceSetupOpen(false)}
+        onSaved={async () => {
+          setVoiceSetupOpen(false);
+          await refresh({ providers: true, catalog: false });
+          onProvidersChanged?.();
+        }}
+      />
     </div>
   );
 }

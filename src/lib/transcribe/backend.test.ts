@@ -4,6 +4,8 @@ import {
   pickTranscribeBackend,
   transcribeUnavailableMessage,
   voiceCaptionMode,
+  voiceProviderDestination,
+  voiceProviderLabel,
 } from "./backend";
 import { encodePcm16Wav, pcmFromWav } from "./pcm-wav";
 
@@ -157,6 +159,15 @@ describe("voiceCaptionMode", () => {
         livePcmSupported: false,
       }),
     ).toBe("chunked-preview");
+  });
+});
+
+describe("voiceProviderLabel", () => {
+  it("names the chosen vendor without implying the other", () => {
+    expect(voiceProviderLabel("groq")).toBe("Groq Whisper");
+    expect(voiceProviderDestination("groq")).toMatch(/Amazon Transcribe is not used/);
+    expect(voiceProviderLabel("transcribe")).toBe("Amazon Transcribe");
+    expect(voiceProviderDestination("transcribe")).toMatch(/Groq is not used/);
   });
 });
 

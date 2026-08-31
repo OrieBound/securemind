@@ -67,7 +67,7 @@ import {
   supportsLivePcmUpload,
   type CloudLiveSttHandle,
 } from "@/lib/transcribe/live-client";
-import { voiceCaptionMode } from "@/lib/transcribe/backend";
+import { parseVoiceSttChoice, voiceCaptionMode, voiceProviderDestination, voiceProviderLabel } from "@/lib/transcribe/backend";
 import {
   ModelSetupPanel,
   RuntimeStatusBar,
@@ -2042,6 +2042,7 @@ function VoiceBar({
   liveText,
   previewPending,
   error,
+  provider,
   onCancel,
   onConfirm,
 }: {
@@ -2051,6 +2052,7 @@ function VoiceBar({
   liveText: { final: string; interim: string };
   previewPending: boolean;
   error: string | null;
+  provider: "groq" | "transcribe" | null;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -2070,6 +2072,14 @@ function VoiceBar({
 
   return (
     <div className="flex flex-col px-4 pt-3 pb-2 gap-2.5">
+      <div className="space-y-0.5">
+        <p className="text-[0.72rem] font-semibold text-foreground/85">
+          {voiceProviderLabel(provider)}
+        </p>
+        <p className="text-[0.62rem] text-foreground/45 leading-snug">
+          {voiceProviderDestination(provider)}
+        </p>
+      </div>
       {showCaptions && (
         <div
           ref={transcriptRef}
@@ -7282,6 +7292,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                       liveText={liveText}
                       previewPending={previewPending}
                       error={voiceError}
+                      provider={parseVoiceSttChoice(runtimeStatus?.capabilities.voiceStt?.provider)}
                       onCancel={cancelVoice}
                       onConfirm={confirmVoice}
                     />
@@ -7301,9 +7312,11 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                       inferenceReady
                       voiceReady
                       voiceTitle={
-                        runtimeStatus?.capabilities.voiceStt?.ready
-                          ? "Dictate a message"
-                          : "Set up voice transcription"
+                        parseVoiceSttChoice(runtimeStatus?.capabilities.voiceStt?.provider) === "transcribe"
+                          ? "Dictate with Amazon Transcribe"
+                          : parseVoiceSttChoice(runtimeStatus?.capabilities.voiceStt?.provider) === "groq"
+                            ? "Dictate with Groq Whisper"
+                            : "Set up voice transcription"
                       }
                       voiceBlockedReason={runtimeStatus?.capabilities.voiceStt?.note}
                       voiceInsert={voiceComposerInsert}
