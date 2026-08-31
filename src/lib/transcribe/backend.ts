@@ -50,3 +50,23 @@ export function transcribeUnavailableMessage(opts: {
   }
   return "Transcription is not available.";
 }
+
+/**
+ * How the composer shows words while the mic is open.
+ * Amazon Transcribe on hosted Chromium streams partials; Groq (and Transcribe
+ * fallback) periodically transcribes the growing recording. Done always runs a
+ * final pass into the composer — that text can differ slightly from the preview.
+ */
+export type VoiceCaptionMode = "pcm-stream" | "chunked-preview";
+
+export function voiceCaptionMode(opts: {
+  edition: "local" | "cloud";
+  provider: VoiceSttChoice | null | undefined;
+  livePcmSupported: boolean;
+}): VoiceCaptionMode | null {
+  if (opts.provider !== "groq" && opts.provider !== "transcribe") return null;
+  if (opts.provider === "transcribe" && opts.edition === "cloud" && opts.livePcmSupported) {
+    return "pcm-stream";
+  }
+  return "chunked-preview";
+}

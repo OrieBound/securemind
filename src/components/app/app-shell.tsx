@@ -67,6 +67,7 @@ import {
   supportsLivePcmUpload,
   type CloudLiveSttHandle,
 } from "@/lib/transcribe/live-client";
+import { voiceCaptionMode } from "@/lib/transcribe/backend";
 import {
   ModelSetupPanel,
   RuntimeStatusBar,
@@ -2058,6 +2059,7 @@ function VoiceBar({
   const isListening = state === "listening";
   const isTranscribing = state === "transcribing";
   const displayText = (liveText.final + liveText.interim).trim();
+  const showCaptions = isListening || (isTranscribing && Boolean(displayText));
 
   const transcriptRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -2068,7 +2070,7 @@ function VoiceBar({
 
   return (
     <div className="flex flex-col px-4 pt-3 pb-2 gap-2.5">
-      {isListening && (
+      {showCaptions && (
         <div
           ref={transcriptRef}
           className="min-h-[52px] max-h-[80px] overflow-y-auto text-sm leading-relaxed"
@@ -2077,7 +2079,7 @@ function VoiceBar({
             <p className="italic">
               <span className="text-foreground/40">{liveText.final}</span>
               <span className="text-foreground/28">{liveText.interim}</span>
-              {previewPending && (
+              {(previewPending || isTranscribing) && (
                 <span className="inline-block ml-1.5 size-1.5 rounded-full bg-foreground/25 animate-pulse align-middle not-italic" />
               )}
             </p>
@@ -2090,10 +2092,10 @@ function VoiceBar({
       )}
 
       {isTranscribing && (
-        <div className="min-h-[52px] flex items-center justify-between gap-3">
+        <div className={cn("flex items-center justify-between gap-3", displayText ? "min-h-0" : "min-h-[52px]")}>
           <div className="flex items-center gap-2 text-sm text-foreground/40 min-w-0">
             <Loader2 className="size-4 animate-spin text-indigo-400/70 shrink-0" />
-            Transcribing…
+            {displayText ? "Finalizing transcription…" : "Transcribing…"}
           </div>
           <button
             type="button"
@@ -3457,7 +3459,6 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   }, []);
 
   const runLivePreview = useCallback(async () => {
-    if (runtimeStatus?.edition === "cloud") return;
     if (voiceStateRef.current !== "listening" || previewBusyRef.current) return;
     const chunks = audioChunksRef.current;
     if (chunks.length === 0) return;
@@ -3469,8 +3470,19 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     previewBusyRef.current = true;
     setPreviewPending(true);
     try {
+      const provider = runtimeStatusRef.current?.capabilities.voiceStt?.provider;
+      let payload: Blob = blob;
+      let filename = "preview.webm";
+      if (provider === "transcribe") {
+        try {
+          payload = await recordingToWav(blob);
+          filename = "preview.wav";
+        } catch {
+          return;
+        }
+      }
       const fd = new FormData();
-      fd.append("audio", blob, "preview.webm");
+      fd.append("audio", payload, filename);
       const res = await fetch("/api/transcribe", { method: "POST", body: fd });
       if (res.ok && voiceStateRef.current === "listening") {
         const { text } = await res.json() as { text: string };
@@ -3481,7 +3493,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
         }
       }
     } catch {
-      /* local Groq preview is best-effort */
+      /* live preview is best-effort — Done still runs a final pass */
     } finally {
       previewBusyRef.current = false;
       if (voiceStateRef.current === "listening") {
@@ -3493,18 +3505,17 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
         }
       }
     }
-  }, [runtimeStatus?.edition]);
+  }, []);
   runLivePreviewRef.current = runLivePreview;
 
   const scheduleLivePreview = useCallback(() => {
-    if (runtimeStatus?.edition === "cloud") return;
     if (voiceStateRef.current !== "listening") return;
     if (previewDebounceRef.current !== null) clearTimeout(previewDebounceRef.current);
     previewDebounceRef.current = setTimeout(() => {
       previewDebounceRef.current = null;
       runLivePreviewRef.current();
     }, 300);
-  }, [runtimeStatus?.edition]);
+  }, []);
 
   const startVoice = useCallback(async () => {
     const stt = runtimeStatusRef.current?.capabilities.voiceStt;
@@ -3590,14 +3601,13 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     setLiveText({ final: "", interim: "" });
     setPreviewPending(false);
     const sttNow = runtimeStatusRef.current;
-    const isCloud = sttNow?.edition === "cloud";
-    const useLiveTranscribe =
-      isCloud &&
-      sttNow?.capabilities.voiceStt?.provider === "transcribe" &&
-      Boolean(audioCtxRef.current) &&
-      supportsLivePcmUpload();
+    const captionMode = voiceCaptionMode({
+      edition: sttNow?.edition === "cloud" ? "cloud" : "local",
+      provider: sttNow?.capabilities.voiceStt?.provider ?? null,
+      livePcmSupported: Boolean(audioCtxRef.current) && supportsLivePcmUpload(),
+    });
 
-    if (useLiveTranscribe && audioCtxRef.current) {
+    if (captionMode === "pcm-stream" && audioCtxRef.current) {
       setPreviewPending(true);
       cloudLiveRef.current = startCloudLiveStt({
         ctx: audioCtxRef.current,
@@ -3608,7 +3618,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
           setLiveText({ final: stable, interim });
         },
       });
-    } else if (!isCloud) {
+    } else if (captionMode === "chunked-preview") {
       lastPreviewBytesRef.current = 0;
       setTimeout(() => { runLivePreviewRef.current(); }, 900);
       previewIntervalRef.current = setInterval(() => runLivePreviewRef.current(), 2000);

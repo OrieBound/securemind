@@ -119,7 +119,9 @@ export function VoiceSttSetupDialog({
             </h2>
             <p className="text-sm text-foreground/50 mt-1.5 leading-relaxed">
               Voice does not run until you pick one. This is not the chat model — it is speech-to-text
-              only.
+              only. While you speak, a live preview appears above the waveform. Done writes a final
+              transcript into the composer (it can differ slightly from the preview). Send still waits
+              for you.
             </p>
           </div>
         </div>
