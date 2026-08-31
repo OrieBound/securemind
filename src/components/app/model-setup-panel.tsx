@@ -5,7 +5,7 @@ import { apiAuthHeaders, apiUrl, usesRemoteApi } from "@/lib/client/api-base";
 import { markBedrockHighlight } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
 import { themeForRuntime } from "@/lib/provider-theme";
-import { parseVoiceSttChoice, voiceProviderLabel } from "@/lib/transcribe/backend";
+import { parseVoiceSttChoice, voiceProviderLabel, type VoiceSttChoice } from "@/lib/transcribe/backend";
 import type { SettingsSection } from "@/components/app/settings-hub";
 
 export type RuntimeStatusPayload = {
@@ -18,8 +18,8 @@ export type RuntimeStatusPayload = {
     imageOcr: { ready: boolean; sendsPixelsOffHost: boolean; note: string };
     voiceStt?: {
       ready: boolean;
-      provider: string | null;
-      choice?: string | null;
+      provider: VoiceSttChoice | null;
+      choice?: VoiceSttChoice | null;
       note: string;
     };
     embeddings: { ready: boolean; provider: string | null };
