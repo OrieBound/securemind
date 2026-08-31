@@ -146,6 +146,8 @@ These are **risk-reduction** controls, not a security or compliance guarantee. D
 | 2026-08-30 | Documents / Cost / Insights: “Restart the dev server after schema changes” on Amplify | Live UI still ran Prisma against Postgres. Hosted has **no** Postgres. App records (workspaces, Knowledge, Insights, memory, profile) belong on DynamoDB. Laptop code now maps them; **not live until deploy**. Retry does nothing until that build ships. |
 | 2026-08-30 | Wizard offered Neon and Aurora on cloud | Those were preference-only and never a data plane. Cloud is **DynamoDB only** (everything on one store). Local stays Postgres + pgvector. Neon/Aurora parked as a possible later **all-SQL** path — not mixed with Dynamo. |
 | 2026-08-30 | Image Knowledge seemed to need Groq | Groq is optional BYOK. Hosted image extract uses Bedrock (Nova Lite). Original files are not stored on the hosted install — only extracted, scanned text. |
+| 2026-08-30 | “Cloud is Dynamo” applied to keys and (wrongly) to passwords | Dynamo = app data only. Vendor API keys → Secrets Manager. Login passwords stay in Cognito (hashed), not SM or Dynamo. AWS access stays on the IAM role. |
+| 2026-08-30 | Terraform apply failed on Amplify vendor-keys IAM `count` | New Secrets Manager ARN is unknown at plan. Always attach the policy. |
 
 Production is a **second stack** in `your-aws-profile`, not a retarget of sandbox.
 
@@ -156,5 +158,5 @@ Production is a **second stack** in `your-aws-profile`, not a retarget of sandbo
 - [`docs/adr/0002-storage-choice.md`](docs/adr/0002-storage-choice.md) — local Postgres + pgvector; hosted AWS superseded by ADR 0007 (DynamoDB)
 - [`docs/adr/0003-local-aws-scaffolding.md`](docs/adr/0003-local-aws-scaffolding.md) — Floci + Compose
 - [`docs/adr/0004-amplify-lambda-hosting.md`](docs/adr/0004-amplify-lambda-hosting.md) — Amplify UI + API Gateway + Lambda
-- [`docs/deploy/hosted-sandbox-roadblocks.md`](docs/deploy/hosted-sandbox-roadblocks.md) — dated sandbox timeline: OIDC, Amplify 220 MB, HTTP 500, empty Cognito pool, hosted Dynamo mapping (2026-08-30)
+- [`docs/deploy/hosted-sandbox-roadblocks.md`](docs/deploy/hosted-sandbox-roadblocks.md) — dated sandbox timeline: OIDC, Amplify 220 MB, HTTP 500, empty Cognito pool, hosted Dynamo mapping, secrets vs data (2026-08-30)
 - [`AGENTS.md`](AGENTS.md) — rules for agents working in this repo

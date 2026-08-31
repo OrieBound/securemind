@@ -10,7 +10,7 @@ IaC and IAM layers: [infra/README.md](../../infra/README.md). Hosting decision: 
 
 ## Timeline
 
-Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first returned the error. Items 1–7 were the August 2026 apply campaign (jobs 1–7 failed). Items 8–10 are 2026-08-29. Items 11–13 are 2026-08-30 (in-repo; live Amplify until the next deploy still shows older API errors).
+Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first returned the error. Items 1–7 were the August 2026 apply campaign (jobs 1–7 failed). Items 8–10 are 2026-08-29. Items 11–13 are 2026-08-30 (hosted Dynamo mapping). Item 14 is secrets vs Dynamo. Item 15 is Terraform `count` on a new Secrets Manager ARN.
 
 | Date | # | Hurdle | Outcome |
 |------|---|--------|---------|
@@ -27,8 +27,10 @@ Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first r
 | 2026-08-30 | 11 | Documents / Cost / Insights 500 with “restart after schema changes” | Prisma on Amplify with no Postgres. Map hosted app data to DynamoDB (`app#userId`). |
 | 2026-08-30 | 12 | Wizard listed Neon and Aurora on cloud | Preference-only, never provisioned. Cloud store = DynamoDB only. Park SQL as a future all-SQL path. |
 | 2026-08-30 | 13 | Image Knowledge treated Groq as required | Groq is optional BYOK. Hosted vision extract = Bedrock. No original files on hosted. |
+| 2026-08-30 | 14 | Vendor keys in Dynamo because “cloud is Dynamo” | App data ≠ secrets. Keys → Secrets Manager. Login passwords stay in Cognito (hashed), not SM or Dynamo. |
+| 2026-08-30 | 15 | Terraform apply: `count` on Amplify vendor-keys IAM | New secret ARN is unknown at plan. Always attach the policy; do not `count` on the ARN. |
 
-**As of 2026-08-30:** live UI `https://main.<app-id>.amplifyapp.com/` can still show item 11 until this mapping is committed and Amplify rebuilds. Chat/warm stay on API Gateway; remaining `/api/*` still run as Amplify Next until ADR 0004 is finished.
+**As of 2026-08-30:** `dc18b17` is on `main` (vendor-keys SM + voice STT chooser). Live UI is still the previous Amplify job until Actions Terraform apply + Amplify SUCCEED.
 
 ---
 
@@ -164,6 +166,33 @@ We did **not** delete `/api/workspaces` or `/api/documents` from the Amplify app
 
 **Fix:** Hosted image extract uses Bedrock (Nova Lite) when billable AWS is on. Groq remains optional BYOK. Pixels still leave the host to the vision provider; extracted text is scanned before storage.
 
+### 14. Dynamo is the data plane, not the secret store (2026-08-30)
+
+**Symptom:** Hosted design said “everything is DynamoDB,” so Admin-pasted Groq (and other vendor) keys sat on InstanceConfig next to workspaces and settings. Easy to assume login passwords belonged there too.
+
+**Cause:** Dynamo is the right store for **app records**. It is the wrong store for **secrets**. Encrypted-at-rest in the same item as config is still a secret beside data. Login passwords were never in Dynamo — Cognito stores a **hash**. Putting the real password in Secrets Manager would be worse than Cognito (recoverable secret vs hash). AWS access keys stay on the IAM role, never in the app.
+
+**Fix:** Split by kind:
+
+| Kind | Where |
+|------|--------|
+| Workspaces, Knowledge, memory, Insights, non-secret settings | DynamoDB |
+| Admin-pasted vendor API keys (Groq, Google, OpenAI, Anthropic) | Secrets Manager `securemind/<env>/vendor-keys` |
+| Sign-in email / password | Cognito (hashed) |
+| AWS account access | IAM role — never stored |
+
+Pushed on `main` (`dc18b17`). Live site still writes keys to Dynamo until Terraform creates that secret, IAM allows Get/Put, and Amplify rebuilds with `VENDOR_KEYS_SECRET_ARN`.
+
+### 15. Amplify vendor-keys IAM `count` blocked apply (2026-08-30)
+
+**Symptom:** GitHub Actions `terraform apply` planned the new `securemind/sandbox/vendor-keys` secret, then failed:
+
+`Invalid count argument` on `module.amplify.aws_iam_role_policy.amplify_vendor_keys` (`var.vendor_keys_secret_arn != "" ? 1 : 0`).
+
+**Cause:** That ARN comes from a resource created in the **same** apply, so it is `(known after apply)`. Terraform `count` must be known at plan time.
+
+**Fix:** Always attach the Amplify Get/Put policy. The secret is always created; do not gate the policy on the ARN string.
+
 ---
 
 ## Roadmap (hosted)
@@ -173,7 +202,8 @@ What is decided vs still leftover:
 | Now | Later |
 |-----|--------|
 | Local = Postgres + pgvector | — |
-| Cloud = DynamoDB for **all** app data (workspaces, chat, Knowledge, memory, Insights) | Finish ADR 0004: remaining `/api/*` off Amplify onto API Gateway + Lambda |
+| Cloud = DynamoDB for **app data** only (workspaces, chat, Knowledge, memory, Insights) | Finish ADR 0004: remaining `/api/*` off Amplify onto API Gateway + Lambda |
+| Vendor keys → Secrets Manager; passwords → Cognito; AWS access → IAM | Same |
 | Chat/warm already on API Gateway (streaming) | Same |
 | Neon / Aurora | Optional future **all-SQL** cloud path if we ever want it — not mixed with Dynamo |
 | Original files off hosted | Revisit S3 only if we deliberately keep binaries |
