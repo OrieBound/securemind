@@ -13,6 +13,11 @@ import { hostedInstanceConfig } from "@/lib/instance-config-hosted";
 import type { WizardStorageChoice } from "@/lib/wizard-storage";
 import { decryptSecret, encryptSecret } from "@/lib/secret-at-rest";
 import {
+  readVendorKeyBundle,
+  writeVendorKeyBundle,
+  type VendorExtraKey,
+} from "@/lib/vendor-key-store";
+import {
   detectProviderKey,
   kindDisplayName,
   type DetectedKeyKind,
@@ -25,6 +30,10 @@ import {
 } from "@/lib/aws-credentials";
 import { invalidateModelCatalogCache } from "@/lib/models/catalog";
 import { catalogKindForDetectedKind, isWiredVendorKind } from "@/lib/vendor-providers";
+import {
+  parseVoiceSttChoice,
+  type VoiceSttChoice,
+} from "@/lib/transcribe/backend";
 
 export type PrimaryProvider = "auto" | "groq" | "bedrock" | "ollama";
 
@@ -50,6 +59,8 @@ export type InstanceConfigRow = {
   setupCompletedAt: Date | null;
   setupClaimUsedAt: Date | null;
   storageBackend: string | null;
+  voiceSttChoice: string | null;
+  voiceSttAudioAckAt: Date | null;
   updatedAt: Date;
   updatedByUserId: string | null;
 };
@@ -80,6 +91,8 @@ export type PublicProviderStatus = {
   bedrockRegion: string | null;
   bedrockChatModel: string | null;
   externalRiskAckAt: string | null;
+  voiceSttChoice: VoiceSttChoice | null;
+  voiceSttAudioAckAt: string | null;
   updatedAt: string | null;
   /** Environment-derived AWS credential status (never includes a secret). */
   aws: AwsCredentialStatus;
@@ -152,7 +165,35 @@ export async function getInstanceConfig(): Promise<InstanceConfigRow | null> {
   if (isHostedRuntime()) {
     try {
       const row = await hostedInstanceConfig().get();
-      return row ? decryptConfigRow(row) : null;
+      if (!row) return null;
+      const decrypted = decryptConfigRow(row);
+      const bundle = await readVendorKeyBundle();
+      const leftoverExtras = parseExtraKeys(decrypted.extraProviderKeys);
+      const leftoverGroq = decrypted.groqApiKey?.trim() || null;
+      const leftoverHas = Boolean(leftoverGroq) || leftoverExtras.length > 0;
+      const smEmpty = !bundle.groqApiKey && bundle.extra.length === 0;
+      let keys = bundle;
+      if (smEmpty && leftoverHas) {
+        try {
+          await writeVendorKeyBundle({
+            groqApiKey: leftoverGroq,
+            extra: leftoverExtras as VendorExtraKey[],
+          });
+          keys = { groqApiKey: leftoverGroq, extra: leftoverExtras };
+          await hostedInstanceConfig().merge({ groqApiKey: null, extraProviderKeys: null });
+        } catch {
+          keys = { groqApiKey: leftoverGroq, extra: leftoverExtras };
+        }
+      } else {
+        if (row.groqApiKey || row.extraProviderKeys) {
+          await hostedInstanceConfig().merge({ groqApiKey: null, extraProviderKeys: null });
+        }
+      }
+      return {
+        ...decrypted,
+        groqApiKey: keys.groqApiKey,
+        extraProviderKeys: keys.extra,
+      };
     } catch {
       return null;
     }
@@ -170,7 +211,7 @@ export async function ensureInstanceConfig(): Promise<InstanceConfigRow> {
   if (existing) return existing;
   if (isHostedRuntime()) {
     const row = await hostedInstanceConfig().ensure();
-    return decryptConfigRow(row);
+    return (await getInstanceConfig()) ?? decryptConfigRow(row);
   }
   return db.instanceConfig.create({
     data: { id: "singleton", primaryProvider: "auto" },
@@ -340,12 +381,18 @@ export async function getVendorConsentFlags(): Promise<{
   hasGroqKey: boolean;
   hasEnvGroqKey: boolean;
   externalRiskAckAt: string | null;
+  voiceSttChoice: VoiceSttChoice | null;
+  voiceSttAudioAckAt: string | null;
+  allowRealAws: boolean;
 }> {
   const row = await getInstanceConfig();
   return {
     hasGroqKey: Boolean(row?.groqApiKey?.trim()),
     hasEnvGroqKey: Boolean(process.env.GROQ_API_KEY?.trim()),
     externalRiskAckAt: row?.externalRiskAckAt?.toISOString() ?? null,
+    voiceSttChoice: parseVoiceSttChoice(row?.voiceSttChoice),
+    voiceSttAudioAckAt: row?.voiceSttAudioAckAt?.toISOString() ?? null,
+    allowRealAws: Boolean(row?.allowRealAws),
   };
 }
 
@@ -364,6 +411,8 @@ export async function getPublicProviderStatus(): Promise<PublicProviderStatus> {
     bedrockRegion: row?.bedrockRegion ?? aws.region,
     bedrockChatModel: row?.bedrockChatModel ?? process.env.BEDROCK_CHAT_MODEL ?? null,
     externalRiskAckAt: row?.externalRiskAckAt?.toISOString() ?? null,
+    voiceSttChoice: parseVoiceSttChoice(row?.voiceSttChoice),
+    voiceSttAudioAckAt: row?.voiceSttAudioAckAt?.toISOString() ?? null,
     updatedAt: row?.updatedAt?.toISOString() ?? null,
     aws,
     keys: buildKeyInventory(row, aws),
@@ -382,6 +431,10 @@ export type ProviderPatch = {
   bedrockChatModel?: string | null;
   /** true → stamp ack; false → clear (revokes vendor-API consent). Bedrock uses allowRealAws. */
   acknowledgeExternalRisk?: boolean;
+  /** Opt-in STT vendor. Null clears the choice (transcription stays off). */
+  voiceSttChoice?: VoiceSttChoice | null;
+  /** Spoken audio leaves this host to the STT vendor before any text redaction. */
+  acknowledgeVoiceAudio?: boolean;
   /** Unified add-key payload (Admin). AWS credentials are refused here. */
   addKey?: {
     secret: string;
@@ -402,9 +455,12 @@ export async function patchInstanceConfig(
   const data: Record<string, unknown> = { updatedByUserId };
 
   if (patch.primaryProvider) data.primaryProvider = patch.primaryProvider;
-  if (patch.clearGroqApiKey) data.groqApiKey = null;
-  else if (typeof patch.groqApiKey === "string" && patch.groqApiKey.trim()) {
-    data.groqApiKey = encryptSecret(patch.groqApiKey.trim());
+  const hostedKeys = isHostedRuntime();
+  if (!hostedKeys) {
+    if (patch.clearGroqApiKey) data.groqApiKey = null;
+    else if (typeof patch.groqApiKey === "string" && patch.groqApiKey.trim()) {
+      data.groqApiKey = encryptSecret(patch.groqApiKey.trim());
+    }
   }
   if (patch.awsProfile !== undefined) {
     data.awsProfile = patch.awsProfile?.trim() || null;
@@ -422,6 +478,27 @@ export async function patchInstanceConfig(
     data.externalRiskAckAt = new Date();
   } else if (patch.acknowledgeExternalRisk === false) {
     data.externalRiskAckAt = null;
+  }
+  if (patch.acknowledgeVoiceAudio === true) {
+    data.voiceSttAudioAckAt = new Date();
+  }
+  if (patch.voiceSttChoice !== undefined) {
+    if (patch.voiceSttChoice === null) {
+      data.voiceSttChoice = null;
+    } else {
+      const choice = parseVoiceSttChoice(patch.voiceSttChoice);
+      if (!choice) {
+        throw new ProviderConfigError("Transcription provider must be groq or transcribe.");
+      }
+      const audioAcked =
+        patch.acknowledgeVoiceAudio === true || Boolean(existing?.voiceSttAudioAckAt);
+      if (!audioAcked) {
+        throw new ProviderConfigError(
+          "Confirm that spoken audio is sent to the transcription vendor before any redaction.",
+        );
+      }
+      data.voiceSttChoice = choice;
+    }
   }
 
   if (patch.addKey?.secret?.trim()) {
@@ -447,8 +524,8 @@ export async function patchInstanceConfig(
     }
 
     if (kind === "groq") {
-      data.groqApiKey = encryptSecret(secret);
-    } else {
+      if (!hostedKeys) data.groqApiKey = encryptSecret(secret);
+    } else if (!hostedKeys) {
       const extras = parseExtraKeys(existing?.extraProviderKeys);
       extras.push({
         id: crypto.randomUUID(),
@@ -462,7 +539,7 @@ export async function patchInstanceConfig(
     }
   }
 
-  if (patch.removeKeyId) {
+  if (patch.removeKeyId && !hostedKeys) {
     if (patch.removeKeyId === "groq-instance") {
       data.groqApiKey = null;
     } else if (patch.removeKeyId.startsWith("extra:")) {
@@ -470,6 +547,45 @@ export async function patchInstanceConfig(
       data.extraProviderKeys = parseExtraKeys(existing?.extraProviderKeys)
         .filter(k => k.id !== id)
         .map(k => ({ ...k, secret: encryptSecret(k.secret) ?? k.secret }));
+    }
+  }
+
+  if (hostedKeys) {
+    const touchesKeys =
+      patch.clearGroqApiKey === true ||
+      (typeof patch.groqApiKey === "string" && Boolean(patch.groqApiKey.trim())) ||
+      Boolean(patch.addKey?.secret?.trim()) ||
+      Boolean(patch.removeKeyId);
+    if (touchesKeys) {
+      let groq = existing?.groqApiKey?.trim() || null;
+      let extras = parseExtraKeys(existing?.extraProviderKeys) as VendorExtraKey[];
+      if (patch.clearGroqApiKey || patch.removeKeyId === "groq-instance") groq = null;
+      else if (typeof patch.groqApiKey === "string" && patch.groqApiKey.trim()) {
+        groq = patch.groqApiKey.trim();
+      }
+      if (patch.addKey?.secret?.trim()) {
+        const secret = patch.addKey.secret.trim();
+        const detected = detectProviderKey(secret);
+        const kind = patch.addKey.kind ?? detected.kind;
+        if (kind === "groq") groq = secret;
+        else {
+          extras.push({
+            id: crypto.randomUUID(),
+            kind,
+            label: patch.addKey.label?.trim() || kindDisplayName(kind),
+            secret,
+            region: patch.addKey.region?.trim() || null,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      }
+      if (patch.removeKeyId?.startsWith("extra:")) {
+        const id = patch.removeKeyId.slice("extra:".length);
+        extras = extras.filter(k => k.id !== id);
+      }
+      await writeVendorKeyBundle({ groqApiKey: groq, extra: extras });
+      data.groqApiKey = null;
+      data.extraProviderKeys = null;
     }
   }
 
@@ -500,6 +616,8 @@ export async function resolveRuntimeSecrets(): Promise<{
   bedrockRegion: string;
   bedrockChatModel: string | null;
   externalRiskAcknowledged: boolean;
+  voiceSttChoice: VoiceSttChoice | null;
+  voiceSttAudioAcked: boolean;
 }> {
   const row = await getInstanceConfig();
   const primary = (row?.primaryProvider ?? "auto") as PrimaryProvider;
@@ -508,7 +626,7 @@ export async function resolveRuntimeSecrets(): Promise<{
       ? primary
       : "auto",
     groqApiKey: row?.groqApiKey?.trim() || process.env.GROQ_API_KEY?.trim() || null,
-    /** Admin-pasted key only — hosted installs must not treat env/SM Groq as a silent default. */
+    /** Admin-pasted key only (hosted: Secrets Manager vendor-keys overlay). Not the deploy-time GROQ_SECRET_ARN default. */
     instanceGroqApiKey: row?.groqApiKey?.trim() || null,
     bedrockRegion:
       row?.bedrockRegion?.trim() ||
@@ -518,6 +636,8 @@ export async function resolveRuntimeSecrets(): Promise<{
     bedrockChatModel:
       row?.bedrockChatModel?.trim() || process.env.BEDROCK_CHAT_MODEL || null,
     externalRiskAcknowledged: Boolean(row?.externalRiskAckAt),
+    voiceSttChoice: parseVoiceSttChoice(row?.voiceSttChoice),
+    voiceSttAudioAcked: Boolean(row?.voiceSttAudioAckAt),
   };
 }
 

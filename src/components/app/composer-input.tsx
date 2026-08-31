@@ -65,6 +65,10 @@ type ComposerInputProps = {
   onVoiceInsertApplied?: () => void;
   /** Optional: pre-wake API when the user focuses the composer */
   onComposerFocus?: () => void;
+  /** Speech-to-text is configured, or the mic should open setup. */
+  voiceReady?: boolean;
+  voiceBlockedReason?: string;
+  voiceTitle?: string;
 };
 
 export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputProps>(
@@ -81,6 +85,9 @@ export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputP
       voiceInsert,
       onVoiceInsertApplied,
       onComposerFocus,
+      voiceReady = true,
+      voiceBlockedReason,
+      voiceTitle,
     },
     ref,
   ) {
@@ -159,12 +166,13 @@ export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputP
         <button
           type="button"
           onClick={onStartVoice}
-          aria-label="Voice input"
-          disabled={isStreaming || !inferenceReady}
+          aria-label={voiceTitle ?? (voiceReady ? "Voice input" : (voiceBlockedReason ?? "Voice input unavailable"))}
+          title={voiceTitle ?? (voiceReady ? "Dictate a message" : (voiceBlockedReason ?? "Voice input unavailable"))}
+          disabled={isStreaming || !voiceReady}
           className={cn(
             "shrink-0 p-1.5 rounded-lg transition-colors",
             "text-foreground/25 hover:text-foreground/60 hover:bg-foreground/6",
-            (isStreaming || !inferenceReady) && "opacity-30 pointer-events-none",
+            (isStreaming || !voiceReady) && "opacity-30 pointer-events-none",
           )}
         >
           <Mic className="size-4" aria-hidden />

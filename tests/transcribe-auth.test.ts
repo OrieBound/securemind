@@ -11,6 +11,7 @@ vi.mock("@/lib/db", () => ({ db: {} }));
 const resolveRuntimeSecrets = vi.fn();
 vi.mock("@/lib/instance-config", () => ({
   resolveRuntimeSecrets: (...args: unknown[]) => resolveRuntimeSecrets(...args),
+  instanceCanUseBedrock: async () => false,
 }));
 
 const saved: Record<string, string | undefined> = {};

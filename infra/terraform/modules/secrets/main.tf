@@ -41,6 +41,25 @@ resource "aws_secretsmanager_secret_version" "fragments" {
   }
 }
 
+resource "aws_secretsmanager_secret" "vendor_keys" {
+  name                    = "securemind/${var.env_name}/vendor-keys"
+  description             = "Admin-pasted vendor API keys (Groq, Google, OpenAI, Anthropic). Not AWS credentials."
+  recovery_window_in_days = 7
+  tags = {
+    Project = "SecureMind"
+    Env     = var.env_name
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "vendor_keys" {
+  secret_id     = aws_secretsmanager_secret.vendor_keys.id
+  secret_string = jsonencode({ groqApiKey = null, extra = [] })
+
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
+}
+
 resource "aws_secretsmanager_secret" "groq" {
   count                   = var.groq_api_key != "" ? 1 : 0
   name                    = "securemind/${var.env_name}/groq-api-key"
@@ -68,4 +87,8 @@ output "fragments_table_secret_arn" {
 
 output "groq_secret_arn" {
   value = var.groq_api_key != "" ? aws_secretsmanager_secret.groq[0].arn : ""
+}
+
+output "vendor_keys_secret_arn" {
+  value = aws_secretsmanager_secret.vendor_keys.arn
 }

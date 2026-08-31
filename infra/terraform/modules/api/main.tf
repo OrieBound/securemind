@@ -42,6 +42,11 @@ variable "groq_secret_arn" {
   default = ""
 }
 
+variable "vendor_keys_secret_arn" {
+  type    = string
+  default = ""
+}
+
 variable "auth_mode" {
   type    = string
   default = "cognito"
@@ -94,6 +99,7 @@ locals {
     DYNAMODB_FRAGMENTS_TABLE   = var.fragments_table_name
     FRAGMENTS_TABLE_SECRET_ARN = var.fragments_secret_arn
     GROQ_SECRET_ARN            = var.groq_secret_arn
+    VENDOR_KEYS_SECRET_ARN     = var.vendor_keys_secret_arn
     SECUREMIND_EDITION         = "cloud"
   }
 }
@@ -157,7 +163,7 @@ resource "aws_iam_role_policy" "lambda" {
         {
           Effect   = "Allow"
           Action   = ["secretsmanager:GetSecretValue"]
-          Resource = compact([var.fragments_secret_arn, var.groq_secret_arn])
+          Resource = compact([var.fragments_secret_arn, var.groq_secret_arn, var.vendor_keys_secret_arn])
         },
       ],
     )

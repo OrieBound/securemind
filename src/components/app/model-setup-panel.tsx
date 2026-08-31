@@ -15,6 +15,12 @@ export type RuntimeStatusPayload = {
     detection: { ready: boolean; label: string };
     documentParsing: { ready: boolean; formats: string[] };
     imageOcr: { ready: boolean; sendsPixelsOffHost: boolean; note: string };
+    voiceStt?: {
+      ready: boolean;
+      provider: string | null;
+      choice?: string | null;
+      note: string;
+    };
     embeddings: { ready: boolean; provider: string | null };
   };
   model: {
@@ -110,6 +116,16 @@ export function RuntimeStatusBar({
       {status.edition === "cloud" && (
         <Chip ok={status.capabilities.imageOcr.ready} label="Vision extract" />
       )}
+      <Chip
+        ok={status.capabilities.voiceStt?.ready === true}
+        label={
+          status.capabilities.voiceStt?.provider === "transcribe"
+            ? "Voice · Transcribe"
+            : status.capabilities.voiceStt?.provider === "groq"
+              ? "Voice · Groq"
+              : "Voice"
+        }
+      />
     </div>
   );
 }

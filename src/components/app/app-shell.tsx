@@ -60,6 +60,13 @@ import {
 const OPEN_SETTINGS_KEY = "sm_open_settings";
 
 import { ComposerInput, type ComposerInputHandle, type ComposerVoiceInsert } from "@/components/app/composer-input";
+import { VoiceSttSetupDialog } from "@/components/app/voice-stt-setup";
+import { recordingToWav } from "@/lib/transcribe/browser-wav";
+import {
+  startCloudLiveStt,
+  supportsLivePcmUpload,
+  type CloudLiveSttHandle,
+} from "@/lib/transcribe/live-client";
 import {
   ModelSetupPanel,
   RuntimeStatusBar,
@@ -2033,6 +2040,7 @@ function VoiceBar({
   elapsed,
   liveText,
   previewPending,
+  error,
   onCancel,
   onConfirm,
 }: {
@@ -2041,6 +2049,7 @@ function VoiceBar({
   elapsed: number;
   liveText: { final: string; interim: string };
   previewPending: boolean;
+  error: string | null;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -2059,7 +2068,6 @@ function VoiceBar({
 
   return (
     <div className="flex flex-col px-4 pt-3 pb-2 gap-2.5">
-      {/* Primary: live transcript — same spot as the normal text input */}
       {isListening && (
         <div
           ref={transcriptRef}
@@ -2103,6 +2111,10 @@ function VoiceBar({
         <p className="min-h-[52px] flex items-center text-sm text-foreground/30 animate-pulse">
           Requesting microphone…
         </p>
+      )}
+
+      {error && (
+        <p className="text-[0.72rem] text-red-300/85 leading-relaxed">{error}</p>
       )}
 
       {/* Secondary: compact waveform + controls */}
@@ -2507,14 +2519,18 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   const [vendorRiskBlocked, setVendorRiskBlocked] = useState(false);
   const [vendorHasGroq, setVendorHasGroq] = useState(false);
   const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatusPayload | null>(null);
+  const runtimeStatusRef = useRef<RuntimeStatusPayload | null>(null);
 
   const refreshRuntimeStatus = useCallback(async () => {
     try {
       const res = await fetch("/api/runtime/status", { credentials: "same-origin" });
-      if (!res.ok) return;
-      setRuntimeStatus((await res.json()) as RuntimeStatusPayload);
+      if (!res.ok) return null;
+      const data = (await res.json()) as RuntimeStatusPayload;
+      runtimeStatusRef.current = data;
+      setRuntimeStatus(data);
+      return data;
     } catch {
-      /* advisory */
+      return null;
     }
   }, []);
 
@@ -2552,9 +2568,10 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
 
   // ── voice input state ───────────────────────────────────────────────────────
   const [voiceState, setVoiceState]   = useState<"idle" | "requesting" | "listening" | "transcribing">("idle");
-  // Rolling waveform history — values 0–1 from live mic amplitude
+  const [voiceSetupOpen, setVoiceSetupOpen] = useState(false);
   const [waveHistory, setWaveHistory] = useState<number[]>(Array(80).fill(0.03));
   const [voiceElapsed, setVoiceElapsed] = useState(0);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const [liveText, setLiveText] = useState({ final: "", interim: "" });
   const [previewPending, setPreviewPending] = useState(false);
   const voiceStateRef   = useRef<"idle" | "requesting" | "listening" | "transcribing">("idle");
@@ -2564,12 +2581,6 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   const audioCtxRef     = useRef<AudioContext | null>(null);
   const analyserRef     = useRef<AnalyserNode | null>(null);
   const animFrameRef    = useRef<number>(0);
-  const previewIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const previewDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const previewBusyRef  = useRef(false);
-  const lastPreviewBytesRef = useRef(0);
-  const runLivePreviewRef = useRef<() => void>(() => {});
-  const liveTextRef = useRef({ final: "", interim: "" });
   const composerDraftRef = useRef<Pick<ComposerVoiceInsert, "base" | "selectionStart" | "selectionEnd">>({
     base: "",
     selectionStart: 0,
@@ -2578,6 +2589,13 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   const [voiceComposerInsert, setVoiceComposerInsert] = useState<ComposerVoiceInsert | null>(null);
   const transcribeAbortRef = useRef<AbortController | null>(null);
   const transcribeCancelledRef = useRef(false);
+  const liveTextRef = useRef({ final: "", interim: "" });
+  const previewIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const previewDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewBusyRef = useRef(false);
+  const lastPreviewBytesRef = useRef(0);
+  const runLivePreviewRef = useRef<() => void>(() => {});
+  const cloudLiveRef = useRef<CloudLiveSttHandle | null>(null);
   // True whenever the voice UI bar should be visible
   const listening = voiceState !== "idle";
   const [messages, setMessages]   = useState<ChatMessage[]>([]);
@@ -3330,8 +3348,6 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     mediaStreamRef.current?.getTracks().forEach(t => t.stop());
     cancelAnimationFrame(animFrameRef.current);
     audioCtxRef.current?.close().catch(() => {});
-    if (previewIntervalRef.current !== null) clearInterval(previewIntervalRef.current);
-    if (previewDebounceRef.current !== null) clearTimeout(previewDebounceRef.current);
   }, []);
 
   // ── background memory compression ────────────────────────────────────────────
@@ -3381,7 +3397,6 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   }, [isStreaming]);
 
   // ── voice input pipeline ─────────────────────────────────────────────────────
-  // Keep voiceStateRef in sync so async callbacks read current state immediately
   useEffect(() => { voiceStateRef.current = voiceState; }, [voiceState]);
   useEffect(() => { liveTextRef.current = liveText; }, [liveText]);
 
@@ -3391,7 +3406,6 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     setVoiceState(next);
   }, []);
 
-  // Elapsed-time counter while listening
   useEffect(() => {
     if (voiceState !== "listening") return;
     setVoiceElapsed(0);
@@ -3399,8 +3413,9 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     return () => clearInterval(id);
   }, [voiceState]);
 
-  // Stop all recording/animation resources without changing voiceState.
   const teardownVoiceResources = useCallback(() => {
+    cloudLiveRef.current?.abort();
+    cloudLiveRef.current = null;
     mediaRecRef.current?.stop();
     mediaRecRef.current = null;
     cancelAnimationFrame(animFrameRef.current);
@@ -3427,14 +3442,28 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     setPreviewPending(false);
   }, []);
 
-  // Rolling live preview — sends accumulated audio to Groq Whisper.
+  const snapshotComposerDraft = useCallback(() => {
+    const value = composerRef.current?.getValue() ?? "";
+    const sel = composerRef.current?.getSelection() ?? { start: value.length, end: value.length };
+    composerDraftRef.current = {
+      base: value,
+      selectionStart: sel.start,
+      selectionEnd: sel.end,
+    };
+  }, []);
+
+  const restoreComposerDraft = useCallback(() => {
+    setVoiceComposerInsert({ text: "", ...composerDraftRef.current });
+  }, []);
+
   const runLivePreview = useCallback(async () => {
+    if (runtimeStatus?.edition === "cloud") return;
     if (voiceStateRef.current !== "listening" || previewBusyRef.current) return;
     const chunks = audioChunksRef.current;
     if (chunks.length === 0) return;
 
     const blob = new Blob(chunks, { type: chunks[0].type || "audio/webm" });
-    if (blob.size < 2000) return; // ~1s of audio
+    if (blob.size < 2000) return;
     if (blob.size - lastPreviewBytesRef.current < 1200) return;
 
     previewBusyRef.current = true;
@@ -3452,12 +3481,11 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
         }
       }
     } catch {
-      /* preview is best-effort */
+      /* local Groq preview is best-effort */
     } finally {
       previewBusyRef.current = false;
       if (voiceStateRef.current === "listening") {
         setPreviewPending(false);
-        // If more audio arrived while transcribing, pipeline the next pass immediately
         const pending = audioChunksRef.current;
         const pendingBlob = new Blob(pending, { type: pending[0]?.type || "audio/webm" });
         if (pendingBlob.size - lastPreviewBytesRef.current >= 1200) {
@@ -3465,48 +3493,40 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
         }
       }
     }
-  }, []);
+  }, [runtimeStatus?.edition]);
   runLivePreviewRef.current = runLivePreview;
 
   const scheduleLivePreview = useCallback(() => {
+    if (runtimeStatus?.edition === "cloud") return;
     if (voiceStateRef.current !== "listening") return;
     if (previewDebounceRef.current !== null) clearTimeout(previewDebounceRef.current);
     previewDebounceRef.current = setTimeout(() => {
       previewDebounceRef.current = null;
       runLivePreviewRef.current();
     }, 300);
-  }, []);
-
-  const snapshotComposerDraft = useCallback(() => {
-    const value = composerRef.current?.getValue() ?? "";
-    const sel = composerRef.current?.getSelection() ?? { start: value.length, end: value.length };
-    composerDraftRef.current = {
-      base: value,
-      selectionStart: sel.start,
-      selectionEnd: sel.end,
-    };
-  }, []);
-
-  const restoreComposerDraft = useCallback(() => {
-    setVoiceComposerInsert({ text: "", ...composerDraftRef.current });
-  }, []);
+  }, [runtimeStatus?.edition]);
 
   const startVoice = useCallback(async () => {
+    const stt = runtimeStatusRef.current?.capabilities.voiceStt;
+    if (!stt?.choice || !stt.ready) {
+      setVoiceSetupOpen(true);
+      return;
+    }
     snapshotComposerDraft();
+    setVoiceError(null);
     setVoiceStateSynced("requesting");
 
-    // Request mic permission (needed for MediaRecorder audio capture)
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
+      setVoiceError("Microphone permission was denied.");
       setVoiceStateSynced("idle");
-      return; // permission denied or no device
+      return;
     }
     mediaStreamRef.current = stream;
     audioChunksRef.current = [];
 
-    // MediaRecorder: captures the raw audio for Groq Whisper transcription
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
       ? "audio/webm;codecs=opus"
       : MediaRecorder.isTypeSupported("audio/webm")
@@ -3517,10 +3537,9 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       if (e.data.size > 0) audioChunksRef.current.push(e.data);
       scheduleLivePreview();
     };
-    recorder.start(100); // 100 ms chunks — faster first preview
+    recorder.start(100);
     mediaRecRef.current = recorder;
 
-    // Live waveform from mic amplitude (same stream as MediaRecorder — no conflict)
     try {
       const ctx = new AudioContext();
       audioCtxRef.current = ctx;
@@ -3546,14 +3565,12 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
         analyser.getByteFrequencyData(freqData);
         analyser.getByteTimeDomainData(timeData);
 
-        // Time-domain peak — most responsive to voice volume
         let peak = 0;
         for (let i = 0; i < timeData.length; i++) {
           const v = Math.abs(timeData[i] - 128) / 128;
           if (v > peak) peak = v;
         }
 
-        // Speech-band energy from frequency bins (~300–3400 Hz)
         let sumSq = 0;
         const binStart = 3;
         const binEnd = Math.min(36, freqData.length);
@@ -3570,17 +3587,39 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       /* AudioContext unavailable — bars stay at baseline */
     }
 
-    // Live preview: event-driven on new audio + 2s safety-net interval
-    lastPreviewBytesRef.current = 0;
     setLiveText({ final: "", interim: "" });
     setPreviewPending(false);
-    setTimeout(() => { runLivePreviewRef.current(); }, 900);
-    previewIntervalRef.current = setInterval(() => runLivePreviewRef.current(), 2000);
+    const sttNow = runtimeStatusRef.current;
+    const isCloud = sttNow?.edition === "cloud";
+    const useLiveTranscribe =
+      isCloud &&
+      sttNow?.capabilities.voiceStt?.provider === "transcribe" &&
+      Boolean(audioCtxRef.current) &&
+      supportsLivePcmUpload();
+
+    if (useLiveTranscribe && audioCtxRef.current) {
+      setPreviewPending(true);
+      cloudLiveRef.current = startCloudLiveStt({
+        ctx: audioCtxRef.current,
+        stream,
+        onCaption: (stable, interim) => {
+          if (voiceStateRef.current !== "listening") return;
+          setPreviewPending(false);
+          setLiveText({ final: stable, interim });
+        },
+      });
+    } else if (!isCloud) {
+      lastPreviewBytesRef.current = 0;
+      setTimeout(() => { runLivePreviewRef.current(); }, 900);
+      previewIntervalRef.current = setInterval(() => runLivePreviewRef.current(), 2000);
+    }
 
     setVoiceStateSynced("listening");
-  }, [scheduleLivePreview, snapshotComposerDraft, setVoiceStateSynced]);
+  }, [snapshotComposerDraft, setVoiceStateSynced, scheduleLivePreview]);
 
   const cancelVoice = useCallback(() => {
+    cloudLiveRef.current?.abort();
+    cloudLiveRef.current = null;
     if (voiceStateRef.current === "transcribing") {
       transcribeCancelledRef.current = true;
       transcribeAbortRef.current?.abort();
@@ -3595,11 +3634,9 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     setVoiceStateSynced("idle");
   }, [teardownVoiceResources, restoreComposerDraft, setVoiceStateSynced]);
 
-  // confirmVoice: stop recording → POST to Groq Whisper → fill composer (user sends manually)
   const confirmVoice = useCallback(async () => {
     if (voiceStateRef.current !== "listening") return;
 
-    // Stop live preview + waveform animation
     if (previewIntervalRef.current !== null) {
       clearInterval(previewIntervalRef.current);
       previewIntervalRef.current = null;
@@ -3613,10 +3650,13 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     animFrameRef.current = 0;
     setWaveHistory(Array(80).fill(0.03));
     setVoiceElapsed(0);
+    setVoiceError(null);
     setVoiceStateSynced("transcribing");
     transcribeCancelledRef.current = false;
 
-    // Wait for MediaRecorder to finish flushing its last chunk
+    const live = cloudLiveRef.current;
+    cloudLiveRef.current = null;
+
     await new Promise<void>(resolve => {
       const rec = mediaRecRef.current;
       if (!rec || rec.state === "inactive") { resolve(); return; }
@@ -3624,14 +3664,57 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       rec.onstop = e => { if (typeof prevStop === "function") prevStop.call(rec, e); resolve(); };
       rec.stop();
     });
-    if (transcribeCancelledRef.current) return;
+    if (transcribeCancelledRef.current) {
+      live?.abort();
+      return;
+    }
 
     mediaRecRef.current = null;
-    mediaStreamRef.current?.getTracks().forEach(t => t.stop());
-    mediaStreamRef.current = null;
-
     const chunks = audioChunksRef.current.slice();
     audioChunksRef.current = [];
+
+    const snap = composerDraftRef.current;
+    const previewFallback = (liveTextRef.current.final + liveTextRef.current.interim).trim();
+
+    if (live) {
+      try {
+        const trimmed = (await live.finish()).trim() || previewFallback;
+        mediaStreamRef.current?.getTracks().forEach(t => t.stop());
+        mediaStreamRef.current = null;
+        audioCtxRef.current?.close().catch(() => {});
+        audioCtxRef.current = null;
+        if (transcribeCancelledRef.current) return;
+        setLiveText({ final: "", interim: "" });
+        if (trimmed) {
+          setVoiceComposerInsert({ text: trimmed, ...snap });
+          setVoiceError(null);
+        } else {
+          restoreComposerDraft();
+          setVoiceError("Nothing was transcribed. Speak a bit longer, then tap Done.");
+        }
+        setVoiceStateSynced("idle");
+      } catch (err) {
+        live.abort();
+        mediaStreamRef.current?.getTracks().forEach(t => t.stop());
+        mediaStreamRef.current = null;
+        audioCtxRef.current?.close().catch(() => {});
+        audioCtxRef.current = null;
+        if (transcribeCancelledRef.current) return;
+        console.error("[voice] live transcription error:", err);
+        if (previewFallback) {
+          setVoiceComposerInsert({ text: previewFallback, ...snap });
+          setVoiceError(null);
+        } else {
+          restoreComposerDraft();
+          setVoiceError(err instanceof Error ? err.message : "Transcription failed");
+        }
+        setVoiceStateSynced("idle");
+      }
+      return;
+    }
+
+    mediaStreamRef.current?.getTracks().forEach(t => t.stop());
+    mediaStreamRef.current = null;
     audioCtxRef.current?.close().catch(() => {});
     audioCtxRef.current = null;
 
@@ -3640,21 +3723,27 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     if (chunks.length === 0) {
       setLiveText({ final: "", interim: "" });
       restoreComposerDraft();
+      setVoiceError("No audio was captured. Try again, then tap Done.");
       setVoiceStateSynced("idle");
       return;
     }
-
-    const previewFallback = (liveTextRef.current.final + liveTextRef.current.interim).trim();
-    const snap = composerDraftRef.current;
 
     transcribeAbortRef.current?.abort();
     const abortController = new AbortController();
     transcribeAbortRef.current = abortController;
 
     try {
-      const blob = new Blob(chunks, { type: chunks[0].type || "audio/webm" });
+      const raw = new Blob(chunks, { type: chunks[0].type || "audio/webm" });
+      let payload: Blob = raw;
+      let filename = "recording.webm";
+      try {
+        payload = await recordingToWav(raw);
+        filename = "recording.wav";
+      } catch {
+        /* Groq can still take webm */
+      }
       const fd = new FormData();
-      fd.append("audio", blob, "recording.webm");
+      fd.append("audio", payload, filename);
       const res = await fetch("/api/transcribe", {
         method: "POST",
         body: fd,
@@ -3662,14 +3751,16 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       });
       if (transcribeCancelledRef.current) return;
 
-      if (!res.ok) throw new Error(await res.text());
-      const { text } = await res.json() as { text: string };
-      const trimmed = text?.trim() || previewFallback;
+      const body = await res.json().catch(() => ({})) as { text?: string; error?: string };
+      if (!res.ok) throw new Error(body.error || "Transcription failed");
+      const trimmed = body.text?.trim() || previewFallback;
       setLiveText({ final: "", interim: "" });
       if (trimmed) {
         setVoiceComposerInsert({ text: trimmed, ...snap });
+        setVoiceError(null);
       } else {
         restoreComposerDraft();
+        setVoiceError("Nothing was transcribed. Speak a bit longer, then tap Done.");
       }
       setVoiceStateSynced("idle");
     } catch (err) {
@@ -3678,8 +3769,10 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       setLiveText({ final: "", interim: "" });
       if (previewFallback) {
         setVoiceComposerInsert({ text: previewFallback, ...snap });
+        setVoiceError(null);
       } else {
         restoreComposerDraft();
+        setVoiceError(err instanceof Error ? err.message : "Transcription failed");
       }
       setVoiceStateSynced("idle");
     } finally {
@@ -5633,6 +5726,18 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
 
+      <VoiceSttSetupDialog
+        open={voiceSetupOpen}
+        onClose={() => setVoiceSetupOpen(false)}
+        onSaved={async () => {
+          const next = await refreshRuntimeStatus();
+          setVoiceSetupOpen(false);
+          if (next?.capabilities.voiceStt?.ready) {
+            await startVoice();
+          }
+        }}
+      />
+
       {deleteConfirmWorkspace && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-overlay backdrop-blur-sm p-4">
           <div className="w-full max-w-md rounded-2xl bg-popover border border-foreground/10 p-6 shadow-2xl space-y-4">
@@ -7166,11 +7271,17 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                       elapsed={voiceElapsed}
                       liveText={liveText}
                       previewPending={previewPending}
+                      error={voiceError}
                       onCancel={cancelVoice}
                       onConfirm={confirmVoice}
                     />
                   ) : (
                     <>
+                    {voiceError && (
+                      <p className="px-4 pt-2 text-[0.72rem] text-red-300/85 leading-relaxed">
+                        {voiceError}
+                      </p>
+                    )}
                     <ComposerInput
                       ref={composerRef}
                       workspaceName={workspaceName}
@@ -7178,6 +7289,13 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                       sessionReady={sessionReady}
                       isStreaming={isStreaming}
                       inferenceReady
+                      voiceReady
+                      voiceTitle={
+                        runtimeStatus?.capabilities.voiceStt?.ready
+                          ? "Dictate a message"
+                          : "Set up voice transcription"
+                      }
+                      voiceBlockedReason={runtimeStatus?.capabilities.voiceStt?.note}
                       voiceInsert={voiceComposerInsert}
                       onVoiceInsertApplied={() => setVoiceComposerInsert(null)}
                       onSend={() => { handleSend(); setAttachments([]); }}

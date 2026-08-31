@@ -1,18 +1,18 @@
 /**
  * Hosted InstanceConfig on the fragments table (no Postgres).
- * Same JSON shape as the Prisma row so Settings → Providers can persist
- * allowRealAws and vendor keys on Amplify + Lambda.
+ * Vendor API keys are not stored here — Secrets Manager holds them
+ * (`VENDOR_KEYS_SECRET_ARN`). This row is non-secret settings only.
  */
 
 import type { AttributeValue } from "@aws-sdk/client-dynamodb";
 import { ATTR } from "@/lib/storage/dynamodb-schema";
-import { encryptSecret } from "@/lib/secret-at-rest";
 import {
   createDynamoDriver,
   createMemoryDriver,
   type HostedDriver,
 } from "@/lib/workspaces/hosted-dynamo";
 import type { InstanceConfigRow } from "@/lib/instance-config";
+import { parseVoiceSttChoice } from "@/lib/transcribe/backend";
 
 const PK = "app#instance";
 const SK = "cfg#singleton";
@@ -40,6 +40,8 @@ type Stored = {
   setupCompletedAt: string | null;
   setupClaimUsedAt: string | null;
   storageBackend: string | null;
+  voiceSttChoice: string | null;
+  voiceSttAudioAckAt: string | null;
   updatedAt: string;
   updatedByUserId: string | null;
 };
@@ -78,6 +80,8 @@ export function emptyInstanceConfigRow(): InstanceConfigRow {
     setupCompletedAt: null,
     setupClaimUsedAt: null,
     storageBackend: "dynamodb",
+    voiceSttChoice: null,
+    voiceSttAudioAckAt: null,
     updatedAt: new Date(),
     updatedByUserId: null,
   };
@@ -87,12 +91,12 @@ function toStored(row: InstanceConfigRow): Stored {
   return {
     id: row.id,
     primaryProvider: row.primaryProvider,
-    groqApiKey: encryptSecret(row.groqApiKey),
+    groqApiKey: null,
     awsProfile: row.awsProfile,
     allowRealAws: Boolean(row.allowRealAws),
     bedrockRegion: row.bedrockRegion,
     bedrockChatModel: row.bedrockChatModel,
-    extraProviderKeys: row.extraProviderKeys,
+    extraProviderKeys: null,
     externalRiskAckAt: iso(row.externalRiskAckAt),
     piiSensitivity: row.piiSensitivity,
     safeTerms: row.safeTerms,
@@ -106,6 +110,8 @@ function toStored(row: InstanceConfigRow): Stored {
     setupCompletedAt: iso(row.setupCompletedAt),
     setupClaimUsedAt: iso(row.setupClaimUsedAt),
     storageBackend: row.storageBackend,
+    voiceSttChoice: row.voiceSttChoice,
+    voiceSttAudioAckAt: iso(row.voiceSttAudioAckAt),
     updatedAt: iso(row.updatedAt) ?? new Date().toISOString(),
     updatedByUserId: row.updatedByUserId,
   };
@@ -135,6 +141,8 @@ function fromStored(raw: Stored): InstanceConfigRow {
     setupCompletedAt: asDate(raw.setupCompletedAt),
     setupClaimUsedAt: asDate(raw.setupClaimUsedAt),
     storageBackend: raw.storageBackend,
+    voiceSttChoice: parseVoiceSttChoice(raw.voiceSttChoice),
+    voiceSttAudioAckAt: asDate(raw.voiceSttAudioAckAt),
     updatedAt: asDate(raw.updatedAt) ?? new Date(),
     updatedByUserId: raw.updatedByUserId,
   };
