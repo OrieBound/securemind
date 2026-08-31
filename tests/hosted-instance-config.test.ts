@@ -25,5 +25,18 @@ describe("hosted instance config", () => {
     expect(a.allowRealAws).toBe(false);
     expect(b.allowRealAws).toBe(false);
     expect(emptyInstanceConfigRow().storageBackend).toBe("dynamodb");
+    expect(emptyInstanceConfigRow().voiceSttChoice).toBeNull();
+  });
+
+  it("persists an opt-in transcription choice", async () => {
+    const store = createHostedInstanceConfigStore(createMemoryDriver());
+    await store.merge({
+      voiceSttChoice: "groq",
+      voiceSttAudioAckAt: new Date("2026-08-30T00:00:00.000Z"),
+      updatedByUserId: "owner-1",
+    });
+    const row = await store.get();
+    expect(row?.voiceSttChoice).toBe("groq");
+    expect(row?.voiceSttAudioAckAt?.toISOString()).toBe("2026-08-30T00:00:00.000Z");
   });
 });

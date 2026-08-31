@@ -106,6 +106,7 @@ module "api" {
   fragments_table_arn  = module.data_dynamodb.table_arn
   fragments_secret_arn = module.secrets.fragments_table_secret_arn
   groq_secret_arn      = module.secrets.groq_secret_arn
+  vendor_keys_secret_arn = module.secrets.vendor_keys_secret_arn
   auth_mode            = var.auth_mode
   cognito_user_pool_id = module.auth_cognito.user_pool_id
   cognito_client_id    = module.auth_cognito.client_id
@@ -127,6 +128,7 @@ module "amplify" {
   branch_name            = var.amplify_branch
   fragments_table_name   = module.data_dynamodb.table_name
   fragments_table_arn    = module.data_dynamodb.table_arn
+  vendor_keys_secret_arn = module.secrets.vendor_keys_secret_arn
 }
 
 output "api_base_url" {

@@ -61,6 +61,11 @@ variable "fragments_table_arn" {
   default = ""
 }
 
+variable "vendor_keys_secret_arn" {
+  type    = string
+  default = ""
+}
+
 variable "branch_name" {
   type    = string
   default = "main"
@@ -170,7 +175,7 @@ resource "aws_iam_role_policy" "amplify_dynamodb" {
   policy = data.aws_iam_policy_document.amplify_dynamodb.json
 }
 
-# Catalog (ListFoundationModels) and Models → Test run on Amplify compute.
+# Catalog, Models → Test, image extract, and voice STT run on Amplify compute.
 # Chat invoke stays on the API Lambda role. Attach to the existing Amplify
 # role — operators do not create a second role by hand.
 data "aws_iam_policy_document" "amplify_bedrock" {
@@ -183,6 +188,7 @@ data "aws_iam_policy_document" "amplify_bedrock" {
       "bedrock:ListFoundationModels",
       "bedrock:GetFoundationModel",
       "bedrock:ListInferenceProfiles",
+      "transcribe:StartStreamTranscription",
     ]
     resources = ["*"]
   }
@@ -192,6 +198,25 @@ resource "aws_iam_role_policy" "amplify_bedrock" {
   name   = "securemind-amplify-bedrock-${var.env_name}"
   role   = aws_iam_role.amplify.id
   policy = data.aws_iam_policy_document.amplify_bedrock.json
+}
+
+data "aws_iam_policy_document" "amplify_vendor_keys" {
+  statement {
+    sid = "VendorKeysSecrets"
+    actions = [
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:PutSecretValue",
+      "secretsmanager:DescribeSecret",
+    ]
+    resources = [var.vendor_keys_secret_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "amplify_vendor_keys" {
+  count  = var.vendor_keys_secret_arn != "" ? 1 : 0
+  name   = "securemind-amplify-vendor-keys-${var.env_name}"
+  role   = aws_iam_role.amplify.id
+  policy = data.aws_iam_policy_document.amplify_vendor_keys.json
 }
 
 resource "random_id" "instance_encryption" {
@@ -226,7 +251,7 @@ resource "aws_amplify_app" "this" {
           commands:
             - export DATABASE_URL="$${DATABASE_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
             - export DIRECT_URL="$${DIRECT_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
-            - node -e "const fs=require('fs'); const k=['AUTH_MODE','AUTH_ALLOW_LOCAL_FALLBACK','COGNITO_USER_POOL_ID','COGNITO_CLIENT_ID','COGNITO_REGION','COGNITO_ISSUER','NEXT_PUBLIC_API_BASE_URL','INSTANCE_ENCRYPTION_KEY','SETUP_CLAIM_SECRET','DYNAMODB_FRAGMENTS_TABLE']; fs.appendFileSync('.env.production', k.map(n=>n+'='+(process.env[n]||'')).join('\\n')+'\\nSECUREMIND_EDITION=cloud\\nSTORAGE_BACKEND=dynamodb\\n');"
+            - node -e "const fs=require('fs'); const k=['AUTH_MODE','AUTH_ALLOW_LOCAL_FALLBACK','COGNITO_USER_POOL_ID','COGNITO_CLIENT_ID','COGNITO_REGION','COGNITO_ISSUER','NEXT_PUBLIC_API_BASE_URL','INSTANCE_ENCRYPTION_KEY','SETUP_CLAIM_SECRET','DYNAMODB_FRAGMENTS_TABLE','VENDOR_KEYS_SECRET_ARN']; fs.appendFileSync('.env.production', k.map(n=>n+'='+(process.env[n]||'')).join('\\n')+'\\nSECUREMIND_EDITION=cloud\\nSTORAGE_BACKEND=dynamodb\\n');"
             - npm run build
             - node infra/scripts/amplify-prune-compute.mjs
       artifacts:
@@ -252,6 +277,7 @@ resource "aws_amplify_app" "this" {
     INSTANCE_ENCRYPTION_KEY   = random_id.instance_encryption.hex
     SETUP_CLAIM_SECRET        = random_password.setup_claim.result
     DYNAMODB_FRAGMENTS_TABLE  = var.fragments_table_name
+    VENDOR_KEYS_SECRET_ARN    = var.vendor_keys_secret_arn
   }
 
   tags = {

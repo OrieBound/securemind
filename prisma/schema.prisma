@@ -256,6 +256,10 @@ model InstanceConfig {
   setupClaimUsedAt  DateTime?
   /// Recorded vector-plane preference: postgres | dynamodb. Env STORAGE_BACKEND still wins at runtime.
   storageBackend    String?
+  /// Opt-in speech-to-text: groq | transcribe. Null until the first-mic chooser is saved.
+  voiceSttChoice    String?
+  /// Operator acknowledged that spoken audio is sent to the STT vendor before any text redaction.
+  voiceSttAudioAckAt DateTime?
   updatedAt         DateTime  @updatedAt
   updatedByUserId   String?
 }

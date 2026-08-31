@@ -5,7 +5,7 @@
 
 import { resolveRuntimeSecrets } from "@/lib/instance-config";
 import { bedrockBlockReason, isBedrockConfigured } from "@/lib/models/bedrock";
-import { getGroqUnavailableReason, hasGroqRuntime } from "@/lib/models/groq";
+import { getGroqUnavailableReason, hasGroqRuntime, selectGroqApiKey } from "@/lib/models/groq";
 import { isOllamaEmbedModel, probeOllama } from "@/lib/models/ollama";
 import { routeModel } from "@/lib/models/router";
 import {
@@ -17,6 +17,7 @@ import { probeHardware } from "@/lib/models/local-recommendations";
 import { runtimeEdition } from "@/lib/runtime-env";
 import { SUPPORTED_DOC_FORMATS_SHORT } from "@/lib/documents/constants";
 import { pickImageExtractBackend } from "@/lib/image-extract";
+import { pickTranscribeBackend, transcribeUnavailableMessage } from "@/lib/transcribe/backend";
 
 export type RuntimeStatus = {
   edition: "local" | "cloud";
@@ -28,6 +29,12 @@ export type RuntimeStatus = {
     imageOcr: {
       ready: boolean;
       sendsPixelsOffHost: boolean;
+      note: string;
+    };
+    voiceStt: {
+      ready: boolean;
+      provider: "transcribe" | "groq" | null;
+      choice: "transcribe" | "groq" | null;
       note: string;
     };
     embeddings: { ready: boolean; provider: "ollama" | "bedrock" | null };
@@ -85,6 +92,27 @@ export async function getRuntimeStatus(): Promise<RuntimeStatus> {
         ? "Image text extract uses a Groq vision model. Pixels leave this host; extracted text is scanned before storage."
         : "Image text extract needs Amazon Bedrock or an optional Groq key. Upload a text document instead — images are not used to discover sensitive values without a vision provider.";
 
+  const groqKeyOk = Boolean(selectGroqApiKey(secrets));
+  const voiceChoice = secrets.voiceSttChoice;
+  const voiceBackend = pickTranscribeBackend({
+    edition,
+    groqOk: groqKeyOk,
+    awsOk: bedrockOk,
+    choice: voiceChoice,
+    audioAcked: secrets.voiceSttAudioAcked,
+  });
+  const voiceNote =
+    voiceBackend === "transcribe"
+      ? "Voice uses Amazon Transcribe Streaming (IAM) in this AWS account — the same account as Bedrock. Spoken audio is sent to AWS before any redaction. Chat detection runs on the resulting text when you send."
+      : voiceBackend === "groq"
+        ? "Voice uses Groq Whisper. Spoken audio is sent to Groq Cloud; SecureMind does not control where Groq processes it. Chat detection runs on the resulting text when you send."
+        : transcribeUnavailableMessage({
+            choice: voiceChoice,
+            groqOk: groqKeyOk,
+            awsOk: bedrockOk,
+            audioAcked: secrets.voiceSttAudioAcked,
+          });
+
   return {
     edition,
     chatReady: decision.ok,
@@ -102,6 +130,12 @@ export async function getRuntimeStatus(): Promise<RuntimeStatus> {
         ready: imageBackend != null,
         sendsPixelsOffHost: imageBackend != null,
         note: imageNote,
+      },
+      voiceStt: {
+        ready: voiceBackend != null,
+        provider: voiceBackend,
+        choice: voiceChoice,
+        note: voiceNote,
       },
       embeddings: {
         ready: embedReady,

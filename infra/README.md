@@ -80,7 +80,7 @@ Open the site, enter that code plus the email and password **you** choose. The s
 | `modules/bedrock_lab` | Bedrock IAM managed policy + optional dashboard |
 | `modules/auth_cognito` | Invite-only user pool, app client, Owner/Admin/Member |
 | `modules/data_dynamodb` | Fragments table + vector index (1024, immutable) |
-| `modules/secrets` | fragments-table secret; optional Groq |
+| `modules/secrets` | fragments-table secret; vendor-keys; optional bootstrap Groq |
 | `modules/api` | API Gateway + streaming `/chat` + `/warm` |
 | `modules/amplify` | Amplify app (no GitHub token); first-run `SETUP_CLAIM_SECRET` |
 
@@ -89,8 +89,8 @@ Open the site, enter that code plus the email and password **you** choose. The s
 | Secret | Where | Who sets it |
 |---|---|---|
 | DynamoDB table name | Secrets Manager `securemind/<env>/fragments-table` | Terraform |
-| Groq bootstrap | Secrets Manager (only if `GROQ_API_KEY` is set) | `.env.deploy` / you |
-| Vendor keys day-to-day | `InstanceConfig` (still Prisma today) | Admin UI |
+| Groq bootstrap | Secrets Manager (only if `GROQ_API_KEY` is set at deploy) | `.env.deploy` / you |
+| Vendor keys (Groq, Google, …) | Secrets Manager `securemind/<env>/vendor-keys` | Admin UI |
 | AWS access keys | Never in UI, DB, or GitHub | SSO / OIDC role |
 
 ## GitHub Actions

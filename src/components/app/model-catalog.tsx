@@ -17,6 +17,11 @@ import {
   type ReferenceCatalogSlice,
 } from "@/lib/models/reference-catalog";
 import { isChatUsableModelId } from "@/lib/models/catalog-shared";
+import {
+  compareModelsForQuery,
+  matchesModelQuery,
+  modelPickerHint,
+} from "@/lib/models/model-search";
 
 export type CatalogModel = {
   id: string;
@@ -158,15 +163,6 @@ const PROVIDER_STYLES: Record<ModelProviderId, { label: string; className: strin
   },
 };
 
-const PROVIDER_SEARCH_ALIASES: Record<ModelProviderId, string[]> = {
-  groq: ["groq", "groc", "cloud"],
-  bedrock: ["bedrock", "aws", "amazon", "claude", "nova"],
-  ollama: ["ollama", "olama", "local", "on-prem", "onprem"],
-  openai: ["openai", "gpt", "chatgpt"],
-  anthropic: ["anthropic", "claude", "sk-ant"],
-  google: ["google", "gemini", "aistudio"],
-};
-
 export function providerLabel(provider: ModelProviderId): string {
   return PROVIDER_STYLES[provider].label;
 }
@@ -267,14 +263,6 @@ const PROVIDER_ORDER: CatalogModel["provider"][] = [
 
 type ProviderFilter = "all" | ModelProviderId;
 
-function matchesQuery(m: CatalogModel, q: string): boolean {
-  if (!q) return true;
-  if (m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q)) return true;
-  if (m.note?.toLowerCase().includes(q)) return true;
-  if (providerLabel(m.provider).toLowerCase().includes(q)) return true;
-  return PROVIDER_SEARCH_ALIASES[m.provider].some(alias => alias.includes(q) || q.includes(alias));
-}
-
 /**
  * Searchable, provider-filtered model list.
  *
@@ -345,13 +333,16 @@ export function ModelPickerList({
   }, [alwaysShowProviderFilters, counts]);
 
   const groups = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = query.trim();
     const scoped =
       providerFilter === "all" ? models : models.filter(m => m.provider === providerFilter);
-    return PROVIDER_ORDER.map(provider => ({
-      provider,
-      items: scoped.filter(m => m.provider === provider && matchesQuery(m, q)),
-    })).filter(g => g.items.length > 0);
+    return PROVIDER_ORDER.map(provider => {
+      const items = scoped
+        .filter(m => m.provider === provider && matchesModelQuery(m, q))
+        .slice()
+        .sort((a, b) => compareModelsForQuery(a, b, q));
+      return { provider, items };
+    }).filter(g => g.items.length > 0);
   }, [models, query, providerFilter]);
 
   const total = groups.reduce((n, g) => n + g.items.length, 0);
@@ -379,8 +370,8 @@ export function ModelPickerList({
               value={query}
               autoFocus={autoFocusSearch}
               onChange={e => setQuery(e.target.value)}
-              placeholder={`Search name, id, or vendor…`}
-              aria-label="Search models by name, id, or vendor"
+              placeholder="Search by name or id…"
+              aria-label="Search models by name or id"
               className="w-full h-8 rounded-lg border border-[var(--border-strong)] bg-elevated px-2.5 text-xs text-foreground placeholder:text-foreground/35 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
             />
           )}
@@ -411,7 +402,7 @@ export function ModelPickerList({
       {total === 0 && (
         <p className="text-[0.65rem] text-foreground/35 px-1 py-2">
           {query || providerFilter !== "all"
-            ? "No models match that filter. Try another vendor or clear the search."
+            ? "No models match that name or id. Try Claude, Nova, or part of the model id."
             : emptyLabel}
         </p>
       )}
@@ -427,7 +418,6 @@ export function ModelPickerList({
               <ProviderBadge provider={group.provider} />
               <span className="text-[0.58rem] text-foreground/45 truncate">
                 {group.items.length} model{group.items.length === 1 ? "" : "s"}
-                {providerFilter === "all" ? ` · ${providerOrigin(group.provider)}` : ""}
               </span>
             </div>
             {group.items.map(m => {
@@ -435,6 +425,8 @@ export function ModelPickerList({
               const result = results?.[m.id];
               const blurb = browse ? blurbFor?.(m) : undefined;
               const tiers = browse ? assignedTiersFor?.(m.id) ?? [] : [];
+              const hint = modelPickerHint(m);
+              const rowTitle = `${m.name} · ${m.id}`;
               const identity = (
                 <>
                   <span className="flex items-center gap-1.5 min-w-0">
@@ -454,9 +446,11 @@ export function ModelPickerList({
                       </span>
                     )}
                   </span>
-                  <span className="block font-mono text-[0.58rem] text-foreground/45 truncate mt-0.5">
-                    {m.id}
-                  </span>
+                  {hint && (
+                    <span className="block text-[0.58rem] text-foreground/40 truncate mt-0.5">
+                      {hint}
+                    </span>
+                  )}
                   {browse && blurb && (
                     <span className="block text-[0.6rem] text-foreground/48 leading-relaxed mt-1">
                       {blurb}
@@ -474,18 +468,6 @@ export function ModelPickerList({
                       ))}
                     </span>
                   )}
-                  {!browse && m.note && (
-                    <span
-                      className={cn(
-                        "block text-[0.55rem] truncate",
-                        m.note.startsWith("Add an API key")
-                          ? "text-amber-200/55"
-                          : "text-foreground/25",
-                      )}
-                    >
-                      {m.note}
-                    </span>
-                  )}
                 </>
               );
               return (
@@ -500,12 +482,13 @@ export function ModelPickerList({
                 >
                   <div className={cn("flex gap-2 px-2.5 py-2", browse ? "items-start" : "items-center")}>
                     {browse || !onSelect ? (
-                      <div className="flex-1 min-w-0">{identity}</div>
+                      <div className="flex-1 min-w-0" title={rowTitle}>{identity}</div>
                     ) : (
                       <button
                         type="button"
                         role="option"
                         aria-selected={selected}
+                        title={rowTitle}
                         onClick={() => onSelect(m)}
                         className="flex-1 min-w-0 text-left cursor-pointer"
                       >

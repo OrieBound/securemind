@@ -15,7 +15,7 @@ frontend:
       commands:
         - export DATABASE_URL="${DATABASE_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
         - export DIRECT_URL="${DIRECT_URL:-$DATABASE_URL}"
-        - node -e "const fs=require('fs'); const k=['AUTH_MODE','AUTH_ALLOW_LOCAL_FALLBACK','COGNITO_USER_POOL_ID','COGNITO_CLIENT_ID','COGNITO_REGION','COGNITO_ISSUER','NEXT_PUBLIC_API_BASE_URL','INSTANCE_ENCRYPTION_KEY','SETUP_CLAIM_SECRET','DYNAMODB_FRAGMENTS_TABLE']; fs.appendFileSync('.env.production', k.map(n=>n+'='+(process.env[n]||'')).join('\n')+'\nSECUREMIND_EDITION=cloud\nSTORAGE_BACKEND=dynamodb\n');"
+        - node -e "const fs=require('fs'); const k=['AUTH_MODE','AUTH_ALLOW_LOCAL_FALLBACK','COGNITO_USER_POOL_ID','COGNITO_CLIENT_ID','COGNITO_REGION','COGNITO_ISSUER','NEXT_PUBLIC_API_BASE_URL','INSTANCE_ENCRYPTION_KEY','SETUP_CLAIM_SECRET','DYNAMODB_FRAGMENTS_TABLE','VENDOR_KEYS_SECRET_ARN']; fs.appendFileSync('.env.production', k.map(n=>n+'='+(process.env[n]||'')).join('\n')+'\nSECUREMIND_EDITION=cloud\nSTORAGE_BACKEND=dynamodb\n');"
         - npm run build
         - node infra/scripts/amplify-prune-compute.mjs
   artifacts:

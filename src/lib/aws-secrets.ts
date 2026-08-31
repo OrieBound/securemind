@@ -2,10 +2,8 @@
  * Bootstrap secrets from AWS Secrets Manager (hosted path).
  *
  * Model (see infra/README.md):
- *   - Secrets Manager holds operator bootstrap values Lambda/Next need to start
- *     (optional DATABASE_URL for relational Postgres, fragments table name, optional GROQ_API_KEY).
- *   - Admin Settings → /api/settings/providers still writes vendor keys into
- *     InstanceConfig. That is NOT Secrets Manager today.
+ *   - Secrets Manager holds operator bootstrap (fragments table name, optional
+ *     deploy-time GROQ_API_KEY) and Admin-pasted vendor keys (VENDOR_KEYS_SECRET_ARN).
  *   - AWS credential material is never accepted via the UI (aws-credentials.ts).
  *
  * Set DATABASE_SECRET_ARN / GROQ_SECRET_ARN / FRAGMENTS_TABLE_SECRET_ARN.
