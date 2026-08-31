@@ -16,11 +16,29 @@ function arg(flag) {
   return process.argv[i + 1];
 }
 
+/** AWS CLI --output text can print "None" plus a pagination token as extra lines. */
+export function normalizeAmplifyJobId(raw) {
+  const first = String(raw || "")
+    .split(/\s+/)
+    .map(s => s.trim())
+    .find(s => /^\d+$/.test(s));
+  return first || "";
+}
+
+function inflightJobId(appId, branch) {
+  const out = awsJson(["amplify", "list-jobs", "--app-id", appId, "--branch-name", branch]);
+  const rows = Array.isArray(out?.jobSummaries) ? out.jobSummaries : [];
+  const hit = rows.find(j => j.status === "RUNNING" || j.status === "PENDING");
+  return normalizeAmplifyJobId(hit?.jobId);
+}
+
 async function main() {
   const appId = arg("--app-id") || process.env.AMPLIFY_APP_ID;
   const branch = arg("--branch") || process.env.AMPLIFY_BRANCH || "main";
-  const jobId = arg("--job-id") || process.env.AMPLIFY_JOB_ID;
-  if (!appId || !jobId) fail("need --app-id and --job-id");
+  let jobId = normalizeAmplifyJobId(arg("--job-id") || process.env.AMPLIFY_JOB_ID);
+  if (!appId) fail("need --app-id");
+  if (!jobId) jobId = inflightJobId(appId, branch);
+  if (!jobId) fail("need a numeric Amplify --job-id (got a None/pagination stub from aws cli)");
 
   const deadline = Date.now() + 25 * 60 * 1000;
   while (Date.now() < deadline) {
@@ -32,7 +50,7 @@ async function main() {
       "--branch-name",
       branch,
       "--job-id",
-      String(jobId),
+      jobId,
     ]);
     const status = out?.job?.summary?.status || "UNKNOWN";
     console.log(`Amplify job ${jobId}: ${status}`);
@@ -45,4 +63,6 @@ async function main() {
   fail(`timed out waiting for Amplify job ${jobId}`);
 }
 
-main();
+if (String(process.argv[1] || "").replace(/\\/g, "/").endsWith("amplify-wait-job.mjs")) {
+  void main();
+}
