@@ -3,6 +3,7 @@ import {
   parseVoiceSttChoice,
   pickTranscribeBackend,
   transcribeUnavailableMessage,
+  voiceCaptionMode,
 } from "./backend";
 import { encodePcm16Wav, pcmFromWav } from "./pcm-wav";
 
@@ -117,6 +118,45 @@ describe("transcribeUnavailableMessage", () => {
         audioAcked: false,
       }),
     ).toMatch(/Choose Groq Whisper or Amazon Transcribe/i);
+  });
+});
+
+describe("voiceCaptionMode", () => {
+  it("streams Amazon Transcribe partials on hosted Chromium", () => {
+    expect(
+      voiceCaptionMode({
+        edition: "cloud",
+        provider: "transcribe",
+        livePcmSupported: true,
+      }),
+    ).toBe("pcm-stream");
+  });
+
+  it("uses the same chunked live preview for Groq on hosted and local", () => {
+    expect(
+      voiceCaptionMode({
+        edition: "cloud",
+        provider: "groq",
+        livePcmSupported: true,
+      }),
+    ).toBe("chunked-preview");
+    expect(
+      voiceCaptionMode({
+        edition: "local",
+        provider: "groq",
+        livePcmSupported: false,
+      }),
+    ).toBe("chunked-preview");
+  });
+
+  it("falls back to chunked preview when live PCM is unavailable", () => {
+    expect(
+      voiceCaptionMode({
+        edition: "cloud",
+        provider: "transcribe",
+        livePcmSupported: false,
+      }),
+    ).toBe("chunked-preview");
   });
 });
 
