@@ -213,7 +213,6 @@ data "aws_iam_policy_document" "amplify_vendor_keys" {
 }
 
 resource "aws_iam_role_policy" "amplify_vendor_keys" {
-  count  = var.vendor_keys_secret_arn != "" ? 1 : 0
   name   = "securemind-amplify-vendor-keys-${var.env_name}"
   role   = aws_iam_role.amplify.id
   policy = data.aws_iam_policy_document.amplify_vendor_keys.json
