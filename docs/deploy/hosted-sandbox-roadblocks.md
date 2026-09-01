@@ -1,6 +1,6 @@
 # Hosted sandbox: roadblocks we hit
 
-**Last stamped: 2026-08-30.** First real AWS apply of SecureMind (account `your-aws-profile` / `123456789012`, August 2026). Sandbox stays the automatic `main` pipeline. Production is a **second stack** in `your-aws-profile`, not a retarget of this one.
+**Last stamped: 2026-08-31.** First real AWS apply of SecureMind (account `your-aws-profile` / `123456789012`, August 2026). Sandbox stays the automatic `main` pipeline. Production is a **second stack** in `your-aws-profile`, not a retarget of this one.
 
 Use this as an operator log and as interview notes: each item is **symptom → cause → what we did**. Dated chronology is in [Timeline](#timeline) below; README carries a short copy of the same stamp.
 
@@ -10,7 +10,7 @@ IaC and IAM layers: [infra/README.md](../../infra/README.md). Hosting decision: 
 
 ## Timeline
 
-Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first returned the error. Items 1–7 were the August 2026 apply campaign (jobs 1–7 failed). Items 8–10 are 2026-08-29. Items 11–13 are 2026-08-30 (hosted Dynamo mapping). Item 14 is secrets vs Dynamo. Item 15 is Terraform `count` on a new Secrets Manager ARN.
+Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first returned the error. Items 1–7 were the August 2026 apply campaign (jobs 1–7 failed). Items 8–10 are 2026-08-29. Items 11–13 are 2026-08-30 (hosted Dynamo mapping). Item 14 is secrets vs Dynamo. Item 15 is Terraform `count` on a new Secrets Manager ARN. Items 16–18 are 2026-08-31 (Knowledge cookie vs chat Bearer, and retrieval never running).
 
 | Date | # | Hurdle | Outcome |
 |------|---|--------|---------|
@@ -29,8 +29,11 @@ Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first r
 | 2026-08-30 | 13 | Image Knowledge treated Groq as required | Groq is optional BYOK. Hosted vision extract = Bedrock. No original files on hosted. |
 | 2026-08-30 | 14 | Vendor keys in Dynamo because “cloud is Dynamo” | App data ≠ secrets. Keys → Secrets Manager. Login passwords stay in Cognito (hashed), not SM or Dynamo. |
 | 2026-08-30 | 15 | Terraform apply: `count` on Amplify vendor-keys IAM | New secret ARN is unknown at plan. Always attach the policy; do not `count` on the ARN. |
+| 2026-08-31 | 16 | Knowledge “Authentication required” while chat still answered | Chat sends Bearer to API Gateway; Knowledge only sent the Amplify cookie. Cookie missing → 401. |
+| 2026-08-31 | 17 | Uploaded lease, model said it has no RAG / cannot see files | Turn-policy regex skipped retrieval. The model never “calls” Knowledge. |
+| 2026-08-31 | 18 | Security detections on an upload, still no citations | Detections prove extract + scrub, not embeddings. Empty embed → `EMBED_FAILED`. |
 
-**As of 2026-08-30:** `dc18b17` is on `main` (vendor-keys SM + voice STT chooser). Live UI is still the previous Amplify job until Actions Terraform apply + Amplify SUCCEED.
+**As of 2026-08-31:** `b68400f` is on `main` (silent Knowledge search + Knowledge Bearer). Live UI is the previous Amplify job until this is pushed and that workflow is green.
 
 ---
 
@@ -193,6 +196,30 @@ Pushed on `main` (`dc18b17`). Live site still writes keys to Dynamo until Terraf
 
 **Fix:** Always attach the Amplify Get/Put policy. The secret is always created; do not gate the policy on the ARN string.
 
+### 16. Knowledge 401 while chat still works (2026-08-31)
+
+**Symptom:** Chat (Bedrock) kept answering. Knowledge showed a red **Authentication required.** banner. The header still said **Local user** + SUPER. The model then claimed it had no document retrieval system.
+
+**Cause:** Hosted auth is split (ADR 0004 leftover). Chat goes to API Gateway with a Bearer token in `sessionStorage` (`sm_access_token_client`). Knowledge still calls Amplify same-origin `/api/documents` and only sent the HttpOnly cookie. Amplify `AUTH_MODE=cognito` and `AUTH_ALLOW_LOCAL_FALLBACK=false`, so a missing cookie is 401. Chat can keep a valid Bearer after the cookie is gone. **Local user** is the UI fallback when the Cognito **access** token has no email claim — it does not mean `AUTH_MODE=local`.
+
+**Fix:** `sessionApiFetch` in `src/lib/client/api-base.ts` attaches that Bearer on Knowledge list/upload/poll. Copy the cookie into sessionStorage via `ensureClientAccessToken()` before listing. This is a bandage until remaining `/api/*` move to the gateway. Refresh + sign in is the operator workaround on a build that does not have this yet.
+
+### 17. Model denies uploaded Knowledge (RAG never ran) (2026-08-31)
+
+**Symptom:** User uploaded `SecureMind_Synthetic_Residential_Tenancy_Agreement.docx` via Knowledge, then asked for base rent / parking / “retrieve it through rag.” Nova answered that it cannot view attachments and has **no document retrieval system**. Document-parsing badge was green.
+
+**Cause:** The chat model does not choose RAG. `decideTurn()` is a regex classifier that ran **before** vector search. `"What is …"` matched general knowledge; bare `"document"` is excluded on purpose so “review this document” does not dump the library; `"tenancy document provided"` did not match workspace deixis. Result: `shouldRetrieve: false`, no Dynamo/Postgres search, empty Sources, and the model filled the gap by denying retrieval. Green parsing only means extract exists in the runtime status payload.
+
+**Fix:** Keep explicit deixis (`tenancy`/`lease`/`document provided`/`in your memory`). For other non-social turns, **silent-search** Knowledge; hits at `EVIDENCE_MIN_SIMILARITY` (0.5) upgrade to workspace-grounded and show Sources; a miss stays general. Social, app-help, provenance, and corrections still skip search. Prompt: do not claim you cannot see uploads when no Sources were provided — you were not given excerpts. Code: `shouldSkipKnowledgeSearch` / `applySpeculativeKnowledgeHits` in `src/lib/turn-policy/decide-turn.ts`, wired in `run-chat-stream.ts`.
+
+### 18. Security detections ≠ searchable chunks (2026-08-31)
+
+**Symptom:** Insights → Security showed detections at ingest, but chat still had nothing to cite.
+
+**Cause:** Ingest records scrub events when patterns fire. Embeddings are a later step (hosted: Bedrock Titan). If `embedded === 0`, the document can look “processed” without any vector the chat path can retrieve.
+
+**Fix:** Hosted ingest sets `processingError: "EMBED_FAILED"` when no chunks were embedded. Check Knowledge chunk count before assuming RAG is broken. After (17), a miss at 0.5 similarity still stays general with no Sources — that is a miss, not a 401.
+
 ---
 
 ## Roadmap (hosted)
@@ -227,7 +254,7 @@ What is decided vs still leftover:
 | Streaming chat | Amplify does not stream Next API routes | REST + Lambda response streaming |
 | Bundle size | Traces Prisma, parsers, AWS SDK into the 220 MB cap | UI bundle stays UI |
 | Deploy | UI rebuild ships API code | UI and API ship independently |
-| Auth | Same-origin cookies | Bearer + CORS (already used for chat) |
+| Auth | Same-origin cookies; Knowledge now also sends chat’s Bearer (`sessionApiFetch`) | Bearer + CORS (already used for chat) |
 | Limits | Amplify SSR timeouts/payloads | Lambda timeout/payload; streaming for chat |
 | Data plane | Hosted records now go to DynamoDB (`app#userId`); Prisma still exists for **local** Postgres | One API in front of DynamoDB |
 
