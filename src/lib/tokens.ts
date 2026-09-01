@@ -11,6 +11,32 @@ export function estimateTokens(text: string): number {
   return Math.ceil(text.length / CHARS_PER_TOKEN);
 }
 
+function textFromContent(content: string | Array<{ type: string; text?: string }>): string {
+  if (typeof content === "string") return content;
+  return content
+    .filter((part): part is { type: "text"; text: string } => part.type === "text" && Boolean(part.text))
+    .map(part => part.text)
+    .join("\n");
+}
+
+/**
+ * Character-based fallback when a cloud provider omits stream usage.
+ * Not a tokenizer — Cost UI still labels the result as an estimate.
+ */
+export function estimateChatUsage(
+  messages: { content: string | Array<{ type: string; text?: string }> }[],
+  answer: string,
+): { promptTokens: number; completionTokens: number } {
+  const promptTokens = messages.reduce(
+    (sum, message) => sum + estimateTokens(textFromContent(message.content)),
+    0,
+  );
+  return {
+    promptTokens,
+    completionTokens: estimateTokens(answer),
+  };
+}
+
 /**
  * Select the most recent messages that fit within a token budget.
  * Always includes the most recent messages and works backwards.

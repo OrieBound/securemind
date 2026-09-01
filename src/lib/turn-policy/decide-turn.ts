@@ -1,6 +1,9 @@
 /**
  * Deterministic turn-mode classifier for SecureMind Chat.
  * Owns retrieval / citation / UI decisions. Complexity tier routing stays in route-message.ts.
+ *
+ * General questions may still run a silent Knowledge search; citeable hits
+ * (`applySpeculativeKnowledgeHits`) upgrade the turn after retrieval.
  */
 
 import { normalizeMessage, stripConversationalPrefixes } from "./normalize";
@@ -28,6 +31,10 @@ const APP_HELP_RE =
 // and incorrectly forces Knowledge retrieval when no workspace deixis was meant.
 const WORKSPACE_DEIXIS_RE =
   /\b(?:our|my|this\s+workspace|the\s+workspace|uploaded(?:\s+knowledge)?|runbook|postmortem|post-mortem|(?:our|the|uploaded)\s+knowledge|our\s+documents?|uploaded\s+documents?|procedure|playbook|sop|incident\s+report)\b/i;
+
+/** Knowledge already in the workspace, named without "our/uploaded knowledge". */
+const KNOWLEDGE_FILE_DEIXIS_RE =
+  /\b(?:tenancy|lease|rental)\s+(?:document|agreement|file)|(?:document|file|agreement|lease)\s+provided|(?:uploaded|attached)\s+(?:document|file|knowledge)|(?:in|from)\s+(?:the\s+)?(?:knowledge|(?:your\s+)?memory)\b/i;
 
 const INVESTIGATION_RE =
   /\b(?:what\s+(?:caused|probably\s+caused)|why\s+did|root\s+cause|investigate|compare|what\s+should\s+we|which\s+(?:control|controls)|outage|failed|failure|authentication\s+fail|timeout|rollback|blast\s+radius)\b/i;
@@ -212,7 +219,11 @@ export function decideTurn(input: DecideTurnInput): TurnDecision {
     });
   }
 
-  const hasWorkspaceDeixis = WORKSPACE_DEIXIS_RE.test(body) || WORKSPACE_DEIXIS_RE.test(raw);
+  const hasWorkspaceDeixis =
+    WORKSPACE_DEIXIS_RE.test(body) ||
+    WORKSPACE_DEIXIS_RE.test(raw) ||
+    KNOWLEDGE_FILE_DEIXIS_RE.test(body) ||
+    KNOWLEDGE_FILE_DEIXIS_RE.test(raw);
   const isInvestigation = INVESTIGATION_RE.test(body) || INVESTIGATION_RE.test(raw);
 
   // ── Workspace-grounded / investigation ─────────────────────────────────────
@@ -291,6 +302,42 @@ export function needsOperationalPrompt(decision: TurnDecision): boolean {
   );
 }
 
+/**
+ * Social / help / correction turns must not search Knowledge.
+ * General questions may search; hits at EVIDENCE_MIN_SIMILARITY become Sources.
+ */
+export function shouldSkipKnowledgeSearch(decision: TurnDecision): boolean {
+  if (decision.shouldRetrieve) return false;
+  if (decision.mode === "social" || decision.mode === "app_help") return true;
+  if (decision.mode === "ambiguous") return true;
+  if (decision.mode === "attachment") return true;
+  if (decision.reasonCode === "provenance-ask" || decision.reasonCode === "user-correction") {
+    return true;
+  }
+  return false;
+}
+
+/** Promote a general turn when vector search already found citeable Knowledge. */
+export function applySpeculativeKnowledgeHits(
+  turn: TurnDecision,
+  evidenceHitCount: number,
+): TurnDecision {
+  if (turn.shouldRetrieve || evidenceHitCount <= 0 || shouldSkipKnowledgeSearch(turn)) {
+    return turn;
+  }
+  return {
+    ...turn,
+    shouldRetrieve: true,
+    mode: turn.mode === "investigation" ? "investigation" : "workspace_grounded",
+    reasonCode: "speculative-retrieve-hit",
+    sourceScope: "workspace",
+    requiresCitations: true,
+    requiresWorkspaceEvidence: false,
+    showSourcesUi: true,
+    showGroundingBadge: true,
+  };
+}
+
 /** Mode-specific instructions appended to the system prompt (never includes reasonCode). */
 export function modePromptInstructions(decision: TurnDecision): string {
   if (decision.reasonCode === "user-correction") {
@@ -365,6 +412,7 @@ export function modePromptInstructions(decision: TurnDecision): string {
           `- Answer the user's question directly from general model knowledge.\n` +
           `- Do not mention the workspace, cloud operations mission, or Knowledge unless asked.\n` +
           `- Do not imply the answer came from uploaded documents or user memory.\n` +
+          `- Do not claim you cannot view or remember uploaded files — if no Sources were provided this turn, you simply were not given excerpts.\n` +
           `- Keep it to one to three short paragraphs unless they ask for more.\n` +
           `- Sometimes answer and stop — do not force a follow-up question.`
         );

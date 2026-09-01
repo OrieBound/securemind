@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { decideTurn } from "./decide-turn";
+import {
+  applySpeculativeKnowledgeHits,
+  decideTurn,
+  shouldSkipKnowledgeSearch,
+} from "./decide-turn";
 import { stripConversationalPrefixes } from "./normalize";
 
 function expectNoRetrieval(message: string) {
@@ -77,6 +81,43 @@ describe("decideTurn matrix", () => {
       message: "I have this document I would like you to review.",
     });
     expect(d.shouldRetrieve).toBe(false);
+  });
+
+  it("asks about a provided tenancy document retrieve Knowledge", () => {
+    const d = decideTurn({
+      message:
+        "What is the base rent and parking cost of the premise in tenancy document provided?",
+    });
+    expect(d.shouldRetrieve).toBe(true);
+    expect(d.mode).toBe("workspace_grounded");
+    expect(d.showSourcesUi).toBe(true);
+  });
+
+  it("follow-up that the answer is in memory retrieves Knowledge", () => {
+    const d = decideTurn({
+      message: "I already did. It should be in your memory",
+    });
+    expect(d.shouldRetrieve).toBe(true);
+    expect(d.mode).toBe("workspace_grounded");
+  });
+
+  it("speculative search is allowed for general questions, not social", () => {
+    const general = decideTurn({ message: "What is AWS KMS?" });
+    expect(general.shouldRetrieve).toBe(false);
+    expect(shouldSkipKnowledgeSearch(general)).toBe(false);
+    const promoted = applySpeculativeKnowledgeHits(general, 2);
+    expect(promoted.shouldRetrieve).toBe(true);
+    expect(promoted.mode).toBe("workspace_grounded");
+    expect(promoted.reasonCode).toBe("speculative-retrieve-hit");
+
+    const social = decideTurn({ message: "Thanks" });
+    expect(shouldSkipKnowledgeSearch(social)).toBe(true);
+    expect(applySpeculativeKnowledgeHits(social, 5).shouldRetrieve).toBe(false);
+
+    expect(applySpeculativeKnowledgeHits(general, 0).shouldRetrieve).toBe(false);
+
+    const provenance = decideTurn({ message: "Cool, where did you learn that?" });
+    expect(shouldSkipKnowledgeSearch(provenance)).toBe(true);
   });
 
   it("attached document review uses attachment mode", () => {

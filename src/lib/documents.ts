@@ -512,7 +512,7 @@ async function processHostedDocument(
       status: finalStatus,
       chunkCount: embedded,
       processedAt: new Date(),
-      processingError: finalStatus === "failed" ? "EMBED_FAILED" : null,
+      processingError: embedded === 0 ? "EMBED_FAILED" : null,
       fragmentIds,
       chunks: storedChunks,
     });
