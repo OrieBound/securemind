@@ -177,6 +177,7 @@ import {
   apiAuthHeaders,
   apiUrl,
   ensureClientAccessToken,
+  sessionApiFetch,
   usesRemoteApi,
   warmChatConnection,
 } from "@/lib/client/api-base";
@@ -3613,7 +3614,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     const sttNow = runtimeStatusRef.current;
     const captionMode = voiceCaptionMode({
       edition: sttNow?.edition === "cloud" ? "cloud" : "local",
-      provider: sttNow?.capabilities.voiceStt?.provider ?? null,
+      provider: parseVoiceSttChoice(sttNow?.capabilities.voiceStt?.provider),
       livePcmSupported: Boolean(audioCtxRef.current) && supportsLivePcmUpload(),
     });
 
@@ -4572,13 +4573,18 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     setDocLoading(true);
     setDocError(null);
     try {
+      await ensureClientAccessToken();
       const url = id ? `/api/documents?workspaceId=${id}` : "/api/documents";
-      const res = await fetch(url, { signal: ac.signal });
+      const res = await sessionApiFetch(url, { signal: ac.signal });
       if (res.ok) {
         setDocuments(await res.json() as DocRecord[]);
       } else {
         const body = await res.json().catch(() => null) as { error?: string } | null;
-        setDocError(body?.error ?? `Could not load documents (HTTP ${res.status}).`);
+        setDocError(
+          res.status === 401
+            ? "Knowledge is signed out. Refresh the page, sign in, and open Knowledge again."
+            : (body?.error ?? `Could not load documents (HTTP ${res.status}).`),
+        );
         setDocuments([]);
       }
     } catch (err) {
@@ -4711,7 +4717,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     const timer = setTimeout(async () => {
       pollTimersRef.current.delete(id);
       try {
-        const res = await fetch(`/api/documents/${id}?meta=1`);
+        const res = await sessionApiFetch(`/api/documents/${id}?meta=1`);
         if (!res.ok) return;
         const updated = await res.json() as {
           status: DocRecord["status"];
@@ -4760,7 +4766,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     fd.append("file", file);
     if (workspaceId) fd.append("workspaceId", workspaceId);
     try {
-      const res = await fetch("/api/documents", { method: "POST", body: fd });
+      const res = await sessionApiFetch("/api/documents", { method: "POST", body: fd });
       if (res.ok) {
         const doc = await res.json() as DocRecord;
         // Keep Knowledge list in sync when the upload belongs to the viewed workspace.
@@ -4793,7 +4799,9 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
         return doc;
       } else {
         const body = await res.json().catch(() => null) as { error?: string } | null;
-        const msg = body?.error ?? `Upload failed (HTTP ${res.status})`;
+        const msg = res.status === 401
+          ? "Knowledge is signed out. Refresh the page, sign in, and upload again."
+          : (body?.error ?? `Upload failed (HTTP ${res.status})`);
         if (!opts?.quiet) setDocError(msg);
         else setKnowledgeIngestNote(msg);
         return null;
@@ -4927,12 +4935,12 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   }, [handleDocumentFiles]);
 
   const openDocDetail = useCallback(async (id: string) => {
-    const res = await fetch(`/api/documents/${id}`);
+    const res = await sessionApiFetch(`/api/documents/${id}`);
     if (res.ok) setSelectedDoc(await res.json() as DocDetail);
   }, []);
 
   const deleteDocument = useCallback(async (id: string) => {
-    await fetch(`/api/documents/${id}`, { method: "DELETE" });
+    await sessionApiFetch(`/api/documents/${id}`, { method: "DELETE" });
     setDocuments(prev => prev.filter(d => d.id !== id));
     if (selectedDoc?.id === id) setSelectedDoc(null);
   }, [selectedDoc]);
@@ -4942,7 +4950,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     if (selectedDoc?.id === id) {
       setSelectedDoc({ ...selectedDoc, status: "processing", processingError: null });
     }
-    const res = await fetch(`/api/documents/${id}/reprocess`, { method: "POST" });
+    const res = await sessionApiFetch(`/api/documents/${id}/reprocess`, { method: "POST" });
     if (res.ok) pollDocument(id);
   }, [selectedDoc, pollDocument]);
 

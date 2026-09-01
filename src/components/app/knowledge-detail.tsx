@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, Shield, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { sessionApiFetch } from "@/lib/client/api-base";
 import { categoryLabel } from "@/lib/pii";
 import { imageScanLabels, type ImageScanMeta } from "@/lib/image-privacy";
 
@@ -166,7 +167,7 @@ export function KnowledgeDetail({
     }
     setChunksLoading(true);
     try {
-      const res = await fetch(`/api/documents/${doc.id}?chunksPage=${p}&chunksLimit=${CHUNK_PAGE}`);
+      const res = await sessionApiFetch(`/api/documents/${doc.id}?chunksPage=${p}&chunksLimit=${CHUNK_PAGE}`);
       if (!res.ok) return;
       const data = await res.json() as { fragments?: typeof doc.fragments; fragmentTotal?: number };
       setPageChunks(data.fragments ?? []);

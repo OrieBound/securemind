@@ -24,7 +24,7 @@ import { routeMessage } from "@/lib/models/route-message";
 import { decideChatRuntime, MODEL_NOT_ASSIGNED_CODE } from "@/lib/models/resolve-chat-runtime";
 import { probeHardware } from "@/lib/models/local-recommendations";
 import { runtimeEdition } from "@/lib/runtime-env";
-import { selectWorkingMemory } from "@/lib/tokens";
+import { estimateChatUsage, selectWorkingMemory } from "@/lib/tokens";
 import { RETRIEVAL_CANDIDATE_LIMIT, retrieveCombinedContext } from "@/lib/memory";
 import {
   insufficientEvidenceBlock,
@@ -39,9 +39,11 @@ import { recordInferenceEvent } from "@/lib/analytics/write";
 import type { GroundingStatus } from "@/lib/analytics/types";
 import type { ChatMessage, ModelProvider } from "@/lib/models/types";
 import {
+  applySpeculativeKnowledgeHits,
   decideTurn,
   modePromptInstructions,
   needsOperationalPrompt,
+  shouldSkipKnowledgeSearch,
 } from "@/lib/turn-policy/decide-turn";
 import { MAX_ATTACHMENTS_PER_TURN } from "@/lib/documents/constants";
 import type { ChatRequestBody } from "@/lib/chat/types";
@@ -81,6 +83,7 @@ export type ChatStreamContext = {
   evidenceCount: number;
   candidateCount: number;
   retrievalMs: number | null;
+  retrievalAttempted: boolean;
   showSourcesUi: boolean;
   showGroundingBadge: boolean;
 };
@@ -146,7 +149,7 @@ export async function prepareChatTurn(
     return { ok: false, status: 422, body: { error: "message is required" } };
   }
 
-  const turn = decideTurn({
+  let turn = decideTurn({
     message,
     hasImages,
     hasAttachments: hasImages || hasFileAttachments,
@@ -279,6 +282,8 @@ export async function prepareChatTurn(
 
   const retrievalQuery = turn.retrievalQuery?.trim() || message;
   const retrievalStarted = Date.now();
+  const searchKnowledge = Boolean(workspaceId) && !shouldSkipKnowledgeSearch(turn);
+  const searchLimit = searchKnowledge ? RETRIEVAL_CANDIDATE_LIMIT : 0;
   const [recentHistory, combined] = await Promise.all([
     Promise.resolve(selectWorkingMemory(history, 2500) as ChatMessage[]),
     workspaceId
@@ -287,15 +292,16 @@ export async function prepareChatTurn(
           workspaceId,
           userId,
           clientFacts: facts,
-          limit: turn.shouldRetrieve ? RETRIEVAL_CANDIDATE_LIMIT : 0,
+          limit: searchLimit,
         })
       : Promise.resolve({ documentHits: [], facts: [] }),
   ]);
-  const candidateHits = turn.shouldRetrieve ? combined.documentHits : [];
-  const retrievalMs = turn.shouldRetrieve ? Date.now() - retrievalStarted : null;
-  const evidenceHits = turn.shouldRetrieve
+  const candidateHits = searchKnowledge ? combined.documentHits : [];
+  const retrievalMs = searchKnowledge ? Date.now() - retrievalStarted : null;
+  const evidenceHits = searchKnowledge
     ? selectEvidenceForPrompt(candidateHits)
     : [];
+  turn = applySpeculativeKnowledgeHits(turn, evidenceHits.length);
   const candidateCount = candidateHits.length;
   const evidenceCount = evidenceHits.length;
 
@@ -370,6 +376,7 @@ export async function prepareChatTurn(
       evidenceCount,
       candidateCount,
       retrievalMs,
+      retrievalAttempted: searchKnowledge,
       showSourcesUi: turn.showSourcesUi,
       showGroundingBadge: turn.showGroundingBadge,
     },
@@ -490,6 +497,9 @@ export async function* iterateChatSseFrames(
       groundingStatus = "not_applicable";
     }
 
+    if (!usageHold.current && actualProvider !== "ollama") {
+      usageHold.current = estimateChatUsage(ctx.messages, fullAnswer);
+    }
     if (usageHold.current) {
       yield sseDataFrame({ usage: usageHold.current });
     }
@@ -527,7 +537,7 @@ export async function* iterateChatSseFrames(
       citationCount: sourcesCited,
       groundingStatus,
       turnMode: ctx.turn.mode,
-      retrievalAttempted: ctx.turn.shouldRetrieve,
+      retrievalAttempted: ctx.retrievalAttempted,
       retrievalReasonCode: ctx.turn.reasonCode,
       candidateCount: ctx.candidateCount,
       evidenceCount: ctx.evidenceCount,

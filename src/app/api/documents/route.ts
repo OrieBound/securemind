@@ -28,7 +28,7 @@ import {
   MAX_FILE_MB,
 } from "@/lib/documents/constants";
 import { writeOriginal, writeSpreadsheetTables } from "@/lib/document-storage";
-import { getIdentity } from "@/lib/identity";
+import { getIdentity, identityErrorResponse } from "@/lib/identity";
 import { recordSecurityEvents } from "@/lib/analytics/write";
 import type { SecuritySource } from "@/lib/analytics/types";
 import { shouldSyncDocumentIngest } from "@/lib/runtime-env";
@@ -54,14 +54,14 @@ function publicDoc(doc: { content: string; storageKey?: string | null } & Record
 }
 
 export async function GET(req: NextRequest) {
-  const { userId } = await getIdentity(req);
-  const workspaceId = new URL(req.url).searchParams.get("workspaceId");
-
   try {
+    const { userId } = await getIdentity(req);
+    const workspaceId = new URL(req.url).searchParams.get("workspaceId");
     const docs = await listPersistedDocuments(userId, workspaceId);
-
     return NextResponse.json(docs.map(listPublicDoc));
   } catch (err) {
+    const auth = identityErrorResponse(err);
+    if (auth) return auth;
     console.error("[documents] GET failed:", err);
     return NextResponse.json(
       { error: "Failed to load documents." },

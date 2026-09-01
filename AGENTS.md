@@ -23,7 +23,8 @@ It is a **single-user personal project**. Default auth is `AUTH_MODE=local`. Opt
 ### Turn policy (Chat)
 - Retrieval, citation UI, and response style are decided by `src/lib/turn-policy/decide-turn.ts` — not by scattered greeting regexes in the chat route.
 - Follow the user's topic. The workspace scopes Knowledge access; it is not a conversational boundary.
-- Social / general / app-help / provenance / correction turns must not retrieve workspace Knowledge or show Sources. Grounding is `not_applicable`.
+- Social / app-help / provenance / correction / ambiguous-clarify turns must not search workspace Knowledge or show Sources. Grounding is `not_applicable`.
+- General questions may silent-search Knowledge. Hits at `EVIDENCE_MIN_SIMILARITY` (0.5) upgrade the turn to workspace-grounded and show Sources; a miss stays general with no Sources.
 - Workspace-grounded and investigation turns retrieve, apply `EVIDENCE_MIN_SIMILARITY` (0.5), and show only sources actually cited.
 - The **workspace name** is the assistant speaker identity in chat (Companion-style). Product chrome stays SecureMind; default seed workspace is **Mindy Locke**.
 - `reasonCode` is telemetry only — never put it in assistant-visible text.

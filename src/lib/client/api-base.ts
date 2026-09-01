@@ -53,6 +53,25 @@ export function apiAuthHeaders(): HeadersInit {
 }
 
 /**
+ * Same-origin /api/* fetch that still sends the sessionStorage Bearer.
+ * Hosted chat already uses that token (API Gateway cannot see the HttpOnly cookie).
+ * Knowledge/settings stay on Amplify — without this header they 401 when the
+ * cookie is missing even though chat still works.
+ */
+export function sessionApiFetch(input: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  const token = readClientAccessToken();
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  return fetch(input, {
+    ...init,
+    headers,
+    credentials: init.credentials ?? "same-origin",
+  });
+}
+
+/**
  * Copy the Amplify HttpOnly session onto sessionStorage for API Gateway chat.
  * Login already stores the token; a new tab only has the cookie.
  */
