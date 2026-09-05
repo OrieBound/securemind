@@ -49,6 +49,9 @@ import {
 import { MAX_ATTACHMENTS_PER_TURN } from "@/lib/documents/constants";
 import {
   attachedDocumentNamesFromText,
+  compactAttachedDocumentHistory,
+  formatAttachmentsForHistory,
+  mergeCurrentAttachments,
   withAttachmentNamesInQuery,
 } from "@/lib/attachments";
 import type { ChatRequestBody } from "@/lib/chat/types";
@@ -107,6 +110,7 @@ export async function prepareChatTurn(
     workspaceId,
     images = [],
     attachmentDocumentIds = [],
+    attachmentExtracts = [],
     history = [],
     sessionSummary = "",
     facts = {},
@@ -141,14 +145,17 @@ export async function prepareChatTurn(
       );
     }
   }
-  const attachmentById = new Map(attachmentDocs.map(d => [d.id, d]));
-  const orderedAttachments = requestedAttachmentIds
-    .map(id => attachmentById.get(id))
-    .filter((d): d is { id: string; name: string; content: string } => Boolean(d));
+  const orderedAttachments = mergeCurrentAttachments({
+    ids: requestedAttachmentIds,
+    persisted: attachmentDocs,
+    clientExtracts: attachmentExtracts,
+  });
 
-  const hasFileAttachments = orderedAttachments.length > 0;
+  const hasFileAttachments = orderedAttachments.some(d => d.content.trim());
   const message = (rawMessage ?? "").trim()
-    || (hasImages || hasFileAttachments ? "Please review the attached file(s)." : "");
+    || (hasImages || hasFileAttachments || requestedAttachmentIds.length > 0
+      ? "Please review the attached file(s)."
+      : "");
 
   if (!message) {
     return { ok: false, status: 422, body: { error: "message is required" } };
@@ -157,7 +164,7 @@ export async function prepareChatTurn(
   let turn = decideTurn({
     message,
     hasImages,
-    hasAttachments: hasImages || hasFileAttachments,
+    hasAttachments: hasImages || hasFileAttachments || requestedAttachmentIds.length > 0,
     priorTurnHadCitations: Boolean(priorTurnHadCitations),
     priorTurnWasGrounded: Boolean(priorTurnWasGrounded),
   });
@@ -285,13 +292,19 @@ export async function prepareChatTurn(
     };
   }
 
+  const historyForModel = hasFileAttachments
+    ? history.map(m =>
+        m.role === "user"
+          ? { ...m, content: compactAttachedDocumentHistory(m.content) }
+          : m,
+      )
+    : history;
+
   const attachmentNames = [
     ...orderedAttachments.map(d => d.name),
     ...attachedDocumentNamesFromText(message),
-    ...history.flatMap(m =>
-      m.role === "user" && typeof m.content === "string"
-        ? attachedDocumentNamesFromText(m.content)
-        : [],
+    ...historyForModel.flatMap(m =>
+      m.role === "user" ? attachedDocumentNamesFromText(m.content) : [],
     ),
   ];
   const retrievalQuery = withAttachmentNamesInQuery(
@@ -299,10 +312,11 @@ export async function prepareChatTurn(
     attachmentNames,
   );
   const retrievalStarted = Date.now();
-  const searchKnowledge = Boolean(workspaceId) && !shouldSkipKnowledgeSearch(turn);
+  const skipSearch = shouldSkipKnowledgeSearch(turn) && hasFileAttachments;
+  const searchKnowledge = Boolean(workspaceId) && !skipSearch;
   const searchLimit = searchKnowledge ? RETRIEVAL_CANDIDATE_LIMIT : 0;
   const [recentHistory, combined] = await Promise.all([
-    Promise.resolve(selectWorkingMemory(history, 2500) as ChatMessage[]),
+    Promise.resolve(selectWorkingMemory(historyForModel, 2500) as ChatMessage[]),
     workspaceId
       ? retrieveCombinedContext({
           query: retrievalQuery,
@@ -359,14 +373,17 @@ export async function prepareChatTurn(
   }
 
   const hasExcerpts = Boolean(attachmentPrompt || promptBlock);
+  const currentExtractBlock = formatAttachmentsForHistory(orderedAttachments);
+  const userAsk = message || (hasImages ? "What's in this image?" : "");
+  const userText = currentExtractBlock ? `${userAsk}\n\n${currentExtractBlock}` : userAsk;
   const userContent = withFileAccessTurnNudge(
     hasImages
       ? [
-          { type: "text" as const, text: message || "What's in this image?" },
+          { type: "text" as const, text: userText },
           ...images.map(url => ({ type: "image_url" as const, image_url: { url } })),
         ]
-      : message,
-    hasExcerpts,
+      : userText,
+    hasExcerpts || Boolean(currentExtractBlock),
   );
 
   const messages: ChatMessage[] = [

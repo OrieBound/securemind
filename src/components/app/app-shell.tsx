@@ -210,6 +210,7 @@ import {
   ATTACHMENT_LIMITS_HINT,
   attachedDocumentNamesFromText,
   formatAttachmentsForHistory,
+  MAX_ATTACHMENT_PROMPT_CHARS,
   MAX_ATTACHMENTS_PER_TURN,
   stripAttachedDocumentBlock,
 } from "@/lib/attachments";
@@ -392,6 +393,7 @@ type PendingSend = {
   attachmentDocumentIds: string[];
   attachmentHistoryBlock: string;
   attachedFileNames: string[];
+  attachmentExtracts: { id: string; name: string; content: string }[];
 };
 
 type DeliverPayload = {
@@ -405,6 +407,7 @@ type DeliverPayload = {
   attachmentDocumentIds?: string[];
   attachmentHistoryBlock?: string;
   attachedFileNames?: string[];
+  attachmentExtracts?: { id: string; name: string; content: string }[];
 };
 
 type Workspace = {
@@ -3963,6 +3966,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     attachmentDocumentIds = [],
     attachmentHistoryBlock = "",
     attachedFileNames = [],
+    attachmentExtracts = [],
   }: DeliverPayload) => {
     const turn = turnCount + 1;
     setTurnCount(turn);
@@ -4081,6 +4085,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
           workspaceId:       activeWorkspaceId ?? "",
           images:            imageDataUrls,
           attachmentDocumentIds,
+          attachmentExtracts,
           sessionId:         sessionIdRef.current ?? "local",
           sessionSummary:    sessionSummaryRef.current,
           facts:             extractedFactsRef.current,
@@ -4394,6 +4399,11 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     }
     const attachmentDocumentIds = uploadedDocs.map(d => d.id);
     const attachedFileNames = uploadedDocs.map(d => d.name);
+    const attachmentExtracts = uploadedDocs.map(d => ({
+      id: d.id,
+      name: d.name,
+      content: d.content.slice(0, MAX_ATTACHMENT_PROMPT_CHARS),
+    }));
     const attachmentHistoryBlock = formatAttachmentsForHistory(uploadedDocs);
 
     const imageFiles = pendingAttachments.filter(f => f.type.startsWith("image/"));
@@ -4421,6 +4431,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
         attachmentDocumentIds,
         attachmentHistoryBlock,
         attachedFileNames,
+        attachmentExtracts,
       });
       return;
     }
@@ -4438,6 +4449,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       attachmentDocumentIds,
       attachmentHistoryBlock,
       attachedFileNames,
+      attachmentExtracts,
     });
     } finally {
       sendInFlightRef.current = false;
