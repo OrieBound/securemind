@@ -43,6 +43,58 @@ export function stripAttachedDocumentBlock(content: string): string {
   return content.slice(0, idx).trim();
 }
 
+/** Keep filename labels, drop stored extracts so a new attach is not drowned by the previous file. */
+export function compactAttachedDocumentHistory(content: string): string {
+  const names = attachedDocumentNamesFromText(content);
+  if (names.length === 0) return content;
+  const visible = stripAttachedDocumentBlock(content);
+  const labels = names.map(n => `[Attached document: ${n}]`).join("\n");
+  return visible ? `${visible}\n\n${labels}` : labels;
+}
+
+/**
+ * Merge server-persisted docs with same-turn extracts from the browser.
+ * Persisted text wins when present; the client extract fills a lookup miss
+ * or an ingest that has not finished writing yet.
+ */
+export function mergeCurrentAttachments(opts: {
+  ids: string[];
+  persisted: CurrentAttachmentDoc[];
+  clientExtracts: unknown;
+}): CurrentAttachmentDoc[] {
+  const allowed = new Set(opts.ids);
+  const byId = new Map<string, CurrentAttachmentDoc>();
+  for (const doc of opts.persisted) {
+    if (!allowed.has(doc.id)) continue;
+    byId.set(doc.id, {
+      id: doc.id,
+      name: doc.name,
+      content: doc.content.slice(0, MAX_ATTACHMENT_PROMPT_CHARS),
+    });
+  }
+  if (Array.isArray(opts.clientExtracts)) {
+    for (const raw of opts.clientExtracts) {
+      if (!raw || typeof raw !== "object") continue;
+      const rec = raw as Record<string, unknown>;
+      const id = typeof rec.id === "string" ? rec.id : "";
+      if (!allowed.has(id)) continue;
+      const name = typeof rec.name === "string" && rec.name.trim() ? rec.name.trim() : id;
+      const content = typeof rec.content === "string"
+        ? rec.content.slice(0, MAX_ATTACHMENT_PROMPT_CHARS)
+        : "";
+      const existing = byId.get(id);
+      if (!existing) {
+        byId.set(id, { id, name, content });
+      } else if (!existing.content.trim() && content) {
+        byId.set(id, { ...existing, content });
+      }
+    }
+  }
+  return opts.ids
+    .map(id => byId.get(id))
+    .filter((d): d is CurrentAttachmentDoc => Boolean(d));
+}
+
 /** Append filenames to a retrieval query so follow-ups can rank the right chunks. */
 export function withAttachmentNamesInQuery(query: string, names: string[]): string {
   const unique = [...new Set(names.map(n => n.trim()).filter(Boolean))];

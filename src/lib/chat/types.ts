@@ -10,6 +10,8 @@ export type ChatRequestBody = {
   workspaceId?: string;
   images?: string[];
   attachmentDocumentIds?: string[];
+  /** Same-turn scrubbed extracts so chat does not wait on a second document lookup. */
+  attachmentExtracts?: Array<{ id: string; name: string; content: string }>;
   sessionId?: string;
   history?: HistoryMessage[];
   sessionSummary?: string;
