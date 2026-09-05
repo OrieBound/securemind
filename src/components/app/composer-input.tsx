@@ -55,6 +55,10 @@ type ComposerInputProps = {
   sessionLoading: boolean;
   sessionReady: boolean;
   isStreaming: boolean;
+  /** True while Knowledge ingest runs before the stream starts. */
+  isSending?: boolean;
+  /** Composer has files queued — Send is allowed even with an empty text draft. */
+  hasAttachments?: boolean;
   /** When false, chat is intentionally disabled (no model provider). */
   inferenceReady?: boolean;
   onSend: () => void;
@@ -78,6 +82,8 @@ export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputP
       sessionLoading,
       sessionReady,
       isStreaming,
+      isSending = false,
+      hasAttachments = false,
       inferenceReady = true,
       onSend,
       onCancelStream,
@@ -133,8 +139,13 @@ export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputP
       },
     }), [draft]);
 
+    const busy = isStreaming || isSending;
     const canSend =
-      draft.trim().length > 0 && sessionReady && !sessionLoading && inferenceReady;
+      (draft.trim().length > 0 || hasAttachments) &&
+      sessionReady &&
+      !sessionLoading &&
+      inferenceReady &&
+      !busy;
 
     return (
       <div className="flex items-end gap-2 px-4 py-3.5">
@@ -158,7 +169,7 @@ export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputP
                 ? "Model provider required — detection and documents still work"
                 : `Ask about ${workspaceName}…`
           }
-          disabled={isStreaming || sessionLoading || !sessionReady || !inferenceReady}
+          disabled={busy || sessionLoading || !sessionReady || !inferenceReady}
           autoComplete="off"
           onFocus={() => onComposerFocus?.()}
           className="flex-1 min-h-[3.75rem] max-h-36 resize-none bg-transparent text-[length:var(--font-size-body)] leading-[var(--leading-body)] font-normal tracking-[var(--tracking-body)] text-[var(--text-body)] placeholder:text-[var(--text-subtle)] outline-none border-none"
@@ -168,11 +179,11 @@ export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputP
           onClick={onStartVoice}
           aria-label={voiceTitle ?? (voiceReady ? "Voice input" : (voiceBlockedReason ?? "Voice input unavailable"))}
           title={voiceTitle ?? (voiceReady ? "Dictate a message" : (voiceBlockedReason ?? "Voice input unavailable"))}
-          disabled={isStreaming || !voiceReady}
+          disabled={busy || !voiceReady}
           className={cn(
             "shrink-0 p-1.5 rounded-lg transition-colors",
             "text-foreground/25 hover:text-foreground/60 hover:bg-foreground/6",
-            (isStreaming || !voiceReady) && "opacity-30 pointer-events-none",
+            (busy || !voiceReady) && "opacity-30 pointer-events-none",
           )}
         >
           <Mic className="size-4" aria-hidden />

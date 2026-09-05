@@ -3150,6 +3150,8 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   const emojiBtnRef    = useRef<HTMLButtonElement>(null);
   const [showEmoji, setShowEmoji] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
+  const sendInFlightRef = useRef(false);
+  const [sendInFlight, setSendInFlight] = useState(false);
   const [composerDragOver, setComposerDragOver] = useState(false);
   const composerDragCounterRef = useRef(0);
   const [knowledgeIngestNote, setKnowledgeIngestNote] = useState<string | null>(null);
@@ -4306,7 +4308,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   const handleSend = useCallback(async (textOverride?: string) => {
     const raw = (textOverride ?? composerRef.current?.getValue() ?? "").trim();
     if (!raw && attachments.length === 0) return;
-    if (isStreaming) return;
+    if (sendInFlightRef.current || isStreaming) return;
     if (sessionLoading || !sessionIdRef.current) {
       setSessionSaveError("Still loading your conversation — wait a moment and try again.");
       return;
@@ -4337,12 +4339,26 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     if (voiceState !== "idle") cancelVoice();
 
     const pendingAttachments = [...attachments];
+    sendInFlightRef.current = true;
+    setSendInFlight(true);
 
+    try {
     // Await Knowledge ingest so scrubbed text is available for this chat turn.
     // Images also stay available for vision.
     let uploadedDocs: { id: string; name: string; content: string }[] = [];
     if (pendingAttachments.length > 0) {
+      setKnowledgeIngestNote(
+        pendingAttachments.length === 1
+          ? `Adding ${pendingAttachments[0].name} to Knowledge…`
+          : `Adding ${pendingAttachments.length} files to Knowledge…`,
+      );
       uploadedDocs = await ingestChatAttachmentsRef.current(pendingAttachments);
+      if (uploadedDocs.length === 0) {
+        setKnowledgeIngestNote(
+          "Could not add the file to Knowledge. Stay on this page, check sign-in, and try Send again.",
+        );
+        return;
+      }
     }
     const attachmentDocumentIds = uploadedDocs.map(d => d.id);
     const attachmentHistoryBlock = formatAttachmentsForHistory(uploadedDocs);
@@ -4388,6 +4404,10 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       attachmentDocumentIds,
       attachmentHistoryBlock,
     });
+    } finally {
+      sendInFlightRef.current = false;
+      setSendInFlight(false);
+    }
   }, [
     attachments, isStreaming, sessionLoading, voiceState, cancelVoice,
     piiSensitivity, safeTerms, deliverMessage, runtimeStatus,
@@ -7176,7 +7196,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
               onDrop={handleComposerDrop}
             >
               <form
-                onSubmit={e => { e.preventDefault(); handleSend(); setAttachments([]); }}
+                onSubmit={e => { e.preventDefault(); void handleSend(); }}
                 className="max-w-4xl mx-auto relative"
               >
                 {vendorRiskBlocked && activeNav === "thread" && runtimeStatus?.chatReady && (
@@ -7317,6 +7337,8 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                       sessionLoading={sessionLoading}
                       sessionReady={sessionReady}
                       isStreaming={isStreaming}
+                      isSending={sendInFlight}
+                      hasAttachments={attachments.length > 0}
                       inferenceReady
                       voiceReady
                       voiceTitle={
@@ -7329,7 +7351,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                       voiceBlockedReason={runtimeStatus?.capabilities.voiceStt?.note}
                       voiceInsert={voiceComposerInsert}
                       onVoiceInsertApplied={() => setVoiceComposerInsert(null)}
-                      onSend={() => { handleSend(); setAttachments([]); }}
+                      onSend={() => { void handleSend(); }}
                       onCancelStream={cancelStream}
                       onStartVoice={startVoice}
                       onComposerFocus={() => warmChatConnection()}
