@@ -31,7 +31,6 @@ const nextConfig: NextConfig = {
   outputFileTracingExcludes: {
     "/*": [
       "infra/**",
-      "documents/**",
       "tests/**",
       "docs/**",
       "lambda/**",
@@ -54,7 +53,6 @@ const nextConfig: NextConfig = {
     ],
     "/api/**": [
       "infra/**",
-      "documents/**",
       "tests/**",
       "docs/**",
       "lambda/**",

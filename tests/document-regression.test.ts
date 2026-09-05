@@ -1,5 +1,5 @@
 /**
- * Synthetic document regression: extract every supported fixture type,
+ * Synthetic document regression: extract every supported test-file type,
  * detect per instance policy, keep surrounding structure, and keep raw
  * secrets off the model boundary and out of audit events.
  */
@@ -29,9 +29,9 @@ vi.mock("@/lib/identity", async () => {
   };
 });
 
-const FIXTURE_DIR = join(process.cwd(), "documents", "fixtures");
+const TEST_FILES_DIR = join(process.cwd(), "docs", "test-files");
 
-const FIXTURES: { name: string; mime: string }[] = [
+const TEST_FILES: { name: string; mime: string }[] = [
   {
     name: "customer-case.docx",
     mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -46,10 +46,10 @@ const FIXTURES: { name: string; mime: string }[] = [
   { name: "app-config.json", mime: "application/json" },
 ];
 
-function loadFixtures() {
-  return FIXTURES.map(f => ({
+function loadTestFiles() {
+  return TEST_FILES.map(f => ({
     ...f,
-    buffer: readFileSync(join(FIXTURE_DIR, f.name)),
+    buffer: readFileSync(join(TEST_FILES_DIR, f.name)),
   }));
 }
 
@@ -61,8 +61,8 @@ function scrubExtracted(text: string) {
 }
 
 describe("synthetic document regression corpus", () => {
-  it("extracts every fixture type with readable text", async () => {
-    const files = loadFixtures();
+  it("extracts every test-file type with readable text", async () => {
+    const files = loadTestFiles();
     expect(files.map(f => f.name)).toEqual([
       "customer-case.docx",
       "service-agreement.pdf",
@@ -86,7 +86,7 @@ describe("synthetic document regression corpus", () => {
   });
 
   it("redacts policy hits without destroying surrounding structure", async () => {
-    const files = loadFixtures();
+    const files = loadTestFiles();
     for (const file of files) {
       const extracted = await extractDocument(file.buffer, file.mime, file.name);
       const scrubbed = scrubExtracted(extracted.text);
@@ -111,7 +111,7 @@ describe("synthetic document regression corpus", () => {
   });
 
   it("redacts the same email consistently when it is repeated", async () => {
-    const files = loadFixtures();
+    const files = loadTestFiles();
     const docx = files.find(f => f.name === "customer-case.docx")!;
     const extracted = await extractDocument(docx.buffer, docx.mime, docx.name);
     const matches = extracted.text.split(SYNTH.email).length - 1;
@@ -123,7 +123,7 @@ describe("synthetic document regression corpus", () => {
   });
 
   it("keeps control / false-positive examples", async () => {
-    const files = loadFixtures();
+    const files = loadTestFiles();
     const txt = files.find(f => f.name === "incident-notes.txt")!;
     const extracted = await extractDocument(txt.buffer, txt.mime, txt.name);
     const scrubbed = scrubExtracted(extracted.text);
@@ -142,7 +142,7 @@ describe("synthetic document regression corpus", () => {
   });
 
   it("retains sheet/cell provenance on spreadsheet extracts", async () => {
-    const files = loadFixtures();
+    const files = loadTestFiles();
     const xlsx = files.find(f => f.name === "employee-register.xlsx")!;
     const csv = files.find(f => f.name === "support-tickets.csv")!;
     const xExtracted = await extractDocument(xlsx.buffer, xlsx.mime, xlsx.name);
@@ -155,7 +155,7 @@ describe("synthetic document regression corpus", () => {
   });
 
   it("never supplies raw secrets as the model-bound representation", async () => {
-    const files = loadFixtures();
+    const files = loadTestFiles();
     for (const file of files) {
       const extracted = await extractDocument(file.buffer, file.mime, file.name);
       const forModel = scrubExtracted(extracted.text).sanitized;

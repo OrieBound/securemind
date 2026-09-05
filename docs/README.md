@@ -14,3 +14,5 @@ SecureMind is a privacy-aware AI workspace for managing models, knowledge, memor
 - [Deploy: Floci Local](./deploy/floci-local.md)
 - [Deploy: On-Prem Docker](./deploy/on-prem-docker.md)
 - [Deploy: Hosted sandbox roadblocks](./deploy/hosted-sandbox-roadblocks.md) — dated timeline (last stamped 2026-08-31; hits 16–18 = Knowledge 401 vs chat Bearer, RAG never ran)
+- [Architecture diagram (draw.io)](./architecture/securemind-current.drawio)
+- [Test files (synthetic Knowledge corpus)](./test-files/README.md)

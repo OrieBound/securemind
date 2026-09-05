@@ -347,14 +347,14 @@ export async function buildCorpusFiles(): Promise<CorpusFile[]> {
 }
 
 export async function writeRegressionCorpus(rootDir: string): Promise<void> {
-  const fixtures = join(rootDir, "fixtures");
-  mkdirSync(fixtures, { recursive: true });
+  const testFiles = join(rootDir, "test-files");
+  mkdirSync(testFiles, { recursive: true });
   const files = await buildCorpusFiles();
   for (const file of files) {
-    writeFileSync(join(fixtures, file.name), file.buffer);
+    writeFileSync(join(testFiles, file.name), file.buffer);
   }
   writeFileSync(
-    join(rootDir, "expected-findings.json"),
+    join(testFiles, "expected-findings.json"),
     JSON.stringify(EXPECTED_FINDINGS, null, 2) + "\n",
   );
 }

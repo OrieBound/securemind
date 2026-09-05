@@ -1,0 +1,233 @@
+<mxfile host="app.diagrams.net" agent="SecureMind" version="22.1.16" type="device">
+  <diagram id="securemind-current" name="SecureMind architecture">
+    <mxGraphModel dx="1426" dy="889" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="1280" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=18;fontStyle=1;fontColor=#232F3E;" value="SecureMind — current architecture (local vs hosted AWS)" vertex="1">
+          <mxGeometry x="40" y="16" width="820" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;rounded=0;fontSize=11;fontColor=#5C6B7A;" value="One codebase, two editions. Solid arrows = runtime. Dashed = deploy, IAM, logs, or optional lab paths. Chat streaming never goes through Amplify. AWS access keys are never stored in the UI or database." vertex="1">
+          <mxGeometry x="40" y="44" width="1200" height="32" as="geometry" />
+        </mxCell>
+
+        <mxCell id="browser" parent="1" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#1E262E;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.users;" value="Operator browser&#xa;client-side redaction" vertex="1">
+          <mxGeometry x="48" y="92" width="78" height="78" as="geometry" />
+        </mxCell>
+
+        <mxCell id="groq" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#ED7100;fontColor=#232F3E;fontSize=9;align=center;verticalAlign=middle;" value="Groq Cloud&#xa;BYOK chat / Whisper" vertex="1">
+          <mxGeometry x="1680" y="560" width="150" height="64" as="geometry" />
+        </mxCell>
+
+        <!-- Local / on-prem -->
+        <mxCell id="local" parent="1" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_on_premise;strokeColor=#5C6B7A;fillColor=#F7F7F7;verticalAlign=top;align=left;spacingLeft=30;fontColor=#232F3E;dashed=0;" value="Local / on-prem  ·  npm run dev  or  docker compose" vertex="1">
+          <mxGeometry x="20" y="210" width="500" height="560" as="geometry" />
+        </mxCell>
+        <mxCell id="loc-next" parent="local" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF8E1;strokeColor=#F9A825;fontColor=#232F3E;fontSize=9;align=center;verticalAlign=middle;" value="Next.js 16&#xa;localhost:3000&#xa;same-origin /api/*" vertex="1">
+          <mxGeometry x="40" y="50" width="130" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="loc-pg" parent="local" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2E7D32;fontColor=#232F3E;fontSize=9;align=center;verticalAlign=middle;" value="Postgres 16&#xa;+ pgvector 768-d&#xa;chat / Knowledge / memory" vertex="1">
+          <mxGeometry x="300" y="50" width="150" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="loc-floci" parent="local" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cognito;" value="Floci (optional)&#xa;Cognito emulator" vertex="1">
+          <mxGeometry x="66" y="180" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="loc-ollama" parent="local" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1565C0;fontColor=#232F3E;fontSize=9;align=center;verticalAlign=middle;" value="Ollama&#xa;chat fallback&#xa;nomic-embed-text" vertex="1">
+          <mxGeometry x="300" y="180" width="150" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="loc-keys" parent="local" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFEBEE;strokeColor=#C62828;fontColor=#232F3E;fontSize=9;align=center;verticalAlign=middle;" value="InstanceConfig&#xa;encrypted vendor keys&#xa;in Postgres  ·  not AWS keys" vertex="1">
+          <mxGeometry x="40" y="330" width="160" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="loc-bedrock" parent="local" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#01A88D;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.bedrock;" value="Bedrock (optional)&#xa;laptop SSO / profile" vertex="1">
+          <mxGeometry x="336" y="330" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="loc-note" parent="local" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#5C6B7A;fontColor=#5C6B7A;fontSize=9;align=left;verticalAlign=top;spacing=8;" value="Default AUTH_MODE=local. Compose also runs db + Floci + Ollama.&#xa;Ollama cost is $0. Billable AWS is off unless Admin enables it.&#xa;Detection runs in the browser before chat leaves the machine." vertex="1">
+          <mxGeometry x="40" y="450" width="420" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Hosted AWS -->
+        <mxCell id="aws" parent="1" style="points=[[0,0],[0.25,0],[0.5,0],[0.75,0],[1,0],[1,0.25],[1,0.5],[1,0.75],[1,1],[0.75,1],[0.5,1],[0.25,1],[0,1],[0,0.75],[0,0.5],[0,0.25]];outlineConnect=0;gradientColor=none;html=1;whiteSpace=wrap;fontSize=12;fontStyle=0;container=1;pointerEvents=0;collapsible=0;recursiveResize=0;shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_aws_cloud;strokeColor=#232F3E;fillColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#232F3E;dashed=0;" value="Hosted AWS  ·  sandbox  ·  us-east-1  ·  Amplify UI + API Gateway chat  ·  DynamoDB data plane" vertex="1">
+          <mxGeometry x="540" y="210" width="1120" height="560" as="geometry" />
+        </mxCell>
+        <mxCell id="aws-amplify" parent="aws" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#C925D1;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.amplify;" value="Amplify Hosting&#xa;UI + /api/* (not chat stream)" vertex="1">
+          <mxGeometry x="40" y="50" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="aws-cognito" parent="aws" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cognito;" value="Cognito&#xa;invite-only pool" vertex="1">
+          <mxGeometry x="200" y="50" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="aws-ddb" parent="aws" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#C925D1;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.dynamodb;" value="DynamoDB&#xa;fragments + vectors 1024-d" vertex="1">
+          <mxGeometry x="360" y="50" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="aws-iam" parent="aws" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.identity_and_access_management;" value="IAM roles&#xa;Amplify + Lambda" vertex="1">
+          <mxGeometry x="520" y="50" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="aws-apigw" parent="aws" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.api_gateway;" value="API Gateway REST&#xa;/chat  /warm" vertex="1">
+          <mxGeometry x="40" y="220" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="aws-lambda" parent="aws" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#ED7100;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" value="Lambda chat&#xa;response streaming" vertex="1">
+          <mxGeometry x="200" y="220" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="aws-warm" parent="aws" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#ED7100;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;" value="Lambda warm" vertex="1">
+          <mxGeometry x="360" y="220" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="aws-sm" parent="aws" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.secrets_manager;" value="Secrets Manager&#xa;vendor-keys + table name" vertex="1">
+          <mxGeometry x="520" y="220" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="aws-bedrock" parent="aws" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#01A88D;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.bedrock;" value="Bedrock&#xa;Nova / Titan embed v2" vertex="1">
+          <mxGeometry x="200" y="390" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="aws-transcribe" parent="aws" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#01A88D;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.transcribe;" value="Amazon Transcribe&#xa;opt-in live STT" vertex="1">
+          <mxGeometry x="360" y="390" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="aws-cwl" parent="aws" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#E7157B;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudwatch;" value="CloudWatch Logs" vertex="1">
+          <mxGeometry x="520" y="390" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="aws-note" parent="aws" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#5C6B7A;fontColor=#5C6B7A;fontSize=9;align=left;verticalAlign=top;spacing=8;" value="No RDS / Neon / S3 originals in this stack. Cost Insights are list-rate estimates, not Cost Explorer.&#xa;Amplify SSR still hosts settings, Knowledge, Usage, STT. Only /chat and /warm are on API Gateway." vertex="1">
+          <mxGeometry x="680" y="50" width="400" height="78" as="geometry" />
+        </mxCell>
+
+        <!-- CI / CD -->
+        <mxCell id="ci" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FAFBFC;strokeColor=#5C6B7A;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontSize=12;fontColor=#232F3E;fontStyle=0;" value="CI / deploy  ·  GitHub Actions on main  ·  OIDC  ·  no long-lived AWS keys in GitHub" vertex="1">
+          <mxGeometry x="20" y="800" width="1640" height="280" as="geometry" />
+        </mxCell>
+        <mxCell id="ci-github" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#232F3E;fontColor=#232F3E;fontSize=9;align=center;verticalAlign=middle;" value="GitHub repo&#xa;main branch" vertex="1">
+          <mxGeometry x="48" y="860" width="120" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ci-gha" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#232F3E;fontColor=#232F3E;fontSize=9;align=center;verticalAlign=middle;" value="GitHub Actions&#xa;test · typecheck · lint" vertex="1">
+          <mxGeometry x="230" y="860" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="ci-oidc" parent="1" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#DD344C;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.identity_and_access_management;" value="IAM OIDC role&#xa;securemind-gha-*" vertex="1">
+          <mxGeometry x="430" y="850" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="ci-tf" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#EDE7F6;strokeColor=#8C4FFF;fontColor=#232F3E;fontSize=9;align=center;verticalAlign=middle;" value="Terraform apply&#xa;Cognito · DDB · SM&#xa;API GW · Lambda · Amplify" vertex="1">
+          <mxGeometry x="560" y="860" width="170" height="64" as="geometry" />
+        </mxCell>
+        <mxCell id="ci-s3" parent="1" style="sketch=0;points=[[0,0,0],[0.25,0,0],[0.5,0,0],[0.75,0,0],[1,0,0],[0,1,0],[0.25,1,0],[0.5,1,0],[0.75,1,0],[1,1,0],[0,0.25,0],[0,0.5,0],[0,0.75,0],[1,0.25,0],[1,0.5,0],[1,0.75,0]];outlineConnect=0;fontColor=#232F3E;fillColor=#3F8624;strokeColor=#ffffff;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;html=1;fontSize=9;fontStyle=0;aspect=fixed;shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;" value="S3  ·  Terraform state only" vertex="1">
+          <mxGeometry x="780" y="850" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="ci-note" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#5C6B7A;fontColor=#5C6B7A;fontSize=9;align=left;verticalAlign=top;spacing=8;" value="After apply, Actions calls Amplify StartJob (UI build from GitHub). Chat/warm zips are packaged for Lambda.&#xa;S3 here is deploy state — Knowledge originals are not stored on S3.&#xa;This is a personal sandbox, not a production multi-tenant or compliance product." vertex="1">
+          <mxGeometry x="920" y="850" width="700" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- Runtime edges from browser -->
+        <mxCell id="e-b-local" edge="1" parent="1" source="browser" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" target="loc-next" value="HTTPS  localhost:3000">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-b-amp" edge="1" parent="1" source="browser" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;" target="aws-amplify" value="HTTPS  UI + settings / Knowledge / Usage">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="400" y="131" />
+              <mxPoint x="400" y="180" />
+              <mxPoint x="619" y="180" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e-b-chat" edge="1" parent="1" source="browser" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#232F3E;strokeWidth=2;" target="aws-apigw" value="POST /chat SSE  (Bearer)  — not via Amplify">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="87" y="190" />
+              <mxPoint x="560" y="190" />
+              <mxPoint x="560" y="469" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Local internals -->
+        <mxCell id="e-next-pg" edge="1" parent="local" source="loc-next" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;" target="loc-pg" value="Prisma">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-next-ollama" edge="1" parent="local" source="loc-next" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;" target="loc-ollama" value="chat + embed">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-next-floci" edge="1" parent="local" source="loc-next" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;dashed=1;" target="loc-floci" value="optional auth">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-next-keys" edge="1" parent="local" source="loc-next" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;" target="loc-keys" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-next-br" edge="1" parent="local" source="loc-next" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;dashed=1;" target="loc-bedrock" value="ALLOW_REAL_AWS">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-keys-groq" edge="1" parent="1" source="loc-keys" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;dashed=1;" target="groq" value="optional Groq key">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="140" y="790" />
+              <mxPoint x="1755" y="790" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Hosted internals -->
+        <mxCell id="e-amp-cog" edge="1" parent="aws" source="aws-amplify" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;" target="aws-cognito" value="cookie session">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-amp-ddb" edge="1" parent="aws" source="aws-amplify" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;" target="aws-ddb" value="settings / Knowledge">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-amp-sm" edge="1" parent="aws" source="aws-amplify" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;" target="aws-sm" value="vendor keys">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-amp-tr" edge="1" parent="aws" source="aws-amplify" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;dashed=1;" target="aws-transcribe" value="/api/transcribe">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-gw-lam" edge="1" parent="aws" source="aws-apigw" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#232F3E;strokeWidth=2;" target="aws-lambda" value="AWS_PROXY stream">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-gw-warm" edge="1" parent="aws" source="aws-apigw" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;" target="aws-warm" value="/warm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-lam-ddb" edge="1" parent="aws" source="aws-lambda" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;" target="aws-ddb" value="SearchVectors">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-lam-sm" edge="1" parent="aws" source="aws-lambda" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;" target="aws-sm" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-lam-br" edge="1" parent="aws" source="aws-lambda" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#232F3E;strokeWidth=2;" target="aws-bedrock" value="ConverseStream">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-lam-cwl" edge="1" parent="aws" source="aws-lambda" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;dashed=1;" target="aws-cwl" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-amp-cwl" edge="1" parent="aws" source="aws-amplify" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;dashed=1;" target="aws-cwl" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-iam-amp" edge="1" parent="aws" source="aws-iam" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;dashed=1;" target="aws-amplify" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-iam-lam" edge="1" parent="aws" source="aws-iam" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;dashed=1;" target="aws-lambda" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-lam-groq" edge="1" parent="1" source="aws-lambda" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;dashed=1;" target="groq" value="BYOK if saved">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-amp-groq" edge="1" parent="1" source="aws-amplify" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;dashed=1;" target="groq" value="Whisper STT if chosen">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-amp-br" edge="1" parent="aws" source="aws-amplify" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;dashed=1;" target="aws-bedrock" value="catalog / Titan embed">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- CI edges -->
+        <mxCell id="e-gh-gha" edge="1" parent="1" source="ci-github" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;" target="ci-gha" value="push main">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-gha-oidc" edge="1" parent="1" source="ci-gha" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;" target="ci-oidc" value="AssumeRoleWithWebIdentity">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-oidc-tf" edge="1" parent="1" source="ci-oidc" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;" target="ci-tf" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-tf-s3" edge="1" parent="1" source="ci-tf" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;dashed=1;" target="ci-s3" value="state">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-tf-amp" edge="1" parent="1" source="ci-tf" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;dashed=1;" target="aws-amplify" value="StartJob">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-tf-lam" edge="1" parent="1" source="ci-tf" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;fontSize=9;fontColor=#232F3E;strokeColor=#5C6B7A;dashed=1;" target="aws-lambda" value="zip">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

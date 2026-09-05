@@ -1,17 +1,18 @@
-# Synthetic document regression corpus
+# Test files (synthetic Knowledge corpus)
 
-These fixtures exist **only for tests**. Every name, address, identifier, card number, token, and password is fictional. Do not treat any value as real personal data or a usable credential.
+These files exist **only for tests**. Every name, address, identifier, card number, token, and password is fictional. Do not treat any value as real personal data or a usable credential.
 
 ## What is here
 
 | File | Kind |
 |------|------|
-| `fixtures/customer-case.docx` | Word narrative / customer-case |
-| `fixtures/service-agreement.pdf` | PDF contract-style text |
-| `fixtures/employee-register.xlsx` | Excel employees, credentials, and control sheet |
-| `fixtures/support-tickets.csv` | Exported support tickets |
-| `fixtures/incident-notes.txt` | Incident / security notes |
-| `fixtures/app-config.json` | Nested application / API config |
+| `customer-case.docx` | Word narrative / customer-case |
+| `SecureMind_Synthetic_Residential_Tenancy_Agreement.docx` | Word tenancy / lease narrative |
+| `service-agreement.pdf` | PDF contract-style text |
+| `employee-register.xlsx` | Excel employees, credentials, and control sheet |
+| `support-tickets.csv` | Exported support tickets |
+| `incident-notes.txt` | Incident / security notes |
+| `app-config.json` | Nested application / API config |
 | `expected-findings.json` | Categories expected under the default **balanced** policy |
 
 Values intentionally include PII-shaped data, payment-card test numbers, AWS/GitHub token shapes, RFC1918 addresses, repeated identifiers, and harmless control text.
@@ -27,7 +28,7 @@ Detection follows `src/lib/pii.ts` and the instance default (`balanced` + `DEFAU
 
 There is **no restore path**. Tests assert that the sanitized form is what would be persisted or sent to a model.
 
-## Regenerating fixtures
+## Regenerating test files
 
 ```
 npm run corpus:write
