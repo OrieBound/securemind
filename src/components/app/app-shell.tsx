@@ -6232,7 +6232,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
               )}
               <div
                 ref={settingsNavContentRef}
-                className="flex-1 min-h-0 overflow-y-auto px-2 pt-2.5 pb-2"
+                className="flex-1 min-h-0 flex flex-col px-2 pt-2.5 pb-2"
               >
                 <SettingsSidebarNav
                   section={settingsSection}
@@ -6246,6 +6246,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                     || authSession.role === "super_admin"
                     || authSession.role === "admin"
                   }
+                  onSignOut={authSession ? () => void authSession.logout() : undefined}
                 />
               </div>
             </div>
