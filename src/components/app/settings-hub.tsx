@@ -7,6 +7,7 @@ import {
   Cloud,
   Cpu,
   LayoutGrid,
+  LogOut,
   Palette,
   Shield,
   SlidersHorizontal,
@@ -397,6 +398,7 @@ export function SettingsSidebarNav({
   onOpenInsightsDashboard,
   activeInsightsDashboard = null,
   isAdmin = false,
+  onSignOut,
 }: {
   section: SettingsSection;
   onSectionChange: (s: SettingsSection) => void;
@@ -406,6 +408,8 @@ export function SettingsSidebarNav({
   activeInsightsDashboard?: InsightsDashboard | null;
   /** Cognito Admin group (or local auth). Multiple admins are supported. */
   isAdmin?: boolean;
+  /** Cognito session sign-out — pinned to the bottom of this nav. */
+  onSignOut?: () => void;
 }) {
   const insightsActive = Boolean(activeInsightsDashboard) ||
     section === "insights-context" ||
@@ -415,10 +419,11 @@ export function SettingsSidebarNav({
     section === "profile" || section === "appearance" || section === "workspace";
 
   return (
-    <nav
-      aria-label="Settings sections"
-      className="shrink-0 px-1 pt-1 pb-1 space-y-0.5"
-    >
+    <div className="flex h-full min-h-0 flex-col">
+      <nav
+        aria-label="Settings sections"
+        className="min-h-0 flex-1 overflow-y-auto px-1 pt-1 pb-1 space-y-0.5"
+      >
       <NavItem
         active={section === "overview" && !activeInsightsDashboard}
         onClick={() => onSectionChange("overview")}
@@ -515,7 +520,24 @@ export function SettingsSidebarNav({
           />
         </NavGroup>
       )}
-    </nav>
+      </nav>
+      {onSignOut && (
+        <div className="shrink-0 border-t border-foreground/8 px-1 pt-1.5 pb-0.5">
+          <button
+            type="button"
+            onClick={onSignOut}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[0.8125rem] cursor-pointer",
+              "text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-foreground",
+              "dark:text-foreground/45 dark:hover:bg-foreground/[0.05] dark:hover:text-foreground/70",
+            )}
+          >
+            <LogOut className="size-4 shrink-0 text-foreground/55" aria-hidden />
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
