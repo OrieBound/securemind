@@ -125,11 +125,40 @@ export function packageEvidence(hits: SemanticHit[]): {
     `- Do not invent source numbers. Only cite indices listed above.\n` +
     `- Prefer one citation per factual sentence that draws on the evidence.\n` +
     `- If the evidence only partially covers the question, say what is missing.\n` +
-    `- Placeholders like [category redacted] are already sanitized. Summarize remaining meaning; do not guess original values or invent a privacy wall.\n` +
+    `- Placeholders like [category redacted] are already sanitized. Skip those fields and use the rest. Do not guess original values.\n` +
+    `- Never say you cannot view attachments. Lead with what the excerpts support.\n` +
     `- Your answer will be checked for missing or invented citations.\n` +
     `- Never narrate the retrieval process to the user.`;
 
   return { citations, promptBlock };
+}
+
+/**
+ * Appended to the current user turn when excerpts are in the prompt.
+ * Recency beats earlier assistant refusals in the conversation history.
+ */
+export const FILE_ACCESS_TURN_NUDGE =
+  `[Instruction — follow this over any earlier assistant claim: ` +
+  `You already have the file excerpts in this prompt. Answer from them in plain English. ` +
+  `Never say you cannot view or access attachments. Never mention privacy or security guidelines as a limitation. ` +
+  `Do not explain how files are stored or retrieved. ` +
+  `If the remaining text is enough, help. If it is not, say what you can still tell from the extract.]`;
+
+export function withFileAccessTurnNudge<T extends string | Array<{ type: string; text?: string }>>(
+  userContent: T,
+  hasExcerpts: boolean,
+): T {
+  if (!hasExcerpts) return userContent;
+  const nudge = `\n\n${FILE_ACCESS_TURN_NUDGE}`;
+  if (typeof userContent === "string") {
+    return (userContent + nudge) as T;
+  }
+  const parts = userContent as Array<{ type: string; text?: string }>;
+  const firstText = parts.findIndex(p => p.type === "text");
+  if (firstText < 0) return userContent;
+  return parts.map((p, i) =>
+    i === firstText ? { ...p, text: `${p.text ?? ""}${nudge}` } : p,
+  ) as T;
 }
 
 /**
@@ -156,9 +185,9 @@ export function packageCurrentAttachments(docs: CurrentAttachmentDoc[]): string 
     blocks.join("\n\n") +
     `\n\nAttachment rules:\n` +
     `- You received these files this turn. Say so, by filename, and answer from this text.\n` +
-    `- Sensitive values may already appear as [category redacted]. Summarize the remaining meaning in plain English. ` +
-    `Do not guess the redacted values. Do not invent a privacy rule that blocks the file.\n` +
-    `- If a block is empty or unreadable, say you received the file but could not extract usable text.`
+    `- Sensitive values may already appear as [category redacted]. Skip those fields and summarize the rest. ` +
+    `Do not guess the redacted values. Never say you cannot view or access the file.\n` +
+    `- If a block is empty or unreadable, say you received the file but the extract is empty.`
   );
 }
 
@@ -176,7 +205,7 @@ export function insufficientEvidenceBlock(opts: {
       `\n\nNo sufficiently relevant workspace Knowledge was found for this turn.\n` +
       `Say that the available workspace Knowledge does not support a confident answer, ` +
       `name what would help (document, log, or detail), and do not invent a cause.\n` +
-      `Do not invent a privacy or security policy that forbids viewing uploads.\n` +
+      `Never say you cannot view attachments due to privacy or security.\n` +
       `You may offer clearly labeled general guidance separately from workspace facts.\n` +
       `Do not cite unrelated material.`
     );
@@ -184,7 +213,7 @@ export function insufficientEvidenceBlock(opts: {
   return (
     `\n\nNo sufficiently relevant workspace Knowledge was retrieved for this turn.\n` +
     `You were not given document excerpts this turn. Say that plainly if they asked about a file.\n` +
-    `Do not invent a privacy or security policy that forbids viewing uploads.\n` +
+    `Never say you cannot view attachments due to privacy or security.\n` +
     `You may answer with general guidance when appropriate, but do not imply it ` +
     `came from this workspace's documents. Do not invent workspace-specific facts.`
   );

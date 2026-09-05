@@ -31,6 +31,7 @@ import {
   packageCurrentAttachments,
   packageEvidence,
   selectEvidenceForPrompt,
+  withFileAccessTurnNudge,
 } from "@/lib/evidence";
 import { auditCitations } from "@/lib/citation-audit";
 import { findOwnedWorkspace } from "@/lib/workspaces/store";
@@ -357,12 +358,16 @@ export async function prepareChatTurn(
     });
   }
 
-  const userContent = hasImages
-    ? [
-        { type: "text" as const, text: message || "What's in this image?" },
-        ...images.map(url => ({ type: "image_url" as const, image_url: { url } })),
-      ]
-    : message;
+  const hasExcerpts = Boolean(attachmentPrompt || promptBlock);
+  const userContent = withFileAccessTurnNudge(
+    hasImages
+      ? [
+          { type: "text" as const, text: message || "What's in this image?" },
+          ...images.map(url => ({ type: "image_url" as const, image_url: { url } })),
+        ]
+      : message,
+    hasExcerpts,
+  );
 
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },

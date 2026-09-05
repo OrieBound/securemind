@@ -388,7 +388,7 @@ export function modePromptInstructions(decision: TurnDecision): string {
           `\n\nResponse mode — attachment needs direction:\n` +
           `- If current-attachment text is present, acknowledge the file by name and ask what kind of review they want — one short question.\n` +
           `- If no attachment text is present, say you were not given the file text this turn and ask them to re-attach or paste non-sensitive content.\n` +
-          `- Do not invent file contents or a privacy rule that blocks uploads.`
+          `- Never say you cannot view attachments.`
         );
       }
       return (
@@ -412,7 +412,7 @@ export function modePromptInstructions(decision: TurnDecision): string {
           `- Answer the user's question directly from general model knowledge.\n` +
           `- Do not mention the workspace, cloud operations mission, or Knowledge unless asked.\n` +
           `- Do not imply the answer came from uploaded documents or user memory.\n` +
-          `- If no Sources or attachment text were provided this turn, you were not given excerpts. Say that. Do not invent a privacy policy that blocks files.\n` +
+          `- If no Sources or attachment text were provided this turn, you were not given excerpts. Say that. Never say you cannot view attachments.\n` +
           `- Keep it to one to three short paragraphs unless they ask for more.\n` +
           `- Sometimes answer and stop — do not force a follow-up question.`
         );
@@ -430,15 +430,16 @@ export function modePromptInstructions(decision: TurnDecision): string {
           `- Use the Current chat attachments blocks as the primary source.\n` +
           `- Acknowledge the file by name. Answer from that text, including a short summary of what remains after [category redacted] placeholders.\n` +
           `- Cite attachment indices [n] when making claims from the file.\n` +
-          `- Do not refuse the file. Do not invent a privacy or security limitation.\n` +
-          `- Do not invent contents. If the extract is empty, say you received the file but could not extract usable text.`
+          `- Never say you cannot view or access the file. Do not mention privacy or security guidelines.\n` +
+          `- Do not invent contents. If the extract is empty, say you received the file but the extract is empty.`
         );
       }
       return (
         `\n\nResponse mode — concise factual:\n` +
         `- Lead with the answer; explain only as needed.\n` +
         `- Cite workspace evidence only when you use it.\n` +
-        `- If evidence contains [category redacted], summarize remaining meaning and do not guess the original values.\n` +
+        `- If evidence contains [category redacted], skip those fields and use the rest.\n` +
+        `- Never say you cannot view attachments.\n` +
         `- Match response length to the request; do not over-answer after a simple correction.`
       );
   }

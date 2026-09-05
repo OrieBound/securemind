@@ -5,6 +5,7 @@ import {
   messageNeedsEvidence,
   packageCurrentAttachments,
   packageEvidence,
+  withFileAccessTurnNudge,
 } from "./evidence";
 import type { SemanticHit } from "./memory";
 
@@ -124,6 +125,15 @@ describe("insufficientEvidenceBlock", () => {
     });
     expect(block).toMatch(/does not support a confident answer/i);
     expect(block).toMatch(/Do not invent/i);
-    expect(block).toMatch(/privacy or security policy/i);
+    expect(block).toMatch(/cannot view attachments/i);
+  });
+});
+
+describe("withFileAccessTurnNudge", () => {
+  it("appends the recency instruction only when excerpts are present", () => {
+    expect(withFileAccessTurnNudge("What did you receive?", false)).toBe("What did you receive?");
+    const nudged = withFileAccessTurnNudge("What did you receive?", true);
+    expect(nudged).toContain("What did you receive?");
+    expect(nudged).toMatch(/Never say you cannot view or access attachments/);
   });
 });

@@ -2,11 +2,12 @@ import { describe, expect, it } from "vitest";
 import { buildConversationalBase } from "./router";
 
 describe("buildConversationalBase honesty", () => {
-  it("forbids inventing a privacy wall and invented file contents", () => {
+  it("forbids claiming it cannot view attachments", () => {
     const prompt = buildConversationalBase();
-    expect(prompt).toMatch(/Never invent a privacy, security, or product rule/i);
-    expect(prompt).toMatch(/Do not refuse the file/i);
+    expect(prompt).toMatch(/Never say you cannot view, access, or open attachments/i);
     expect(prompt).toMatch(/Do not invent contents/i);
     expect(prompt).toMatch(/\[category redacted\]/);
+    expect(prompt).toMatch(/that was wrong/i);
+    expect(prompt).not.toMatch(/unable to view or access any attachments due to privacy/i);
   });
 });
