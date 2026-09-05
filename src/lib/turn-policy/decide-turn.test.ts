@@ -93,6 +93,21 @@ describe("decideTurn matrix", () => {
     expect(d.showSourcesUi).toBe(true);
   });
 
+  it("asks about the attached document retrieve Knowledge", () => {
+    const d = decideTurn({
+      message: "Tell me anything about the document attached.",
+    });
+    expect(d.shouldRetrieve).toBe(true);
+    expect(d.mode).toBe("workspace_grounded");
+    expect(d.showSourcesUi).toBe(true);
+  });
+
+  it("tell me about the document retrieves Knowledge", () => {
+    const d = decideTurn({ message: "Tell me about the document." });
+    expect(d.shouldRetrieve).toBe(true);
+    expect(d.mode).toBe("workspace_grounded");
+  });
+
   it("follow-up that the answer is in memory retrieves Knowledge", () => {
     const d = decideTurn({
       message: "I already did. It should be in your memory",

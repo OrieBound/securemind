@@ -34,7 +34,7 @@ const WORKSPACE_DEIXIS_RE =
 
 /** Knowledge already in the workspace, named without "our/uploaded knowledge". */
 const KNOWLEDGE_FILE_DEIXIS_RE =
-  /\b(?:tenancy|lease|rental)\s+(?:document|agreement|file)|(?:document|file|agreement|lease)\s+provided|(?:uploaded|attached)\s+(?:document|file|knowledge)|(?:in|from)\s+(?:the\s+)?(?:knowledge|(?:your\s+)?memory)\b/i;
+  /\b(?:tenancy|lease|rental)\s+(?:document|agreement|file)|(?:document|file|agreement|lease)\s+provided|(?:uploaded|attached)\s+(?:document|file|knowledge)|(?:document|file|pdf|attachment)\s+attached|about\s+(?:the|this|that)\s+(?:document|file|pdf|attachment|agreement)|(?:the|this|that)\s+(?:pdf|attachment)(?:\s|$|[?.!,])|(?:in|from)\s+(?:the\s+)?(?:knowledge|(?:your\s+)?memory)\b/i;
 
 const INVESTIGATION_RE =
   /\b(?:what\s+(?:caused|probably\s+caused)|why\s+did|root\s+cause|investigate|compare|what\s+should\s+we|which\s+(?:control|controls)|outage|failed|failure|authentication\s+fail|timeout|rollback|blast\s+radius)\b/i;
@@ -386,9 +386,9 @@ export function modePromptInstructions(decision: TurnDecision): string {
       if (decision.mode === "attachment") {
         return (
           `\n\nResponse mode — attachment needs direction:\n` +
-          `- If current-attachment text is present in the prompt, acknowledge the file by name and ask what kind of review they want — one short question.\n` +
-          `- If no attachment text is present, say you cannot see a file yet and ask them to re-attach or paste content.\n` +
-          `- Do not invent file contents.`
+          `- If current-attachment text is present, acknowledge the file by name and ask what kind of review they want — one short question.\n` +
+          `- If no attachment text is present, say you were not given the file text this turn and ask them to re-attach or paste non-sensitive content.\n` +
+          `- Do not invent file contents or a privacy rule that blocks uploads.`
         );
       }
       return (
@@ -412,7 +412,7 @@ export function modePromptInstructions(decision: TurnDecision): string {
           `- Answer the user's question directly from general model knowledge.\n` +
           `- Do not mention the workspace, cloud operations mission, or Knowledge unless asked.\n` +
           `- Do not imply the answer came from uploaded documents or user memory.\n` +
-          `- Do not claim you cannot view or remember uploaded files — if no Sources were provided this turn, you simply were not given excerpts.\n` +
+          `- If no Sources or attachment text were provided this turn, you were not given excerpts. Say that. Do not invent a privacy policy that blocks files.\n` +
           `- Keep it to one to three short paragraphs unless they ask for more.\n` +
           `- Sometimes answer and stop — do not force a follow-up question.`
         );
@@ -428,16 +428,17 @@ export function modePromptInstructions(decision: TurnDecision): string {
         return (
           `\n\nResponse mode — review current attachment:\n` +
           `- Use the Current chat attachments blocks as the primary source.\n` +
-          `- Answer the user's question about the attached file directly.\n` +
+          `- Acknowledge the file by name. Answer from that text, including a short summary of what remains after [category redacted] placeholders.\n` +
           `- Cite attachment indices [n] when making claims from the file.\n` +
-          `- Do not claim you received a file if no attachment blocks are present.\n` +
-          `- Do not invent contents. If the extract is empty, say so.`
+          `- Do not refuse the file. Do not invent a privacy or security limitation.\n` +
+          `- Do not invent contents. If the extract is empty, say you received the file but could not extract usable text.`
         );
       }
       return (
         `\n\nResponse mode — concise factual:\n` +
         `- Lead with the answer; explain only as needed.\n` +
         `- Cite workspace evidence only when you use it.\n` +
+        `- If evidence contains [category redacted], summarize remaining meaning and do not guess the original values.\n` +
         `- Match response length to the request; do not over-answer after a simple correction.`
       );
   }

@@ -72,7 +72,8 @@ describe("packageCurrentAttachments", () => {
     ]);
     expect(block).toContain('source="current attachment: nda.txt"');
     expect(block).toContain("This Agreement is between Acme and Beta.");
-    expect(block).toMatch(/Do not claim you received a file/i);
+    expect(block).toMatch(/You received these files this turn/i);
+    expect(block).toMatch(/\[category redacted\]/i);
   });
 
   it("formats history blocks for follow-up turns", () => {
@@ -123,5 +124,6 @@ describe("insufficientEvidenceBlock", () => {
     });
     expect(block).toMatch(/does not support a confident answer/i);
     expect(block).toMatch(/Do not invent/i);
+    expect(block).toMatch(/privacy or security policy/i);
   });
 });

@@ -21,6 +21,37 @@ export type CurrentAttachmentDoc = {
   content: string;
 };
 
+/** Labels stored in user-message history (hidden in the visible bubble). */
+const ATTACHED_DOCUMENT_LABEL_RE = /\[Attached document: ([^\]]+)\]/g;
+
+/** Filenames from `[Attached document: name]` history blocks. */
+export function attachedDocumentNamesFromText(text: string): string[] {
+  const names: string[] = [];
+  const re = new RegExp(ATTACHED_DOCUMENT_LABEL_RE.source, "g");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const name = m[1]?.trim();
+    if (name) names.push(name);
+  }
+  return names;
+}
+
+/** Hide history-only attachment payloads from the visible user bubble. */
+export function stripAttachedDocumentBlock(content: string): string {
+  const idx = content.search(/(?:^|\n\n)\[Attached document:/);
+  if (idx === -1) return content;
+  return content.slice(0, idx).trim();
+}
+
+/** Append filenames to a retrieval query so follow-ups can rank the right chunks. */
+export function withAttachmentNamesInQuery(query: string, names: string[]): string {
+  const unique = [...new Set(names.map(n => n.trim()).filter(Boolean))];
+  if (unique.length === 0) return query;
+  const extra = unique.filter(n => !query.toLowerCase().includes(n.toLowerCase()));
+  if (extra.length === 0) return query;
+  return `${query}\n${extra.join(" ")}`;
+}
+
 /** Compact block for conversation history so follow-up turns still see the file. */
 export function formatAttachmentsForHistory(docs: CurrentAttachmentDoc[]): string {
   if (docs.length === 0) return "";

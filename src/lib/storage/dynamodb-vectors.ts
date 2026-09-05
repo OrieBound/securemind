@@ -16,6 +16,7 @@ import { clampTopK } from "./vector-math";
 
 const DOCUMENT_CATEGORY = "document";
 const RETRIEVAL_TIMEOUT_MS = 3000;
+/** Cosine floor, same meaning as EVIDENCE_MIN_SIMILARITY — not a K (top-N) cap. */
 const DEFAULT_MIN_SIMILARITY = 0.5;
 
 export type VectorFragmentWrite = {

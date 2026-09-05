@@ -46,6 +46,10 @@ import {
   shouldSkipKnowledgeSearch,
 } from "@/lib/turn-policy/decide-turn";
 import { MAX_ATTACHMENTS_PER_TURN } from "@/lib/documents/constants";
+import {
+  attachedDocumentNamesFromText,
+  withAttachmentNamesInQuery,
+} from "@/lib/attachments";
 import type { ChatRequestBody } from "@/lib/chat/types";
 import { sseDataFrame } from "@/lib/chat/sse";
 import {
@@ -280,7 +284,19 @@ export async function prepareChatTurn(
     };
   }
 
-  const retrievalQuery = turn.retrievalQuery?.trim() || message;
+  const attachmentNames = [
+    ...orderedAttachments.map(d => d.name),
+    ...attachedDocumentNamesFromText(message),
+    ...history.flatMap(m =>
+      m.role === "user" && typeof m.content === "string"
+        ? attachedDocumentNamesFromText(m.content)
+        : [],
+    ),
+  ];
+  const retrievalQuery = withAttachmentNamesInQuery(
+    turn.retrievalQuery?.trim() || message,
+    attachmentNames,
+  );
   const retrievalStarted = Date.now();
   const searchKnowledge = Boolean(workspaceId) && !shouldSkipKnowledgeSearch(turn);
   const searchLimit = searchKnowledge ? RETRIEVAL_CANDIDATE_LIMIT : 0;
