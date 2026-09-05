@@ -125,6 +125,7 @@ export function packageEvidence(hits: SemanticHit[]): {
     `- Do not invent source numbers. Only cite indices listed above.\n` +
     `- Prefer one citation per factual sentence that draws on the evidence.\n` +
     `- If the evidence only partially covers the question, say what is missing.\n` +
+    `- Placeholders like [category redacted] are already sanitized. Summarize remaining meaning; do not guess original values or invent a privacy wall.\n` +
     `- Your answer will be checked for missing or invented citations.\n` +
     `- Never narrate the retrieval process to the user.`;
 
@@ -154,9 +155,10 @@ export function packageCurrentAttachments(docs: CurrentAttachmentDoc[]): string 
     `\n\n` +
     blocks.join("\n\n") +
     `\n\nAttachment rules:\n` +
-    `- These blocks are the files the user just attached. Answer from them when the question is about the attachment.\n` +
-    `- Do not claim you received a file unless these blocks are present.\n` +
-    `- If a block is empty or unreadable, say so and ask for a re-upload or paste.`
+    `- You received these files this turn. Say so, by filename, and answer from this text.\n` +
+    `- Sensitive values may already appear as [category redacted]. Summarize the remaining meaning in plain English. ` +
+    `Do not guess the redacted values. Do not invent a privacy rule that blocks the file.\n` +
+    `- If a block is empty or unreadable, say you received the file but could not extract usable text.`
   );
 }
 
@@ -174,12 +176,15 @@ export function insufficientEvidenceBlock(opts: {
       `\n\nNo sufficiently relevant workspace Knowledge was found for this turn.\n` +
       `Say that the available workspace Knowledge does not support a confident answer, ` +
       `name what would help (document, log, or detail), and do not invent a cause.\n` +
+      `Do not invent a privacy or security policy that forbids viewing uploads.\n` +
       `You may offer clearly labeled general guidance separately from workspace facts.\n` +
       `Do not cite unrelated material.`
     );
   }
   return (
     `\n\nNo sufficiently relevant workspace Knowledge was retrieved for this turn.\n` +
+    `You were not given document excerpts this turn. Say that plainly if they asked about a file.\n` +
+    `Do not invent a privacy or security policy that forbids viewing uploads.\n` +
     `You may answer with general guidance when appropriate, but do not imply it ` +
     `came from this workspace's documents. Do not invent workspace-specific facts.`
   );

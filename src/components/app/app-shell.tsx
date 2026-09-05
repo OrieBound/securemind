@@ -208,8 +208,10 @@ import {
 } from "@/lib/documents/constants";
 import {
   ATTACHMENT_LIMITS_HINT,
+  attachedDocumentNamesFromText,
   formatAttachmentsForHistory,
   MAX_ATTACHMENTS_PER_TURN,
+  stripAttachedDocumentBlock,
 } from "@/lib/attachments";
 
 // ─── types ────────────────────────────────────────────────────────────────────
@@ -266,6 +268,8 @@ type ChatMessage = {
   errorCode?: string;
   errorSettingsSection?: SettingsSection;
   images?: string[];   // base64 data URLs for inline image display
+  /** Filenames attached on this user turn — shown on the bubble after Send. */
+  attachedFiles?: string[];
   routeInfo?: RouteInfo;
   /** Retrieved sources for this turn — used citations only. */
   citations?: CitationRef[];
@@ -387,6 +391,7 @@ type PendingSend = {
   imageDataUrls: string[];
   attachmentDocumentIds: string[];
   attachmentHistoryBlock: string;
+  attachedFileNames: string[];
 };
 
 type DeliverPayload = {
@@ -399,6 +404,7 @@ type DeliverPayload = {
   hadRedactions: boolean;
   attachmentDocumentIds?: string[];
   attachmentHistoryBlock?: string;
+  attachedFileNames?: string[];
 };
 
 type Workspace = {
@@ -1245,14 +1251,6 @@ function WorkspaceAvatar({
   );
 }
 
-/** Hide history-only attachment payloads from the visible user bubble. */
-function stripAttachedDocumentBlock(content: string): string {
-  const idx = content.search(/\n\n\[Attached document:/);
-  if (idx === -1) return content;
-  const visible = content.slice(0, idx).trim();
-  return visible || "Attached file for review.";
-}
-
 function formatThinkingElapsed(ms: number): string {
   if (ms < 1000) return `${(ms / 1000).toFixed(1)}s`;
   const totalSec = Math.floor(ms / 1000);
@@ -1403,6 +1401,11 @@ const MessageBubble = memo(function MessageBubble({
   const [hovered, setHovered] = useState(false);
   const isUser = message.role === "user";
   const displayContent = isUser ? stripAttachedDocumentBlock(message.content) : message.content;
+  const attachedNames = isUser
+    ? (message.attachedFiles?.length
+        ? message.attachedFiles
+        : attachedDocumentNamesFromText(message.content))
+    : [];
 
   const body = isUser && message.segments ? (
     <p className="text-chat whitespace-pre-wrap break-words [overflow-wrap:anywhere] min-w-0">
@@ -1551,6 +1554,22 @@ const MessageBubble = memo(function MessageBubble({
                   />
                 ))}
               </div>
+            )}
+            {attachedNames.length > 0 && (
+              <ul className="mb-2.5 space-y-1.5" aria-label="Files attached to this message">
+                {attachedNames.map(name => (
+                  <li
+                    key={name}
+                    className="flex items-center gap-2 rounded-lg border border-[var(--primary-border)] bg-background/40 px-2.5 py-1.5"
+                  >
+                    <FileText className="size-3.5 shrink-0 text-foreground/70" aria-hidden />
+                    <span className="min-w-0">
+                      <span className="block truncate text-[0.78rem] font-medium text-foreground/90">{name}</span>
+                      <span className="block text-[0.65rem] text-foreground/45">Attached to this message</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
             )}
             {body}
             {message.scrubEvents && message.scrubEvents.length > 0 && (
@@ -3242,12 +3261,18 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
         loadedWorkspaceRef.current = workspaceId;
 
         if (data.messages.length > 0) {
-          const loaded = data.messages.map(m => ({
-            id:        m.id,
-            role:      m.role as "user" | "assistant",
-            content:   m.content,
-            createdAt: m.createdAt,
-          }));
+          const loaded = data.messages.map(m => {
+            const attachedFiles = m.role === "user"
+              ? attachedDocumentNamesFromText(m.content)
+              : [];
+            return {
+              id:        m.id,
+              role:      m.role as "user" | "assistant",
+              content:   m.content,
+              createdAt: m.createdAt,
+              attachedFiles: attachedFiles.length > 0 ? attachedFiles : undefined,
+            };
+          });
           setMessages(loaded);
           writeCachedMessages(workspaceId, loaded);
         } else {
@@ -3937,6 +3962,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     imageDataUrls,
     attachmentDocumentIds = [],
     attachmentHistoryBlock = "",
+    attachedFileNames = [],
   }: DeliverPayload) => {
     const turn = turnCount + 1;
     setTurnCount(turn);
@@ -3991,17 +4017,23 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
 
     const userId = crypto.randomUUID();
     const asstId = crypto.randomUUID();
+    const attachedFiles = [...new Set([
+      ...attachedFileNames,
+      ...attachedDocumentNamesFromText(attachmentHistoryBlock),
+      ...attachedDocumentNamesFromText(messageToSend),
+    ])];
 
     const now = new Date().toISOString();
     setMessages(p => [
       ...p,
       {
         // Keep attachment text in message content so follow-up turns still see it
-        // in working memory (UI strips the [Attached document…] block when rendering).
+        // in working memory (UI shows filenames; extract stays hidden).
         id: userId, role: "user", content: messageToSend,
         createdAt: now,
         segments, scrubEvents: hadRedactions ? scrubEvents : undefined,
         images: imageDataUrls.length > 0 ? imageDataUrls : undefined,
+        attachedFiles: attachedFiles.length > 0 ? attachedFiles : undefined,
       },
       { id: asstId, role: "assistant", content: "", createdAt: now },
     ]);
@@ -4361,6 +4393,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       }
     }
     const attachmentDocumentIds = uploadedDocs.map(d => d.id);
+    const attachedFileNames = uploadedDocs.map(d => d.name);
     const attachmentHistoryBlock = formatAttachmentsForHistory(uploadedDocs);
 
     const imageFiles = pendingAttachments.filter(f => f.type.startsWith("image/"));
@@ -4387,6 +4420,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
         imageDataUrls,
         attachmentDocumentIds,
         attachmentHistoryBlock,
+        attachedFileNames,
       });
       return;
     }
@@ -4403,6 +4437,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       hadRedactions: scrub.hadRedactions,
       attachmentDocumentIds,
       attachmentHistoryBlock,
+      attachedFileNames,
     });
     } finally {
       sendInFlightRef.current = false;
@@ -5256,22 +5291,32 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   useEffect(() => {
     if (insightsTab !== "savings") return;
     let cancelled = false;
-    setServerCostLoading(true);
-    fetchAnalyticsJson<InsightsCostPayload>("cost", {
-      range: statsRangeToAnalytics(routeStatsRange),
-      workspaceId: routeStatsWorkspaceId,
-    })
-      .then(data => {
-        if (!cancelled) setServerCost(data);
+    let first = true;
+    const load = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      if (first) setServerCostLoading(true);
+      fetchAnalyticsJson<InsightsCostPayload>("cost", {
+        range: statsRangeToAnalytics(routeStatsRange),
+        workspaceId: routeStatsWorkspaceId,
       })
-      .catch(() => {
-        if (!cancelled) setServerCost(null);
-      })
-      .finally(() => {
-        if (!cancelled) setServerCostLoading(false);
-      });
+        .then(data => {
+          if (!cancelled) setServerCost(data);
+        })
+        .catch(() => {
+          if (!cancelled) setServerCost(null);
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setServerCostLoading(false);
+            first = false;
+          }
+        });
+    };
+    load();
+    const id = window.setInterval(load, 15_000);
     return () => {
       cancelled = true;
+      window.clearInterval(id);
     };
   }, [insightsTab, routeStatsRange, routeStatsWorkspaceId]);
 
@@ -7274,7 +7319,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                       <div key={f.name + f.size} className="flex items-center gap-1.5 rounded-lg bg-foreground/6 border border-foreground/8 px-2.5 py-1 text-xs text-foreground/60">
                         <span className="truncate max-w-[140px]">{f.name}</span>
                         <span className="text-foreground/25 text-[0.6rem]">
-                          {f.type.startsWith("image/") ? "vision + knowledge" : "→ knowledge"}
+                          {f.type.startsWith("image/") ? "image + Knowledge" : "adds to Knowledge"}
                         </span>
                         <button type="button" onClick={() => removeAttachment(f.name)} className="text-foreground/30 hover:text-foreground/60">✕</button>
                       </div>

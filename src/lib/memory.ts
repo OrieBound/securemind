@@ -31,9 +31,9 @@ export type SemanticHit = {
 };
 
 /**
- * Minimum cosine similarity for a chunk to enter the model prompt as evidence.
- * Candidates may be fetched with a slightly lower floor for diagnostics later;
- * prompt inclusion uses this calibrated threshold.
+ * Similarity floor (not K). Ranked hits are already highest-first; this drops
+ * weak matches so the model is not fed unrelated chunks. Do not raise it to
+ * “get better matches” — that only hides more of the ranked list.
  */
 export const EVIDENCE_MIN_SIMILARITY = 0.5;
 /** @deprecated use EVIDENCE_MIN_SIMILARITY */
