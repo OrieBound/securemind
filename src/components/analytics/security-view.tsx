@@ -307,6 +307,7 @@ export function SecurityAnalyticsView({
       subject={subject}
       onBackToAdmin={onBackToAdmin}
       hideScopeFilters={pageSection === "policy"}
+      sectionTablistLabel="Security sections"
       sectionLinks={[
         { href: SECURITY_SECTION_HREF.policy, label: "Policy" },
         { href: SECURITY_SECTION_HREF.log, label: "Detection log" },

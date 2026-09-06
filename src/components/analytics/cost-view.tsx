@@ -16,6 +16,7 @@ import {
   AnalyticsShell,
   rangeLabelOf,
   useAnalyticsFilters,
+  useSectionHash,
   type InsightsSubjectScope,
 } from "./analytics-shell";
 import { ChartFrame } from "./chart-frame";
@@ -25,6 +26,7 @@ import { fmtUsd, fmtUsdLabeled, shortModel } from "@/lib/analytics/client";
 import { useAnalyticsQuery } from "./use-analytics-query";
 import { RateTableEditor } from "./rate-table-editor";
 import { cn } from "@/lib/utils";
+import { COST_SECTION_HREF, costPageSection } from "@/lib/analytics/cost-hash";
 
 type WorkspaceOpt = { id: string; name: string };
 
@@ -68,6 +70,8 @@ type Props = {
 export function CostAnalyticsView({ workspaces, subject = null, onBackToAdmin }: Props) {
   const chart = useChartTheme();
   const { range, setRange, workspaceId, setWorkspaceId } = useAnalyticsFilters("30d");
+  const { locationHash, selectSectionTab } = useSectionHash();
+  const pageSection = costPageSection(locationHash);
   const asUser = subject?.userId ?? null;
   const { data, loading, error, retry } = useAnalyticsQuery<CostPayload>("cost", {
     range,
@@ -113,8 +117,8 @@ export function CostAnalyticsView({ workspaces, subject = null, onBackToAdmin }:
   return (
     <AnalyticsShell
       active="cost"
-      title="Estimated AI inference cost"
-      subtitle="Conservative list-price estimates (+10% uplift) from recorded token usage. Refreshes about every 15 seconds while this page is open. Not an invoice or full AWS bill."
+      title="Cost"
+      subtitle="Cap, period estimates, and list rates on Estimates; spend charts on Charts. Conservative list-price figures — not an invoice or full AWS bill."
       workspaces={workspaces}
       range={range}
       workspaceId={workspaceId}
@@ -122,6 +126,15 @@ export function CostAnalyticsView({ workspaces, subject = null, onBackToAdmin }:
       onWorkspaceChange={setWorkspaceId}
       subject={subject}
       onBackToAdmin={onBackToAdmin}
+      sectionTablistLabel="Cost sections"
+      sectionLinks={[
+        { href: COST_SECTION_HREF.estimates, label: "Estimates" },
+        { href: COST_SECTION_HREF.charts, label: "Charts" },
+      ]}
+      activeSectionHref={
+        pageSection === "charts" ? COST_SECTION_HREF.charts : COST_SECTION_HREF.estimates
+      }
+      onSectionTab={selectSectionTab}
     >
       {error && (
         <div className="flex items-center gap-3 text-sm text-destructive">
@@ -131,6 +144,9 @@ export function CostAnalyticsView({ workspaces, subject = null, onBackToAdmin }:
           </button>
         </div>
       )}
+
+      {pageSection === "estimates" && (
+      <div id="cost-estimates" role="tabpanel" className="space-y-5">
       {monthCap && (
         <div
           className={cn(
@@ -217,7 +233,11 @@ export function CostAnalyticsView({ workspaces, subject = null, onBackToAdmin }:
       </div>
 
       <RateTableEditor />
+      </div>
+      )}
 
+      {pageSection === "charts" && (
+      <div id="cost-charts" role="tabpanel" className="space-y-5">
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <ChartFrame
           title="Estimated cost over time"
@@ -359,6 +379,8 @@ export function CostAnalyticsView({ workspaces, subject = null, onBackToAdmin }:
           </BarChart>
         </ResponsiveContainer>
       </ChartFrame>
+      </div>
+      )}
     </AnalyticsShell>
   );
 }
