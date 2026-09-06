@@ -45,4 +45,6 @@ export type DecideTurnInput = {
   priorTurnHadCitations?: boolean;
   /** Prior assistant turn required or used workspace evidence. */
   priorTurnWasGrounded?: boolean;
+  /** Prior user turn included a chat attachment. */
+  priorTurnHadAttachments?: boolean;
 };

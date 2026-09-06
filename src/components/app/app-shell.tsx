@@ -4106,6 +4106,13 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
               (last?.citationAudit && last.citationAudit.status !== "n/a"),
             );
           })(),
+          priorTurnHadAttachments: (() => {
+            const lastUser = [...messages].reverse().find(m => m.role === "user");
+            return Boolean(
+              lastUser?.attachedFiles?.length ||
+              (lastUser && attachedDocumentNamesFromText(lastUser.content).length > 0),
+            );
+          })(),
         }),
         signal: ctrl.signal,
       });
