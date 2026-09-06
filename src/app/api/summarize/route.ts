@@ -1,10 +1,12 @@
 /**
  * POST /api/summarize
  *
- * Background memory compression — triggered by the client after every N turns.
+ * Background memory compression — triggered by the client after every N turns,
+ * or fact capture (`purpose: "facts"`) after each user message without advancing
+ * the compression cursor.
  * Uses a cheap fast model (llama3.2:3b) so it never blocks the main chat.
  *
- * Body:   { messages, existingSummary?, existingFacts? }
+ * Body:   { messages, existingSummary?, existingFacts?, purpose? }
  * Returns { summary, facts }
  */
 
@@ -28,6 +30,8 @@ type SummarizeRequest = {
   sessionId?: string;
   workspaceId?: string;
   turnsCovered?: number;
+  /** facts = capture user-stated facts without compressing the thread. */
+  purpose?: "facts" | "compress";
 };
 
 /** Serialize fact values for DB storage — never persist [object Object]. */
@@ -85,7 +89,10 @@ export async function POST(req: NextRequest) {
     sessionId,
     workspaceId,
     turnsCovered    = 0,
+    purpose         = "compress",
   } = body;
+
+  const factsOnly = purpose === "facts";
 
   if (!messages?.length) {
     return Response.json({ summary: existingSummary, facts: existingFacts });
@@ -142,7 +149,7 @@ export async function POST(req: NextRequest) {
           workspaceId,
           sessionId,
           summary: newSummary,
-          turnsCovered,
+          turnsCovered: factsOnly ? (existingSummary?.turnsCovered ?? 0) : turnsCovered,
           updatedAt: ts,
         }).catch(err => console.error("[summarize] hosted summary persist failed:", err));
 
@@ -174,8 +181,10 @@ export async function POST(req: NextRequest) {
         // Upsert the session summary
         db.sessionSummary.upsert({
           where:  { sessionId },
-          update: { summary: newSummary, turnsCovered },
-          create: { sessionId, summary: newSummary, turnsCovered },
+          update: factsOnly
+            ? { summary: newSummary }
+            : { summary: newSummary, turnsCovered },
+          create: { sessionId, summary: newSummary, turnsCovered: factsOnly ? 0 : turnsCovered },
         }),
         // Upsert facts — always per-workspace for full isolation
         ...(workspaceId

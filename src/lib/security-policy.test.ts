@@ -85,10 +85,9 @@ describe("getSecurityPolicy", () => {
 });
 
 describe("mergeSafeTerms", () => {
-  it("does not reintroduce RFC 2606 example.* domains from a stored instance list", () => {
-    const merged = mergeSafeTerms([
-      { id: "default-example-com", kind: "domain", value: "example.com", label: "RFC 2606 reserved domain" },
-    ]);
-    expect(merged.some(t => /example\.(com|org|net)/i.test(t.value))).toBe(false);
+  it("includes RFC 2606 example.* domains from shipped defaults", () => {
+    const merged = mergeSafeTerms([]);
+    expect(merged.some(t => t.value === "example.com")).toBe(true);
+    expect(merged.some(t => t.value === "test")).toBe(true);
   });
 });

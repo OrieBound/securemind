@@ -29,8 +29,8 @@ import {
   DetectionPolicyMatrix,
 } from "@/components/app/detection-policy-panel";
 import { DetectionLog, groupDetectionLog, type DetectionLogItem } from "@/components/app/detection-log";
-import { categoryLabel, DEFAULT_SENSITIVITY, parsePiiSensitivityTier, type PiiSensitivityTier } from "@/lib/pii";
-import { parseSecurityHash } from "@/lib/analytics/security-hash";
+import { categoryLabel, DEFAULT_SENSITIVITY, parsePiiSensitivityTier, type PiiSensitivityTier, type SafeTerm } from "@/lib/pii";
+import { parseSecurityHash, SECURITY_SECTION_HREF, securityPageSection } from "@/lib/analytics/security-hash";
 
 type WorkspaceOpt = { id: string; name: string; emoji?: string };
 
@@ -133,6 +133,7 @@ export function SecurityAnalyticsView({
     currentPolicyTier ?? DEFAULT_SENSITIVITY,
   );
   const [safeTermCount, setSafeTermCount] = useState<number | null>(null);
+  const [policySafeTerms, setPolicySafeTerms] = useState<SafeTerm[]>([]);
 
   useEffect(() => {
     if (currentPolicyTier) setPolicyTier(currentPolicyTier);
@@ -152,7 +153,12 @@ export function SecurityAnalyticsView({
           const parsed = parsePiiSensitivityTier(body.piiSensitivity);
           if (parsed) setPolicyTier(parsed);
         }
-        if (Array.isArray(body.safeTerms)) setSafeTermCount(body.safeTerms.length);
+        if (Array.isArray(body.safeTerms)) {
+          setSafeTermCount(body.safeTerms.length);
+          setPolicySafeTerms(body.safeTerms.filter((t): t is SafeTerm =>
+            Boolean(t && typeof t === "object" && typeof (t as SafeTerm).id === "string" && typeof (t as SafeTerm).value === "string"),
+          ));
+        }
       } catch {
         /* offline — matrix still shows the catalog */
       }
@@ -269,6 +275,13 @@ export function SecurityAnalyticsView({
   }, [logGroups, hashRecordId, securityHash, showDismissedLog, range]);
 
   const pulseId = highlightedDetectionId ?? hashRecordId;
+  const pageSection = securityPageSection(locationHash);
+
+  const selectSectionTab = (href: string) => {
+    const url = `${window.location.pathname}${window.location.search}${href}`;
+    window.history.pushState(null, "", url);
+    setLocationHash(href);
+  };
 
   const categories = data?.byCategory.map(c => c.category) ?? [];
   const overTimeKeys = useMemo(() => {
@@ -285,7 +298,7 @@ export function SecurityAnalyticsView({
     <AnalyticsShell
       active="security"
       title="Security"
-      subtitle="Detection policy, this browser’s detection log (Dismiss / Delete), and finding charts — one page. Raw matched values are not stored. Detection is risk reduction, not a guarantee."
+      subtitle="Policy, this browser’s detection log, and finding charts — one tab at a time. Raw matched values are not stored. Detection is risk reduction, not a guarantee."
       workspaces={workspaces}
       range={range}
       workspaceId={workspaceId}
@@ -293,12 +306,20 @@ export function SecurityAnalyticsView({
       onWorkspaceChange={setWorkspaceId}
       subject={subject}
       onBackToAdmin={onBackToAdmin}
+      hideScopeFilters={pageSection === "policy"}
       sectionLinks={[
-        { href: "#detection-policy", label: "Policy" },
-        { href: "#detection-log", label: "Detection log" },
-        { href: "#security-charts", label: "Charts" },
+        { href: SECURITY_SECTION_HREF.policy, label: "Policy" },
+        { href: SECURITY_SECTION_HREF.log, label: "Detection log" },
+        { href: SECURITY_SECTION_HREF.charts, label: "Charts" },
       ]}
+      activeSectionHref={
+        pageSection === "log" ? SECURITY_SECTION_HREF.log
+        : pageSection === "charts" ? SECURITY_SECTION_HREF.charts
+        : SECURITY_SECTION_HREF.policy
+      }
+      onSectionTab={selectSectionTab}
       extraFilters={
+        pageSection === "charts" ? (
         <>
           <FilterSelect label="Category" value={categoryFilter} onChange={setCategoryFilter} options={categories} />
           <FilterSelect
@@ -320,6 +341,7 @@ export function SecurityAnalyticsView({
             options={["redacted", "blocked", "safe_listed", "dismissed", "reviewed"]}
           />
         </>
+        ) : undefined
       }
     >
       {error && (
@@ -331,9 +353,11 @@ export function SecurityAnalyticsView({
         </div>
       )}
 
+      {pageSection === "policy" && (
       <section
         id="detection-policy"
-        className="rounded-xl border border-foreground/10 bg-foreground/[0.03] p-4 sm:p-5 space-y-3 scroll-mt-24"
+        role="tabpanel"
+        className="rounded-xl border border-foreground/10 bg-foreground/[0.03] p-4 sm:p-5 space-y-3"
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -363,19 +387,24 @@ export function SecurityAnalyticsView({
         <DetectionPolicyExplainer
           currentTier={policyTier}
           safeTermCount={safeTermCount ?? undefined}
+          safeTerms={policySafeTerms}
         />
       </section>
+      )}
 
+      {pageSection === "log" && (
       <section
         id="detection-log"
-        className="rounded-xl border border-foreground/10 bg-foreground/[0.03] p-4 sm:p-5 space-y-3 scroll-mt-24"
+        role="tabpanel"
+        className="rounded-xl border border-foreground/10 bg-foreground/[0.03] p-4 sm:p-5 space-y-3"
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-foreground/90">Detection log</h3>
             <p className="text-xs text-foreground/40 mt-1 max-w-2xl leading-relaxed">
-              This browser’s detections for the selected range. Dismiss hides a row (you can show
-              it again). Delete removes the row from this browser. Neither action deletes a
+              This browser’s detections for the selected range. Days start collapsed so a long
+              history stays scannable — open a day for the rows. Dismiss hides a row (you can
+              show it again). Delete removes the row from this browser. Neither action deletes a
               Knowledge file, undoes a redaction, or whitelists a value.
             </p>
           </div>
@@ -403,6 +432,7 @@ export function SecurityAnalyticsView({
           </div>
         )}
         <DetectionLog
+          key={`${range}-${workspaceId}-${showDismissedLog}`}
           groups={logGroups}
           workspaceName={id => {
             if (!id) return { name: "Unknown workspace" };
@@ -416,8 +446,11 @@ export function SecurityAnalyticsView({
           onOpenSafeTerms={onOpenSafeTerms}
         />
       </section>
+      )}
 
-      <div id="security-charts" className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 scroll-mt-24">
+      {pageSection === "charts" && (
+      <div id="security-charts" role="tabpanel" className="space-y-5">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         <KpiCard label="Total findings" value={loading ? "…" : String(data?.kpis.totalFindings ?? 0)} />
         <KpiCard label="High-risk blocked" value={loading ? "…" : String(data?.kpis.highRiskBlocked ?? 0)} />
         <KpiCard label="Items redacted" value={loading ? "…" : String(data?.kpis.itemsRedacted ?? 0)} />
@@ -643,6 +676,8 @@ export function SecurityAnalyticsView({
           </div>
         )}
       </section>
+      </div>
+      )}
     </AnalyticsShell>
   );
 }

@@ -22,7 +22,8 @@ Values intentionally include PII-shaped data, payment-card test numbers, AWS/Git
 Detection follows `src/lib/pii.ts` and the instance default (`balanced` + `DEFAULT_SAFE_TERMS`). That means:
 
 - Email, SSN, Luhn-valid cards, phones, public IPv4, street addresses, and high-signal secrets **are** redacted.
-- RFC1918 addresses are **safe-listed** by default. RFC 2606 `example.com` / `.org` / `.net` mailboxes are **not** exempted.
+- RFC1918 and RFC 5737 addresses are **safe-listed** by default.
+- RFC 2606 `example.com` / `.org` / `.net` and reserved TLDs (`.test`, `.invalid`, `.localhost`, `.example`) are **safe-listed** by default so documentation mailboxes are not treated as real people. They appear in Settings → Workspace under Safe terms.
 - Dates of birth, names, bank routing numbers, and ordinary passwords are **not** pattern families at balanced — they are control/negative examples, not missing-feature bugs.
 - Passport / national ID patterns require **high** sensitivity.
 

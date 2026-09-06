@@ -19,3 +19,17 @@ export function parseSecurityHash(hash: string): SecurityHash | null {
   }
   return null;
 }
+
+export const SECURITY_SECTION_HREF = {
+  policy: "#detection-policy",
+  log: "#detection-log",
+  charts: "#security-charts",
+} as const;
+
+/** Policy is the default Security landing tab. */
+export function securityPageSection(hash: string): "charts" | "log" | "policy" {
+  const parsed = parseSecurityHash(hash);
+  if (parsed?.kind === "log" || parsed?.kind === "record") return "log";
+  if (parsed?.kind === "charts") return "charts";
+  return "policy";
+}

@@ -25,8 +25,13 @@ type Props = {
   onRangeChange: (r: AnalyticsRange) => void;
   onWorkspaceChange: (id: string) => void;
   extraFilters?: ReactNode;
-  /** In-page jump links (e.g. Policy / Detection log / Charts on Security). */
+  /** Hide date/workspace filters (Policy tab has no time series). */
+  hideScopeFilters?: boolean;
+  /** In-page section tabs (Policy / Detection log / Charts). */
   sectionLinks?: { href: string; label: string }[];
+  /** Which section tab is current — Policy is the Security default. */
+  activeSectionHref?: string;
+  onSectionTab?: (href: string) => void;
   children: ReactNode;
   /** Admin observing another member's Insights. */
   subject?: InsightsSubjectScope | null;
@@ -63,7 +68,10 @@ export function AnalyticsShell({
   onRangeChange,
   onWorkspaceChange,
   extraFilters,
+  hideScopeFilters = false,
   sectionLinks,
+  activeSectionHref,
+  onSectionTab,
   children,
   subject = null,
   onBackToAdmin,
@@ -151,21 +159,33 @@ export function AnalyticsShell({
           <p className="text-sm text-muted-foreground mt-1 max-w-3xl">{subtitle}</p>
           {sectionLinks && sectionLinks.length > 0 && (
             <nav
-              aria-label="On this page"
-              className="mt-3 flex flex-wrap gap-2"
+              role="tablist"
+              aria-label="Security sections"
+              className="mt-4 flex w-full max-w-2xl rounded-xl border border-border bg-muted p-1.5 gap-1"
             >
-              {sectionLinks.map(link => (
-                <a
-                  key={link.href}
-                  href={link.href}
-                  className="rounded-lg border border-foreground/12 bg-foreground/[0.04] px-3 py-1.5 text-[0.72rem] font-medium text-foreground/70 hover:bg-foreground/[0.08] hover:text-foreground"
-                >
-                  {link.label}
-                </a>
-              ))}
+              {sectionLinks.map(link => {
+                const active = (activeSectionHref ?? sectionLinks[0]?.href) === link.href;
+                return (
+                  <button
+                    key={link.href}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => onSectionTab?.(link.href)}
+                    className={
+                      active
+                        ? "flex-1 rounded-lg bg-card px-4 py-2.5 text-sm font-semibold text-[var(--primary-soft-foreground)] shadow-[var(--shadow-sm)] ring-1 ring-[var(--primary-border)] cursor-pointer"
+                        : "flex-1 rounded-lg px-4 py-2.5 text-sm font-medium text-muted-foreground hover:bg-[var(--surface-hover)] hover:text-foreground cursor-pointer"
+                    }
+                  >
+                    {link.label}
+                  </button>
+                );
+              })}
             </nav>
           )}
 
+          {!hideScopeFilters && (
           <div className="mt-4 flex flex-wrap items-end gap-3">
             <label className="text-xs text-muted-foreground">
               Date range
@@ -202,6 +222,7 @@ export function AnalyticsShell({
               {subject ? ` · ${subject.label}` : ""}
             </p>
           </div>
+          )}
         </div>
       </header>
 

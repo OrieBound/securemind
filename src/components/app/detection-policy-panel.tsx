@@ -7,8 +7,10 @@ import {
   SENSITIVITY_TIERS,
   categoriesAddedAtTier,
   categoriesForTier,
+  isShippedDefaultSafeTerm,
   piiPatternCatalog,
   type PiiSensitivityTier,
+  type SafeTerm,
 } from "@/lib/pii";
 
 export const DETECTION_FORWARD_ONLY_COPY =
@@ -133,12 +135,17 @@ export function DetectionPolicyMatrix({
 export function DetectionPolicyExplainer({
   currentTier,
   safeTermCount,
+  safeTerms,
 }: {
   currentTier: PiiSensitivityTier;
   safeTermCount?: number;
+  safeTerms?: SafeTerm[];
 }) {
   const active = categoriesForTier(currentTier);
   const addedHere = categoriesAddedAtTier(currentTier);
+  const docMail = (safeTerms ?? []).filter(
+    t => t.kind === "domain" && isShippedDefaultSafeTerm(t),
+  );
   return (
     <div className="space-y-2 text-[0.68rem] text-foreground/45 leading-relaxed">
       <p>
@@ -157,6 +164,18 @@ export function DetectionPolicyExplainer({
           ? ` ${safeTermCount} exemption${safeTermCount === 1 ? "" : "s"} currently active.`
           : null}
       </p>
+      {docMail.length > 0 && (
+        <p>
+          <span className="font-medium text-foreground/65">Shipped documentation mail</span>
+          {" is exempt so "}
+          <code className="font-mono text-foreground/55">@example.com</code>
+          {", "}
+          <code className="font-mono text-foreground/55">.test</code>
+          {", and other reserved names are not treated as real people: "}
+          {docMail.map(t => t.value).join(", ")}.
+          {" Listed under Safe terms — remove any of them to detect those values."}
+        </p>
+      )}
     </div>
   );
 }

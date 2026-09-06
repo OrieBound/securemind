@@ -1,13 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { parseSecurityHash } from "./security-hash";
+import { parseSecurityHash, securityPageSection } from "./security-hash";
 
 describe("parseSecurityHash", () => {
-  it("reads the detection log target", () => {
-    expect(parseSecurityHash("#detection-log")).toEqual({ kind: "log" });
-    expect(parseSecurityHash("detection-log")).toEqual({ kind: "log" });
+  it("defaults to policy when the hash is empty", () => {
+    expect(securityPageSection("")).toBe("policy");
+    expect(securityPageSection("#detection-policy")).toBe("policy");
+    expect(securityPageSection("#security-charts")).toBe("charts");
   });
 
-  it("reads policy and charts targets", () => {
+  it("opens the detection log for a record hash", () => {
+    expect(securityPageSection("#pii-record-abc")).toBe("log");
+    expect(securityPageSection("#detection-log")).toBe("log");
+  });
+
+  it("opens policy when requested", () => {
+    expect(securityPageSection("#detection-policy")).toBe("policy");
+  });
+
+  it("reads log, policy, and charts targets", () => {
+    expect(parseSecurityHash("#detection-log")).toEqual({ kind: "log" });
+    expect(parseSecurityHash("detection-log")).toEqual({ kind: "log" });
     expect(parseSecurityHash("#detection-policy")).toEqual({ kind: "policy" });
     expect(parseSecurityHash("#security-charts")).toEqual({ kind: "charts" });
   });

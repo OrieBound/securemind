@@ -94,7 +94,8 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
         // is a Groq id that Bedrock would reject.
         const bedrockModel =
           opts.provider === "bedrock" ? model : secrets.bedrockChatModel || model;
-        for await (const delta of streamBedrockChat(messages, bedrockModel)) {
+        opts.onResolved?.({ provider: "bedrock", model: bedrockModel });
+        for await (const delta of streamBedrockChat(messages, bedrockModel, onUsage)) {
           yield delta;
         }
         return;

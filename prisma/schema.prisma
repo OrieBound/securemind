@@ -275,7 +275,7 @@ model UserProfile {
   bio                 String?
   timezone            String?
   locale              String?
-  /// Curated preset id (see src/lib/avatar-presets.ts) — no custom uploads.
+  /// Curated preset id (see src/lib/avatar-presets.ts). Custom photos are files, not this column.
   avatarPreset        String    @default("shield")
   themePreference     String?
   density             String?

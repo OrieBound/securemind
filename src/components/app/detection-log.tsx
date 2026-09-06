@@ -1,8 +1,12 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { categoryLabel } from "@/lib/pii";
+
+export const DETECTION_LOG_DAY_PAGE = 7;
+export const DETECTION_LOG_ITEM_PAGE = 20;
 
 export type DetectionLogRecord = {
   id: string;
@@ -88,6 +92,45 @@ export function DetectionLog({
   onDelete: (recordId: string) => void;
   onOpenSafeTerms?: () => void;
 }) {
+  const [daysShown, setDaysShown] = useState(DETECTION_LOG_DAY_PAGE);
+  const [openDays, setOpenDays] = useState<Set<string>>(new Set());
+  const [expandedItemDays, setExpandedItemDays] = useState<Set<string>>(new Set());
+  const seeded = useRef(false);
+
+  useEffect(() => {
+    if (seeded.current || groups.length === 0) return;
+    seeded.current = true;
+    setOpenDays(new Set(groups.slice(0, 1).map(g => g.dayKey)));
+  }, [groups]);
+
+  useEffect(() => {
+    if (!highlightedId) return;
+    const hit = groups.find(g => g.items.some(i => i.rec.id === highlightedId));
+    if (!hit) return;
+    setOpenDays(prev => new Set(prev).add(hit.dayKey));
+    const dayIndex = groups.findIndex(g => g.dayKey === hit.dayKey);
+    if (dayIndex >= daysShown) setDaysShown(dayIndex + 1);
+    const itemIndex = hit.items.findIndex(i => i.rec.id === highlightedId);
+    if (itemIndex >= DETECTION_LOG_ITEM_PAGE) {
+      setExpandedItemDays(prev => new Set(prev).add(hit.dayKey));
+    }
+  }, [highlightedId, groups, daysShown]);
+
+  const visibleGroups = useMemo(
+    () => groups.slice(0, daysShown),
+    [groups, daysShown],
+  );
+  const hiddenDayCount = Math.max(0, groups.length - visibleGroups.length);
+
+  const toggleDay = (dayKey: string) => {
+    setOpenDays(prev => {
+      const next = new Set(prev);
+      if (next.has(dayKey)) next.delete(dayKey);
+      else next.add(dayKey);
+      return next;
+    });
+  };
+
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-foreground/8 bg-foreground/[0.02] px-4 py-3 text-[0.68rem] text-foreground/45 leading-relaxed space-y-1.5">
@@ -121,19 +164,38 @@ export function DetectionLog({
           <p className="text-sm text-foreground/40">{emptyLabel}</p>
         </div>
       ) : (
-        groups.map(({ dayKey, label, items }) => (
-          <section key={dayKey}>
-            <div className="flex items-center gap-3 mb-3">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground/45 shrink-0">
+        <>
+        {visibleGroups.map(({ dayKey, label, items }) => {
+          const open = openDays.has(dayKey);
+          const showAllItems = expandedItemDays.has(dayKey);
+          const visibleItems = showAllItems ? items : items.slice(0, DETECTION_LOG_ITEM_PAGE);
+          const hiddenItemCount = items.length - visibleItems.length;
+          return (
+          <section key={dayKey} className="rounded-xl border border-foreground/8 bg-foreground/[0.02]">
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={() => toggleDay(dayKey)}
+              className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left cursor-pointer hover:bg-foreground/[0.04] rounded-xl"
+            >
+              <ChevronDown
+                className={cn(
+                  "size-3.5 shrink-0 text-foreground/40 transition-transform",
+                  !open && "-rotate-90",
+                )}
+                aria-hidden
+              />
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground/70">
                 {label}
               </h3>
               <div className="flex-1 h-px bg-foreground/[0.06]" />
-              <span className="text-[0.65rem] text-foreground/25 tabular-nums">
+              <span className="text-[0.65rem] text-foreground/40 tabular-nums">
                 {items.length} event{items.length !== 1 ? "s" : ""}
               </span>
-            </div>
-            <ul className="space-y-2 border-l-2 border-foreground/[0.08] ml-2 pl-4">
-              {items.map(({ entry, rec }) => {
+            </button>
+            {open && (
+            <ul className="space-y-2 border-t border-foreground/[0.06] px-3.5 py-3">
+              {visibleItems.map(({ entry, rec }) => {
                 const isDismissed = dismissedIds.has(rec.id);
                 const ag = workspaceName(entry.workspaceId);
                 return (
@@ -209,9 +271,34 @@ export function DetectionLog({
                   </li>
                 );
               })}
+              {hiddenItemCount > 0 && (
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedItemDays(prev => new Set(prev).add(dayKey))}
+                    className="w-full rounded-lg border border-foreground/10 bg-foreground/[0.03] px-3 py-2 text-[0.72rem] font-medium text-foreground/65 hover:bg-foreground/[0.06] cursor-pointer"
+                  >
+                    Show {hiddenItemCount} more on {label}
+                  </button>
+                </li>
+              )}
             </ul>
+            )}
           </section>
-        ))
+          );
+        })}
+        {hiddenDayCount > 0 && (
+          <button
+            type="button"
+            onClick={() => setDaysShown(n => n + DETECTION_LOG_DAY_PAGE)}
+            className="w-full rounded-xl border border-foreground/10 bg-foreground/[0.03] px-4 py-3 text-sm font-medium text-foreground/70 hover:bg-foreground/[0.06] cursor-pointer"
+          >
+            Show {Math.min(DETECTION_LOG_DAY_PAGE, hiddenDayCount)} older day
+            {Math.min(DETECTION_LOG_DAY_PAGE, hiddenDayCount) === 1 ? "" : "s"}
+            {` · ${hiddenDayCount} remaining`}
+          </button>
+        )}
+        </>
       )}
     </div>
   );

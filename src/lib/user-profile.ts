@@ -9,6 +9,7 @@ import {
   DEFAULT_AVATAR_PRESET,
   isAvatarPresetId,
 } from "@/lib/avatar-presets";
+import { avatarPublicUrl } from "@/lib/avatar-storage";
 import { LOCAL_USER_ID } from "@/lib/identity";
 import {
   DEFAULT_MONTHLY_COST_CAP_USD,
@@ -41,6 +42,8 @@ export type UserProfilePublic = {
   timezone: string | null;
   locale: string | null;
   avatarPreset: string;
+  hasCustomAvatar: boolean;
+  avatarUrl: string | null;
   themePreference: string | null;
   density: string | null;
   defaultLanding: string | null;
@@ -84,6 +87,7 @@ function toPublic(row: {
   createdAt: Date;
   updatedAt: Date;
 }): UserProfilePublic {
+  const url = avatarPublicUrl(row.userId);
   return {
     userId: row.userId,
     email: row.email,
@@ -94,6 +98,8 @@ function toPublic(row: {
     timezone: row.timezone,
     locale: row.locale,
     avatarPreset: isAvatarPresetId(row.avatarPreset) ? row.avatarPreset : DEFAULT_AVATAR_PRESET,
+    hasCustomAvatar: Boolean(url),
+    avatarUrl: url,
     themePreference: row.themePreference,
     density: row.density,
     defaultLanding: row.defaultLanding,

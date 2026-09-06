@@ -1,15 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   AVATAR_PRESETS,
-  avatarPresetById,
-  initialsFrom,
 } from "@/lib/avatar-presets";
 import type { UserProfilePublic } from "@/lib/user-profile";
 import { useAuthSession } from "@/components/app/auth-session";
+import { notifyAvatarChanged, UserAvatarFace } from "@/components/app/user-avatar";
 
 type WorkspaceBrief = { id: string; name: string; emoji: string; isDefault: boolean };
 
@@ -25,43 +24,26 @@ type SecurityInfo = {
   sessions: string;
 };
 
-function AvatarCircle({
-  presetId,
-  displayName,
-  email,
-  size = "md",
-}: {
-  presetId: string;
-  displayName: string | null;
-  email: string | null;
-  size?: "sm" | "md" | "lg";
-}) {
-  const preset = avatarPresetById(presetId);
-  const dim = size === "lg" ? "size-14 text-xl" : size === "sm" ? "size-8 text-sm" : "size-10 text-base";
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center justify-center rounded-full shrink-0 select-none",
-        dim,
-      )}
-      style={{ backgroundColor: `${preset.color}33`, color: preset.color }}
-      aria-hidden
-    >
-      {preset.glyph || initialsFrom(displayName, email)}
-    </span>
-  );
-}
-
 export function ProfileAvatarBadge({
   presetId,
   displayName,
   email,
+  photoUrl = null,
 }: {
   presetId: string;
   displayName: string | null;
   email: string | null;
+  photoUrl?: string | null;
 }) {
-  return <AvatarCircle presetId={presetId} displayName={displayName} email={email} size="sm" />;
+  return (
+    <UserAvatarFace
+      presetId={presetId}
+      displayName={displayName}
+      email={email}
+      photoUrl={photoUrl}
+      size="sm"
+    />
+  );
 }
 
 export function ProfileSettings() {
@@ -82,6 +64,9 @@ export function ProfileSettings() {
   const [bio, setBio] = useState("");
   const [timezone, setTimezone] = useState("");
   const [avatarPreset, setAvatarPreset] = useState("shield");
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [themePreference, setThemePreference] = useState<string>("");
 
   const [currentPassword, setCurrentPassword] = useState("");
@@ -115,6 +100,7 @@ export function ProfileSettings() {
       setBio(pBody.profile.bio ?? "");
       setTimezone(pBody.profile.timezone ?? "");
       setAvatarPreset(pBody.profile.avatarPreset);
+      setPhotoUrl(pBody.profile.avatarUrl);
       setThemePreference(pBody.profile.themePreference ?? "");
       setDirty(false);
       if (sRes.ok) setSecurity((await sRes.json()) as SecurityInfo);
@@ -154,13 +140,67 @@ export function ProfileSettings() {
         setError(data.error ?? "Save failed");
         return;
       }
-      if (data.profile) setProfile(data.profile);
+      if (data.profile) {
+        setProfile(data.profile);
+        setPhotoUrl(data.profile.avatarUrl);
+      }
       setDirty(false);
       setNotice("Profile saved.");
+      notifyAvatarChanged();
     } catch {
       setError("Network error");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function uploadPhoto(file: File) {
+    setPhotoBusy(true);
+    setNotice(null);
+    setError(null);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch("/api/me/avatar", {
+        method: "PUT",
+        credentials: "same-origin",
+        body,
+      });
+      const data = (await res.json()) as { error?: string; avatarUrl?: string };
+      if (!res.ok) {
+        setError(data.error ?? "Could not upload that image.");
+        return;
+      }
+      setPhotoUrl(data.avatarUrl ?? `/api/me/avatar?v=${Date.now()}`);
+      setNotice("Photo saved. It shows in the header for this account.");
+      notifyAvatarChanged();
+    } catch {
+      setError("Could not upload that image.");
+    } finally {
+      setPhotoBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function clearPhoto() {
+    setPhotoBusy(true);
+    setNotice(null);
+    setError(null);
+    try {
+      const res = await fetch("/api/me/avatar", {
+        method: "DELETE",
+        credentials: "same-origin",
+      });
+      if (!res.ok) {
+        setError("Could not remove the photo.");
+        return;
+      }
+      setPhotoUrl(null);
+      notifyAvatarChanged();
+    } catch {
+      setError("Could not remove the photo.");
+    } finally {
+      setPhotoBusy(false);
     }
   }
 
@@ -246,10 +286,11 @@ export function ProfileSettings() {
 
         <form onSubmit={saveProfile} className="space-y-4">
           <div className="flex items-center gap-4">
-            <AvatarCircle
+            <UserAvatarFace
               presetId={avatarPreset}
               displayName={displayName}
               email={profile.email}
+              photoUrl={photoUrl}
               size="lg"
             />
             <div className="min-w-0">
@@ -257,6 +298,39 @@ export function ProfileSettings() {
                 {displayName || profile.email || "Your profile"}
               </p>
               <p className="text-[0.65rem] text-foreground/35 truncate">{profile.email ?? "—"}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+                  className="sr-only"
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (file) void uploadPhoto(file);
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={photoBusy}
+                  onClick={() => fileRef.current?.click()}
+                  className="rounded-lg border border-foreground/15 px-2.5 py-1 text-[0.68rem] cursor-pointer disabled:opacity-40"
+                >
+                  {photoBusy ? "Working…" : "Upload photo"}
+                </button>
+                {photoUrl && (
+                  <button
+                    type="button"
+                    disabled={photoBusy}
+                    onClick={() => void clearPhoto()}
+                    className="rounded-lg border border-foreground/10 px-2.5 py-1 text-[0.68rem] text-foreground/55 cursor-pointer disabled:opacity-40"
+                  >
+                    Use a preset instead
+                  </button>
+                )}
+              </div>
+              <p className="mt-1.5 text-[0.62rem] text-foreground/35 leading-relaxed">
+                JPEG or PNG, up to 2 MB. This photo replaces the header icon for your account.
+              </p>
             </div>
           </div>
 
@@ -270,12 +344,13 @@ export function ProfileSettings() {
                   onClick={() => {
                     setAvatarPreset(p.id);
                     setDirty(true);
+                    if (photoUrl) void clearPhoto();
                   }}
-                  aria-pressed={avatarPreset === p.id}
+                  aria-pressed={!photoUrl && avatarPreset === p.id}
                   aria-label={p.label}
                   className={cn(
                     "size-10 rounded-full border text-base transition-colors cursor-pointer",
-                    avatarPreset === p.id
+                    !photoUrl && avatarPreset === p.id
                       ? "border-indigo-400/60 ring-2 ring-indigo-400/30"
                       : "border-foreground/10 hover:border-foreground/25",
                   )}
