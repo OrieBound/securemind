@@ -23,13 +23,17 @@ import type { ComplexityTiersBind } from "@/components/app/complexity-tiers-edit
 import { AdminConsole } from "@/components/app/admin-console";
 import { ProfileSettings } from "@/components/app/profile-settings";
 import {
-  categoriesForTier,
   NON_EXEMPTIBLE_CATEGORIES,
   categoryLabel,
   type PiiSensitivityTier,
   type SafeTerm,
   type SafeTermKind,
 } from "@/lib/pii";
+import {
+  DetectionForwardOnlyNotice,
+  DetectionPolicyExplainer,
+  DetectionPolicyMatrix,
+} from "@/components/app/detection-policy-panel";
 
 export type SettingsSection =
   | "overview"
@@ -65,13 +69,6 @@ const SETTINGS_NAV_GROUP_KEY = "sm_settings_nav_groups";
 export function isSettingsSection(v: string): v is SettingsSection {
   return v in SETTINGS_SECTION_LABELS;
 }
-
-const SENSITIVITY_TIERS: { tier: PiiSensitivityTier; label: string; blurb: string }[] = [
-  { tier: "low",      label: "Low",      blurb: "Highest-harm categories only. Fewest false positives." },
-  { tier: "balanced", label: "Balanced", blurb: "Adds phone numbers and IP addresses. Recommended." },
-  { tier: "high",     label: "High",     blurb: "Adds street addresses." },
-  { tier: "extreme",  label: "Extreme",  blurb: "Adds ID-shaped tokens. Expect false positives." },
-];
 
 const SAFE_TERM_KINDS: { kind: SafeTermKind; label: string; placeholder: string }[] = [
   { kind: "cidr",    label: "IP range",  placeholder: "10.0.0.0/8" },
@@ -131,7 +128,8 @@ function SafeTermsSection({
       <h3 className="text-section mb-1.5">Safe terms</h3>
       <p className="text-xs text-foreground/35 mb-3 leading-relaxed">
         Declared exemptions matched before detection on new chat sends and new Knowledge
-        ingest. Instance policy is Admin-owned (stored server-side).
+        ingest. A category can still be “on” at this tier while a matching exemption
+        lets a specific value through. Instance policy is Admin-owned (stored server-side).
       </p>
 
       {!readOnly && (
@@ -811,14 +809,17 @@ export function SettingsHub({
               <div>
                 <h3 className="text-section mb-1.5">Detection sensitivity</h3>
                 <p className="text-xs text-foreground/35 mb-3">
-                  Instance policy controls which pattern families run for new chat sends and new
-                  Knowledge ingest. Changing the tier does not re-scan or rewrite existing messages
-                  or documents. Detection reduces exposure risk; it does not certify content as
-                  PII-free or compliant.
+                  Instance policy selects which pattern families run. Tiers are cumulative:
+                  Low → Balanced (adds phone, IPv4, street addresses) → High (adds ID-shaped tokens).
+                  Detection reduces exposure risk; it does not certify content as PII-free
+                  or compliant.
                   {canEditSecurity
                     ? " You will be asked to confirm before the change applies."
                     : " Only an Admin can apply changes; you can propose a tier."}
                 </p>
+                <div className="mb-3">
+                  <DetectionForwardOnlyNotice />
+                </div>
                 {securityNotice && (
                   <p className="text-[0.7rem] text-amber-200/80 mb-3 rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2">
                     {securityNotice}
@@ -853,40 +854,17 @@ export function SettingsHub({
                     </div>
                   </div>
                 )}
-                <div className="space-y-1.5">
-                  {SENSITIVITY_TIERS.map(t => (
-                    <button
-                      key={t.tier}
-                      type="button"
-                      onClick={() => {
-                        if (canEditSecurity) onPiiSensitivityChange(t.tier);
-                        else onProposeSecurity?.(t.tier);
-                      }}
-                      aria-pressed={piiSensitivity === t.tier}
-                      className={cn(
-                        "flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition-colors cursor-pointer",
-                        piiSensitivity === t.tier
-                          ? "border-indigo-500/40 bg-indigo-500/[0.1]"
-                          : "border-foreground/[0.07] bg-foreground/[0.03] hover:border-foreground/15",
-                      )}
-                    >
-                      <span
-                        aria-hidden
-                        className={cn(
-                          "mt-1 size-2 shrink-0 rounded-full",
-                          piiSensitivity === t.tier ? "bg-indigo-400" : "bg-foreground/20",
-                        )}
-                      />
-                      <span className="min-w-0">
-                        <span className="block text-[0.8rem] font-medium text-foreground/80">{t.label}</span>
-                        <span className="block text-[0.65rem] text-foreground/35 mt-0.5">{t.blurb}</span>
-                      </span>
-                    </button>
-                  ))}
+                <DetectionPolicyMatrix
+                  currentTier={piiSensitivity}
+                  selectable
+                  onSelectTier={tier => {
+                    if (canEditSecurity) onPiiSensitivityChange(tier);
+                    else onProposeSecurity?.(tier);
+                  }}
+                />
+                <div className="mt-3">
+                  <DetectionPolicyExplainer currentTier={piiSensitivity} safeTermCount={safeTerms.length} />
                 </div>
-                <p className="text-[0.62rem] text-foreground/30 mt-2 leading-relaxed">
-                  Currently detecting: {categoriesForTier(piiSensitivity).join(", ").toLowerCase()}.
-                </p>
               </div>
 
               <SafeTermsSection

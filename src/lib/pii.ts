@@ -47,9 +47,19 @@ export type ScrubResult = {
   hadRedactions: boolean;
 };
 
-export type PiiSensitivityTier = "low" | "balanced" | "high" | "extreme";
+export const SENSITIVITY_TIERS = ["low", "balanced", "high"] as const;
+export type PiiSensitivityTier = (typeof SENSITIVITY_TIERS)[number];
 
-const TIER_ORDER: PiiSensitivityTier[] = ["low", "balanced", "high", "extreme"];
+/** Stored `extreme` from the former 4-tier scale maps to High. */
+export function parsePiiSensitivityTier(v: unknown): PiiSensitivityTier | null {
+  if (v === "extreme") return "high";
+  if (typeof v === "string" && (SENSITIVITY_TIERS as readonly string[]).includes(v)) {
+    return v as PiiSensitivityTier;
+  }
+  return null;
+}
+
+const TIER_ORDER: PiiSensitivityTier[] = [...SENSITIVITY_TIERS];
 
 function tierRank(tier: PiiSensitivityTier): number {
   return TIER_ORDER.indexOf(tier);
@@ -72,11 +82,45 @@ export type SafeTerm = {
 };
 
 /**
+ * RFC 2606 documentation domains. These used to ship as Safe terms, which
+ * skipped email detection on `*@example.com` / `.org` / `.net`. They are not
+ * identifying, but they are also not a reason to let mailboxes through.
+ */
+export const RETIRED_RFC2606_SAFE_DOMAINS = ["example.com", "example.org", "example.net"] as const;
+
+/** Shipped default ids that must never reappear via merge, even if still stored. */
+const RETIRED_DEFAULT_SAFE_TERM_IDS = new Set([
+  "default-example-com",
+  "default-example-org",
+  "default-example-net",
+]);
+
+function normalizeDomainValue(value: string): string {
+  return value.trim().toLowerCase().replace(/^\*\./, "");
+}
+
+export function isRetiredRfc2606SafeDomain(value: string): boolean {
+  const v = normalizeDomainValue(value);
+  return (RETIRED_RFC2606_SAFE_DOMAINS as readonly string[]).includes(v);
+}
+
+/** True for the old shipped example.* terms, including copies still on an instance. */
+export function isRetiredDefaultSafeTerm(term: Pick<SafeTerm, "id" | "kind" | "value">): boolean {
+  if (RETIRED_DEFAULT_SAFE_TERM_IDS.has(term.id)) return true;
+  return term.kind === "domain" && isRetiredRfc2606SafeDomain(term.value);
+}
+
+export function omitRetiredDefaultSafeTerms(terms: SafeTerm[]): SafeTerm[] {
+  return terms.filter(t => !isRetiredDefaultSafeTerm(t));
+}
+
+/**
  * Shipped defaults. Non-routable address space is not identifying, and leaving
  * it enabled makes the scrubber unusable on infrastructure documents.
  *
  * These are ordinary editable entries rather than hidden pattern logic — the
- * user can inspect or remove them.
+ * user can inspect or remove them. RFC 2606 example.* domains are intentionally
+ * not included: they skipped email redaction on synthetic and documentation mailboxes.
  */
 export const DEFAULT_SAFE_TERMS: SafeTerm[] = [
   { id: "default-rfc1918-10",  kind: "cidr", value: "10.0.0.0/8",     label: "RFC 1918 private range" },
@@ -87,9 +131,6 @@ export const DEFAULT_SAFE_TERMS: SafeTerm[] = [
   { id: "default-doc-192",     kind: "cidr", value: "192.0.2.0/24",   label: "RFC 5737 documentation range" },
   { id: "default-doc-198",     kind: "cidr", value: "198.51.100.0/24",label: "RFC 5737 documentation range" },
   { id: "default-doc-203",     kind: "cidr", value: "203.0.113.0/24", label: "RFC 5737 documentation range" },
-  { id: "default-example-com", kind: "domain", value: "example.com",  label: "RFC 2606 reserved domain" },
-  { id: "default-example-org", kind: "domain", value: "example.org",  label: "RFC 2606 reserved domain" },
-  { id: "default-example-net", kind: "domain", value: "example.net",  label: "RFC 2606 reserved domain" },
 ];
 
 function ipv4ToInt(ip: string): number | null {
@@ -271,7 +312,7 @@ const PATTERNS: PatternDef[] = [
   {
     category: "address",
     label: "Street addresses",
-    minTier: "high",
+    minTier: "balanced",
     exemptible: true,
     pattern:
       /\b\d{1,5}\s+[A-Za-z][\w\s]{2,35}(?:street|st|avenue|ave|boulevard|blvd|drive|dr|road|rd|lane|ln|court|ct|place|pl|way|parkway|pkwy)\b/gi,
@@ -279,7 +320,7 @@ const PATTERNS: PatternDef[] = [
   {
     category: "ID number",
     label: "Passport / national ID patterns",
-    minTier: "extreme",
+    minTier: "high",
     exemptible: true,
     pattern: /\b[A-Z]{1,2}[0-9]{7,9}\b/g,
   },
@@ -308,12 +349,39 @@ export const NON_EXEMPTIBLE_CATEGORIES: string[] = PATTERNS
 
 export const DEFAULT_SENSITIVITY: PiiSensitivityTier = "balanced";
 
+export const SENSITIVITY_TIER_LABELS: Record<PiiSensitivityTier, string> = {
+  low: "Low",
+  balanced: "Balanced",
+  high: "High",
+};
+
+export type PiiPatternPublic = {
+  category: string;
+  label: string;
+  minTier: PiiSensitivityTier;
+  exemptible: boolean;
+};
+
+/** Catalog for Settings / Insights — no regexes. Ordered by min tier, then label. */
+export function piiPatternCatalog(): PiiPatternPublic[] {
+  return PATTERNS.map(p => ({
+    category: p.category,
+    label: p.label,
+    minTier: p.minTier,
+    exemptible: p.exemptible,
+  }));
+}
+
+/** Categories whose family starts at this tier (not cumulative). */
+export function categoriesAddedAtTier(tier: PiiSensitivityTier): string[] {
+  return PATTERNS.filter(p => p.minTier === tier).map(p => p.label);
+}
+
 /** Map a 0–1 UI slider value to a tier. */
 export function sensitivityTier(sensitivity: number): PiiSensitivityTier {
   if (sensitivity <= 0.25) return "low";
   if (sensitivity <= 0.60) return "balanced";
-  if (sensitivity <= 0.85) return "high";
-  return "extreme";
+  return "high";
 }
 
 function patternsForTier(tier: PiiSensitivityTier): PatternDef[] {
@@ -357,6 +425,13 @@ export function validateSafeTerm(
     return { ok: false, reason: "Not a valid IPv4 range." };
   }
 
+  if (kind === "domain" && isRetiredRfc2606SafeDomain(trimmed)) {
+    return {
+      ok: false,
+      reason: "example.com / example.org / example.net cannot be domain exemptions — they would skip email detection.",
+    };
+  }
+
   for (const def of PATTERNS.filter(p => !p.exemptible)) {
     def.pattern.lastIndex = 0;
     const hit = def.pattern.exec(trimmed);
@@ -378,7 +453,7 @@ type RawMatch = { start: number; end: number; category: string };
 
 export type ScrubOptions = {
   /** 0–1 slider value, or an explicit tier. Defaults to "balanced". */
-  sensitivity?: number | PiiSensitivityTier;
+  sensitivity?: number | PiiSensitivityTier | "extreme";
   /** User-declared values that should not be treated as sensitive. */
   safeTerms?: SafeTerm[];
 };
@@ -386,7 +461,7 @@ export type ScrubOptions = {
 function resolveTier(sensitivity: ScrubOptions["sensitivity"]): PiiSensitivityTier {
   if (sensitivity === undefined) return DEFAULT_SENSITIVITY;
   if (typeof sensitivity === "number") return sensitivityTier(sensitivity);
-  return sensitivity;
+  return parsePiiSensitivityTier(sensitivity) ?? DEFAULT_SENSITIVITY;
 }
 
 /**

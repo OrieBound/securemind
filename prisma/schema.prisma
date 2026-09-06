@@ -200,7 +200,7 @@ model SecurityEvent {
   riskLevel    String   // low | medium | high | critical
   outcome      String   // redacted | blocked | safe_listed | dismissed | reviewed
   count        Int      @default(1)
-  sensitivity  String?  // low | balanced | high | extreme
+  sensitivity  String?  // low | balanced | high (legacy extreme → high)
   resourceKind String?  // message | document
   resourceId   String?
 
@@ -236,7 +236,7 @@ model InstanceConfig {
   /// Secrets stay server-side; API returns hints only. AWS keys are refused.
   extraProviderKeys Json?
   externalRiskAckAt DateTime?
-  /// Instance PII policy (Admin-owned). low | balanced | high | extreme
+  /// Instance PII policy (Admin-owned). low | balanced | high (legacy extreme → high)
   piiSensitivity    String    @default("balanced")
   /// SafeTerm[] JSON. Merged with DEFAULT_SAFE_TERMS at scrub time. Never from client request body on ingest.
   safeTerms         Json?

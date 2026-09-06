@@ -23,7 +23,7 @@ vi.mock("@/lib/instance-config", () => ({
   getInstanceConfig: (...args: unknown[]) => getInstanceConfig(...args),
 }));
 
-import { applySecurityPolicy } from "./security-policy";
+import { applySecurityPolicy, getSecurityPolicy, mergeSafeTerms } from "./security-policy";
 
 describe("applySecurityPolicy", () => {
   beforeEach(() => {
@@ -31,7 +31,7 @@ describe("applySecurityPolicy", () => {
     ensureInstanceConfig.mockResolvedValue(undefined);
     instanceConfigUpdate.mockResolvedValue({});
     getInstanceConfig.mockResolvedValue({
-      piiSensitivity: "extreme",
+      piiSensitivity: "high",
       safeTerms: [],
       pendingPiiSensitivity: null,
       pendingSafeTerms: null,
@@ -46,20 +46,49 @@ describe("applySecurityPolicy", () => {
   it("applies a stricter tier without scanning or rewriting documents", async () => {
     const result = await applySecurityPolicy({
       actorUserId: "admin-1",
-      piiSensitivity: "extreme",
+      piiSensitivity: "high",
       safeTerms: [],
     });
 
     expect(instanceConfigUpdate).toHaveBeenCalledWith({
       where: { id: "singleton" },
       data: expect.objectContaining({
-        piiSensitivity: "extreme",
+        piiSensitivity: "high",
         safeTerms: [],
         updatedByUserId: "admin-1",
       }),
     });
-    expect(result.policy.piiSensitivity).toBe("extreme");
+    expect(result.policy.piiSensitivity).toBe("high");
     expect(documentFindMany).not.toHaveBeenCalled();
     expect(documentUpdate).not.toHaveBeenCalled();
+  });
+});
+
+describe("getSecurityPolicy", () => {
+  it("maps stored extreme to high", async () => {
+    ensureInstanceConfig.mockResolvedValue(undefined);
+    getInstanceConfig.mockResolvedValue({
+      piiSensitivity: "extreme",
+      safeTerms: [],
+      pendingPiiSensitivity: "extreme",
+      pendingSafeTerms: null,
+      pendingProposedByUserId: "admin-1",
+      pendingProposedAt: new Date("2026-08-05T00:00:00Z"),
+      pendingNote: null,
+      updatedAt: new Date("2026-08-05T00:00:00Z"),
+      updatedByUserId: "admin-1",
+    });
+    const policy = await getSecurityPolicy();
+    expect(policy.piiSensitivity).toBe("high");
+    expect(policy.pending?.piiSensitivity).toBe("high");
+  });
+});
+
+describe("mergeSafeTerms", () => {
+  it("does not reintroduce RFC 2606 example.* domains from a stored instance list", () => {
+    const merged = mergeSafeTerms([
+      { id: "default-example-com", kind: "domain", value: "example.com", label: "RFC 2606 reserved domain" },
+    ]);
+    expect(merged.some(t => /example\.(com|org|net)/i.test(t.value))).toBe(false);
   });
 });

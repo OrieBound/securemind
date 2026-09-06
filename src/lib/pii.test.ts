@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SAFE_TERMS,
   NON_EXEMPTIBLE_CATEGORIES,
+  categoriesAddedAtTier,
   categoriesForTier,
   cidrContains,
   isSafeTerm,
+  omitRetiredDefaultSafeTerms,
+  parsePiiSensitivityTier,
   passesCanadianSin,
   passesLuhn,
   scrubPII,
@@ -71,13 +74,13 @@ describe("detection — true positives", () => {
     expect(categories("origin 8.8.8.8 timed out")).toContain("IP address");
   });
 
-  it("detects a street address at high sensitivity", () => {
-    expect(categories("ship to 1600 Amphitheatre Parkway", { sensitivity: "high" }))
+  it("detects a street address at balanced sensitivity", () => {
+    expect(categories("ship to 1600 Amphitheatre Parkway", { sensitivity: "balanced" }))
       .toContain("address");
   });
 
-  it("detects an ID-shaped token at extreme sensitivity", () => {
-    expect(categories("passport AB1234567", { sensitivity: "extreme" }))
+  it("detects an ID-shaped token at high sensitivity", () => {
+    expect(categories("passport AB1234567", { sensitivity: "high" }))
       .toContain("ID number");
   });
 
@@ -190,11 +193,32 @@ describe("sensitivity tiers", () => {
     expect(sensitivityTier(0)).toBe("low");
     expect(sensitivityTier(0.5)).toBe("balanced");
     expect(sensitivityTier(0.75)).toBe("high");
-    expect(sensitivityTier(1)).toBe("extreme");
+    expect(sensitivityTier(1)).toBe("high");
   });
 
-  it("runs fewer pattern families at low than at extreme", () => {
-    expect(categoriesForTier("low").length).toBeLessThan(categoriesForTier("extreme").length);
+  it("maps stored extreme to high", () => {
+    expect(parsePiiSensitivityTier("extreme")).toBe("high");
+    expect(categories("passport AB1234567", { sensitivity: "extreme" })).toContain("ID number");
+  });
+
+  it("runs fewer pattern families at low than at high", () => {
+    expect(categoriesForTier("low").length).toBeLessThan(categoriesForTier("high").length);
+  });
+
+  it("adds ID-shaped tokens at high, not at balanced", () => {
+    expect(categoriesAddedAtTier("high")).toEqual(
+      expect.arrayContaining(["Passport / national ID patterns"]),
+    );
+    expect(categoriesForTier("balanced")).not.toContain("Passport / national ID patterns");
+    expect(categoriesForTier("high")).toContain("Passport / national ID patterns");
+  });
+
+  it("adds street addresses at balanced, not only at high", () => {
+    expect(categoriesAddedAtTier("balanced")).toEqual(
+      expect.arrayContaining(["Phone numbers", "IPv4 addresses", "Street addresses"]),
+    );
+    expect(categoriesForTier("balanced")).toEqual(expect.arrayContaining(["Street addresses"]));
+    expect(categoriesForTier("low")).not.toContain("Street addresses");
   });
 
   it("skips IP detection at low sensitivity", () => {
@@ -205,13 +229,22 @@ describe("sensitivity tiers", () => {
     expect(categories("origin 8.8.8.8", { sensitivity: "balanced" })).toContain("IP address");
   });
 
-  it("skips street addresses below high sensitivity", () => {
-    expect(categories("ship to 1600 Amphitheatre Parkway", { sensitivity: "balanced" }))
+  it("skips street addresses at low sensitivity", () => {
+    expect(categories("ship to 1600 Amphitheatre Parkway", { sensitivity: "low" }))
       .not.toContain("address");
   });
 
   it("always detects email, even at the lowest tier", () => {
     expect(categories("bob@acme.io", { sensitivity: "low" })).toContain("email");
+  });
+
+  it("redacts RFC 2606 documentation mailboxes under shipped defaults", () => {
+    expect(categories("jordan.test@example.com", { safeTerms: DEFAULT_SAFE_TERMS }))
+      .toContain("email");
+    expect(categories("billing@example.org", { safeTerms: DEFAULT_SAFE_TERMS }))
+      .toContain("email");
+    expect(categories("morgan.sample@example.net", { safeTerms: DEFAULT_SAFE_TERMS }))
+      .toContain("email");
   });
 
   it("defaults to balanced when no sensitivity is supplied", () => {
@@ -274,6 +307,18 @@ describe("safe terms", () => {
   it("ships RFC 1918 ranges as defaults", () => {
     expect(categories("host 192.168.1.10", { safeTerms: DEFAULT_SAFE_TERMS }))
       .not.toContain("IP address");
+  });
+
+  it("does not ship RFC 2606 example.* domains as defaults", () => {
+    expect(DEFAULT_SAFE_TERMS.some(t => /example\.(com|org|net)/i.test(t.value))).toBe(false);
+  });
+
+  it("drops stored RFC 2606 example.* terms from a prior default list", () => {
+    const mixed: SafeTerm[] = [
+      ...DEFAULT_SAFE_TERMS,
+      { id: "default-example-com", kind: "domain", value: "example.com", label: "RFC 2606 reserved domain" },
+    ];
+    expect(omitRetiredDefaultSafeTerms(mixed).some(t => t.value === "example.com")).toBe(false);
   });
 });
 
@@ -348,6 +393,12 @@ describe("validateSafeTerm", () => {
     expect(validateSafeTerm("   ", "literal").ok).toBe(false);
   });
 
+  it("rejects an RFC 2606 documentation domain as a safe term", () => {
+    const result = validateSafeTerm("example.com", "domain");
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/example\.com/i);
+  });
+
   it("accepts an ordinary hostname literal", () => {
     expect(validateSafeTerm("svc-payments-prod", "literal").ok).toBe(true);
   });
@@ -384,7 +435,7 @@ describe("no raw value escapes the scrubber", () => {
 
   for (const { text, raw } of SECRETS) {
     it(`omits ${raw} from every field of the result`, () => {
-      const r = scrubPII(text, { sensitivity: "extreme" });
+      const r = scrubPII(text, { sensitivity: "high" });
 
       expect(r.sanitized).not.toContain(raw);
       expect(JSON.stringify(r.scrubEvents)).not.toContain(raw);
@@ -412,7 +463,7 @@ describe("structural safety", () => {
   });
 
   it("handles overlapping matches without duplicating text", () => {
-    const r = scrubPII("123-45-6789", { sensitivity: "extreme" });
+    const r = scrubPII("123-45-6789", { sensitivity: "high" });
     expect(r.sanitized.match(/redacted/g)?.length).toBe(1);
   });
 

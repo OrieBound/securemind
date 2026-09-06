@@ -77,7 +77,7 @@ It is a **single-user personal project**. Default auth is `AUTH_MODE=local`. Opt
 - Document uploads: the same patterns run **server-side at ingest** via `scrubDocumentText()` in `src/lib/documents.ts` — after text extraction, before DB persist or embedding. Images go through `src/lib/image-extract.ts` (Groq vision when available, filename stub otherwise); extracted text is scrubbed the same way.
 - **There is no restore path, and none may be added.** Raw detected values are never written to the DB, `localStorage`, React state that outlives composition, logs, or model calls. A redaction record carries a category and sanitized context only.
 - False positives are handled *before* detection, never after:
-  - **Sensitivity tiers** (`low` / `balanced` / `high` / `extreme`) select which pattern families run.
+  - **Sensitivity tiers** (`low` / `balanced` / `high`) select which pattern families run. Stored `extreme` maps to `high`.
   - **Safe terms** are user-declared exemptions (`cidr`, `domain`, `prefix`, `literal`) matched before detection.
 - Categories in `NON_EXEMPTIBLE_CATEGORIES` (SSN, card number) can never be safe-listed. `validateSafeTerm()` enforces this — do not bypass it.
 - Server-side ingest applies `DEFAULT_SAFE_TERMS` only. **Never accept a safe-terms list from the client** — the server must not take suppression instructions from the browser.

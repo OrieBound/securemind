@@ -154,6 +154,11 @@ import { SecurityAnalyticsView } from "@/components/analytics/security-view";
 import { UsageAnalyticsView } from "@/components/analytics/usage-view";
 import { CostAnalyticsView } from "@/components/analytics/cost-view";
 import {
+  DetectionForwardOnlyNotice,
+  DetectionPolicyExplainer,
+  DetectionPolicyMatrix,
+} from "@/components/app/detection-policy-panel";
+import {
   fetchAnalyticsJson,
   postSecurityEvents,
 } from "@/lib/analytics/client";
@@ -190,6 +195,8 @@ import {
   categoriesForTier,
   categoryLabel,
   validateSafeTerm,
+  omitRetiredDefaultSafeTerms,
+  parsePiiSensitivityTier,
   DEFAULT_SAFE_TERMS,
   DEFAULT_SENSITIVITY,
   type MessageSegment,
@@ -566,7 +573,7 @@ function persistPiiArchive(entries: SessionScrubEntry[]) {
 }
 
 function persistSafeTerms(terms: SafeTerm[]) {
-  try { localStorage.setItem(SAFE_TERMS_KEY, JSON.stringify(terms)); } catch { /* quota */ }
+  try { localStorage.setItem(SAFE_TERMS_KEY, JSON.stringify(omitRetiredDefaultSafeTerms(terms))); } catch { /* quota */ }
 }
 
 function persistPiiDismissed(ids: Set<string>) {
@@ -3085,11 +3092,12 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       if (pii) setPiiArchive(JSON.parse(pii) as SessionScrubEntry[]);
       // localStorage is a cache only — server InstanceConfig is source of truth when available
       const sensitivity = localStorage.getItem(PII_SENSITIVITY_KEY);
-      if (sensitivity && ["low", "balanced", "high", "extreme"].includes(sensitivity)) {
-        setPiiSensitivityState(sensitivity as PiiSensitivityTier);
+      const parsed = parsePiiSensitivityTier(sensitivity);
+      if (parsed) {
+        setPiiSensitivityState(parsed);
       }
       const storedTerms = localStorage.getItem(SAFE_TERMS_KEY);
-      if (storedTerms) setSafeTerms(JSON.parse(storedTerms) as SafeTerm[]);
+      if (storedTerms) setSafeTerms(omitRetiredDefaultSafeTerms(JSON.parse(storedTerms) as SafeTerm[]));
       const dismissed = localStorage.getItem(PII_DISMISSED_KEY);
       if (dismissed) setDismissedPiiIds(new Set(JSON.parse(dismissed) as string[]));
       const baseline = localStorage.getItem(SAVINGS_BASELINE_KEY);
@@ -3117,12 +3125,16 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
           };
         };
         if (data.piiSensitivity) {
-          setPiiSensitivityState(data.piiSensitivity);
-          try { localStorage.setItem(PII_SENSITIVITY_KEY, data.piiSensitivity); } catch { /* quota */ }
+          const parsed = parsePiiSensitivityTier(data.piiSensitivity) ?? data.piiSensitivity;
+          setPiiSensitivityState(parsed);
+          try { localStorage.setItem(PII_SENSITIVITY_KEY, parsed); } catch { /* quota */ }
         }
         if (Array.isArray(data.safeTerms)) {
-          setSafeTerms(data.safeTerms.length ? data.safeTerms : DEFAULT_SAFE_TERMS);
-          persistSafeTerms(data.safeTerms.length ? data.safeTerms : DEFAULT_SAFE_TERMS);
+          const terms = omitRetiredDefaultSafeTerms(
+            data.safeTerms.length ? data.safeTerms : DEFAULT_SAFE_TERMS,
+          );
+          setSafeTerms(terms);
+          persistSafeTerms(terms);
         }
         setCanEditSecurity(Boolean(data.canEdit));
         setSecurityPending(data.pending ?? null);
@@ -3874,8 +3886,9 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     if (data.piiSensitivity) setPiiSensitivityState(data.piiSensitivity);
     try { localStorage.setItem(PII_SENSITIVITY_KEY, tier); } catch { /* quota */ }
     if (Array.isArray(data.safeTerms)) {
-      setSafeTerms(data.safeTerms);
-      persistSafeTerms(data.safeTerms);
+      const terms = omitRetiredDefaultSafeTerms(data.safeTerms);
+      setSafeTerms(terms);
+      persistSafeTerms(terms);
     }
     setSecurityPending(null);
     setSecurityNotice(
@@ -5633,6 +5646,8 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                           <span className="text-foreground/35">
                             {inactivePiiCategories.join(", ")}
                           </span>
+                          . That is not the Safe terms list — exemptions can still skip a value
+                          while its category stays on.
                         </p>
                       )}
                       <div className="flex items-center justify-between gap-2 rounded-lg bg-foreground/[0.04] border border-foreground/8 px-2.5 py-2 mb-2">
@@ -6503,6 +6518,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                 }
                 subject={insightsSubject}
                 onBackToAdmin={insightsSubject ? backToAdminFromInsights : undefined}
+                onEditPolicy={() => openSettings("workspace")}
               />
             )}
             {analyticsView === "usage" && (
@@ -6695,39 +6711,25 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                 </div>
               </div>
 
-              <div className="rounded-2xl bg-foreground/[0.03] border border-foreground/8 px-4 py-3">
-                <p className="text-[0.58rem] uppercase tracking-wider text-foreground/30 font-semibold mb-2">
-                  Scanned at {piiSensitivity} sensitivity
-                </p>
-                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1">
-                  {activePiiCategories.map(label => {
-                    const CatIcon = PII_SCAN_ICONS[label] ?? Shield;
-                    return (
-                      <li key={label} className="flex items-center gap-2 text-[0.65rem] text-foreground/50">
-                        <CatIcon className="size-3 shrink-0 text-foreground/35" aria-hidden />
-                        {label}
-                      </li>
-                    );
-                  })}
-                </ul>
-                {inactivePiiCategories.length > 0 && (
-                  <>
-                    <p className="text-[0.58rem] uppercase tracking-wider text-foreground/25 font-semibold mt-3 mb-2">
-                      Not scanned at this level
-                    </p>
-                    <ul className="grid grid-cols-1 sm:grid-cols-2 gap-1">
-                      {inactivePiiCategories.map(label => {
-                        const CatIcon = PII_SCAN_ICONS[label] ?? Shield;
-                        return (
-                          <li key={label} className="flex items-center gap-2 text-[0.65rem] text-foreground/28">
-                            <CatIcon className="size-3 shrink-0 text-foreground/20" aria-hidden />
-                            <span className="line-through decoration-white/20">{label}</span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </>
-                )}
+              <div className="rounded-2xl bg-foreground/[0.03] border border-foreground/8 px-4 py-3 space-y-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="text-[0.58rem] uppercase tracking-wider text-foreground/30 font-semibold">
+                    Detection policy
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => openSettings("workspace")}
+                    className="text-[0.62rem] text-indigo-300/80 hover:text-indigo-200 cursor-pointer"
+                  >
+                    Edit in Settings
+                  </button>
+                </div>
+                <DetectionForwardOnlyNotice />
+                <DetectionPolicyMatrix currentTier={piiSensitivity} />
+                <DetectionPolicyExplainer
+                  currentTier={piiSensitivity}
+                  safeTermCount={safeTerms.length}
+                />
               </div>
 
               <WorkspaceStatsFilter

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -23,6 +23,12 @@ import { ChartFrame } from "./chart-frame";
 import { tooltipStyle, useChartTheme } from "./use-chart-theme";
 import { KpiCard } from "./kpi-card";
 import { useAnalyticsQuery } from "./use-analytics-query";
+import {
+  DetectionForwardOnlyNotice,
+  DetectionPolicyExplainer,
+  DetectionPolicyMatrix,
+} from "@/components/app/detection-policy-panel";
+import { DEFAULT_SENSITIVITY, parsePiiSensitivityTier, type PiiSensitivityTier } from "@/lib/pii";
 
 type WorkspaceOpt = { id: string; name: string };
 
@@ -71,9 +77,15 @@ type Props = {
   workspaces: WorkspaceOpt[];
   subject?: InsightsSubjectScope | null;
   onBackToAdmin?: () => void;
+  onEditPolicy?: () => void;
 };
 
-export function SecurityAnalyticsView({ workspaces, subject = null, onBackToAdmin }: Props) {
+export function SecurityAnalyticsView({
+  workspaces,
+  subject = null,
+  onBackToAdmin,
+  onEditPolicy,
+}: Props) {
   const chart = useChartTheme();
   const { range, setRange, workspaceId, setWorkspaceId } = useAnalyticsFilters("30d");
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -86,6 +98,31 @@ export function SecurityAnalyticsView({ workspaces, subject = null, onBackToAdmi
     workspaceId,
     asUser,
   });
+
+  const [policyTier, setPolicyTier] = useState<PiiSensitivityTier>(DEFAULT_SENSITIVITY);
+  const [safeTermCount, setSafeTermCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    void (async () => {
+      try {
+        const res = await fetch("/api/settings/security", { signal: ac.signal });
+        if (!res.ok) return;
+        const body = await res.json() as {
+          piiSensitivity?: PiiSensitivityTier;
+          safeTerms?: unknown[];
+        };
+        if (body.piiSensitivity) {
+          const parsed = parsePiiSensitivityTier(body.piiSensitivity);
+          if (parsed) setPolicyTier(parsed);
+        }
+        if (Array.isArray(body.safeTerms)) setSafeTermCount(body.safeTerms.length);
+      } catch {
+        /* offline — matrix still shows the catalog */
+      }
+    })();
+    return () => ac.abort();
+  }, []);
 
   const rangeLabel = rangeLabelOf(range);
   const workspaceLabel =
@@ -159,6 +196,34 @@ export function SecurityAnalyticsView({ workspaces, subject = null, onBackToAdmi
           </button>
         </div>
       )}
+
+      <section className="rounded-xl border border-foreground/10 bg-foreground/[0.03] p-4 sm:p-5 space-y-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground/90">Detection policy</h3>
+            <p className="text-xs text-foreground/40 mt-1 max-w-2xl leading-relaxed">
+              What each sensitivity tier includes. Insights counts findings that already
+              happened; this table is the rule that runs on the next chat send or Knowledge ingest.
+            </p>
+          </div>
+          {onEditPolicy && (
+            <button
+              type="button"
+              onClick={onEditPolicy}
+              className="shrink-0 rounded-lg border border-indigo-500/35 bg-indigo-500/15 px-3 py-1.5 text-[0.7rem] font-medium text-indigo-100 cursor-pointer hover:bg-indigo-500/25"
+            >
+              Edit in Settings
+            </button>
+          )}
+        </div>
+        <DetectionForwardOnlyNotice />
+        <DetectionPolicyMatrix currentTier={policyTier} />
+        <DetectionPolicyExplainer
+          currentTier={policyTier}
+          safeTermCount={safeTermCount ?? undefined}
+        />
+      </section>
+
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
         <KpiCard label="Total findings" value={loading ? "…" : String(data?.kpis.totalFindings ?? 0)} />
         <KpiCard label="High-risk blocked" value={loading ? "…" : String(data?.kpis.highRiskBlocked ?? 0)} />
