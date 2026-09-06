@@ -7,6 +7,11 @@ export const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
 
 export type AvatarImageKind = "image/jpeg" | "image/png";
 
+export type AvatarMeta = {
+  contentType: AvatarImageKind;
+  updatedAt: string;
+};
+
 export type InspectAvatarResult =
   | { ok: true; contentType: AvatarImageKind }
   | { ok: false; reason: string };

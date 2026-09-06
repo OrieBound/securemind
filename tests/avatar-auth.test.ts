@@ -23,7 +23,8 @@ vi.mock("@/lib/avatar-storage", () => ({
   writeAvatar: (...args: unknown[]) => writeAvatar(...args),
   removeAvatar: (...args: unknown[]) => removeAvatar(...args),
   avatarPublicUrl: vi.fn(() => null),
-  readAvatarMeta: vi.fn(() => null),
+  resolveAvatarPublicUrl: vi.fn(async () => null),
+  readAvatarMeta: vi.fn(async () => null),
 }));
 
 const member = {
@@ -39,12 +40,12 @@ const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 1, 2
 beforeEach(() => {
   vi.clearAllMocks();
   getIdentity.mockResolvedValue(member);
-  writeAvatar.mockReturnValue({ contentType: "image/png", updatedAt: "2026-09-06T00:00:00.000Z" });
+  writeAvatar.mockResolvedValue({ contentType: "image/png", updatedAt: "2026-09-06T00:00:00.000Z" });
 });
 
 describe("GET /api/me/avatar", () => {
   it("reads the identity user, not a query userId", async () => {
-    readAvatar.mockReturnValue({
+    readAvatar.mockResolvedValue({
       bytes: PNG,
       meta: { contentType: "image/png", updatedAt: "2026-09-06T00:00:00.000Z" },
     });

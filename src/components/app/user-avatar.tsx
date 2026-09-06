@@ -13,12 +13,13 @@ export function notifyAvatarChanged() {
   window.dispatchEvent(new Event(AVATAR_CHANGED_EVENT));
 }
 
-type Size = "sm" | "md" | "lg";
+type Size = "sm" | "md" | "lg" | "xl";
 
 const SIZE: Record<Size, string> = {
   sm: "size-7 text-[0.65rem]",
   md: "size-10 text-base",
   lg: "size-14 text-xl",
+  xl: "size-20 text-2xl",
 };
 
 export function UserAvatarFace({
@@ -36,14 +37,20 @@ export function UserAvatarFace({
   size?: Size;
   className?: string;
 }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => {
+    setBroken(false);
+  }, [photoUrl]);
+
   const preset = avatarPresetById(presetId);
   const dim = SIZE[size];
-  if (photoUrl) {
+  if (photoUrl && !broken) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={photoUrl}
         alt=""
+        onError={() => setBroken(true)}
         className={cn("rounded-full shrink-0 object-cover", dim, className)}
       />
     );

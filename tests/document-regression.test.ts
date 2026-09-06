@@ -44,6 +44,10 @@ const TEST_FILES: { name: string; mime: string }[] = [
   { name: "support-tickets.csv", mime: "text/csv" },
   { name: "incident-notes.txt", mime: "text/plain" },
   { name: "app-config.json", mime: "application/json" },
+  {
+    name: "SecureMind_Synthetic_Utility_Invoice.docx",
+    mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  },
 ];
 
 function loadTestFiles() {
@@ -70,6 +74,7 @@ describe("synthetic document regression corpus", () => {
       "support-tickets.csv",
       "incident-notes.txt",
       "app-config.json",
+      "SecureMind_Synthetic_Utility_Invoice.docx",
     ]);
 
     for (const file of files) {

@@ -129,6 +129,8 @@ module "amplify" {
   fragments_table_name   = module.data_dynamodb.table_name
   fragments_table_arn    = module.data_dynamodb.table_arn
   vendor_keys_secret_arn = module.secrets.vendor_keys_secret_arn
+  avatar_s3_bucket_name  = module.api.avatar_bucket_name
+  avatar_s3_bucket_arn   = module.api.avatar_bucket_arn
 }
 
 output "api_base_url" {
@@ -175,6 +177,10 @@ output "setup_claim_secret" {
   value       = module.amplify.setup_claim_secret
   sensitive   = true
   description = "One-time hosted first-admin code. terraform output -raw setup_claim_secret — never shown on the Amplify page."
+}
+
+output "avatar_bucket_name" {
+  value = module.api.avatar_bucket_name
 }
 
 output "chat_function_name" {

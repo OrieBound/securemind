@@ -13,7 +13,7 @@ import { readAvatar, removeAvatar, writeAvatar } from "@/lib/avatar-storage";
 export async function GET(req: NextRequest) {
   try {
     const { userId } = await getIdentity(req);
-    const stored = readAvatar(userId);
+    const stored = await readAvatar(userId);
     if (!stored) {
       return NextResponse.json({ error: "No custom avatar" }, { status: 404 });
     }
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
       status: 200,
       headers: {
         "Content-Type": stored.meta.contentType,
-        "Cache-Control": "private, max-age=3600",
+        "Cache-Control": "private, no-store",
       },
     });
   } catch (err) {
@@ -42,12 +42,21 @@ export async function PUT(req: NextRequest) {
     if (!inspected.ok) {
       return NextResponse.json({ error: inspected.reason }, { status: 422 });
     }
-    const meta = writeAvatar(userId, buf, inspected.contentType);
+    const meta = await writeAvatar(userId, buf, inspected.contentType);
     return NextResponse.json({
       ok: true,
       avatarUrl: `/api/me/avatar?v=${encodeURIComponent(meta.updatedAt)}`,
     });
   } catch (err) {
+    const status = err && typeof err === "object" && "status" in err
+      ? Number((err as { status: number }).status)
+      : 0;
+    if (status === 503) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "Avatar store is not configured." },
+        { status: 503 },
+      );
+    }
     const res = identityErrorResponse(err);
     if (res) return res;
     throw err;
@@ -57,7 +66,7 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const { userId } = await getIdentity(req);
-    removeAvatar(userId);
+    await removeAvatar(userId);
     return NextResponse.json({ ok: true });
   } catch (err) {
     const res = identityErrorResponse(err);
