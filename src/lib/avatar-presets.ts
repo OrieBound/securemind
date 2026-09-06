@@ -1,5 +1,5 @@
 /**
- * Curated avatar presets — no custom uploads (avoids object storage for v1).
+ * Curated avatar presets. A custom JPEG/PNG can replace these in the header.
  */
 
 export type AvatarPreset = {

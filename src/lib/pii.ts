@@ -82,47 +82,46 @@ export type SafeTerm = {
 };
 
 /**
- * RFC 2606 documentation domains. These used to ship as Safe terms, which
- * skipped email detection on `*@example.com` / `.org` / `.net`. They are not
- * identifying, but they are also not a reason to let mailboxes through.
+ * RFC 2606 / RFC 6761 documentation names. These are not real people or
+ * routable mail — they ship as Safe terms so demos and docs are not flagged
+ * as email detections. Listed in Settings so the exemption is visible.
  */
-export const RETIRED_RFC2606_SAFE_DOMAINS = ["example.com", "example.org", "example.net"] as const;
-
-/** Shipped default ids that must never reappear via merge, even if still stored. */
-const RETIRED_DEFAULT_SAFE_TERM_IDS = new Set([
-  "default-example-com",
-  "default-example-org",
-  "default-example-net",
-]);
+export const DOCUMENTATION_MAIL_DOMAINS = ["example.com", "example.org", "example.net"] as const;
+export const DOCUMENTATION_MAIL_TLDS = ["test", "invalid", "localhost", "example"] as const;
 
 function normalizeDomainValue(value: string): string {
   return value.trim().toLowerCase().replace(/^\*\./, "");
 }
 
-export function isRetiredRfc2606SafeDomain(value: string): boolean {
+export function isDocumentationMailDomain(value: string): boolean {
   const v = normalizeDomainValue(value);
-  return (RETIRED_RFC2606_SAFE_DOMAINS as readonly string[]).includes(v);
+  return (DOCUMENTATION_MAIL_DOMAINS as readonly string[]).includes(v)
+    || (DOCUMENTATION_MAIL_TLDS as readonly string[]).includes(v);
 }
 
-/** True for the old shipped example.* terms, including copies still on an instance. */
-export function isRetiredDefaultSafeTerm(term: Pick<SafeTerm, "id" | "kind" | "value">): boolean {
-  if (RETIRED_DEFAULT_SAFE_TERM_IDS.has(term.id)) return true;
-  return term.kind === "domain" && isRetiredRfc2606SafeDomain(term.value);
+/** Shipped catalog entries (`id` starts with `default-`). Visible and removable. */
+export function isShippedDefaultSafeTerm(term: Pick<SafeTerm, "id">): boolean {
+  return term.id.startsWith("default-");
 }
 
+/** @deprecated No terms are retired; kept so stored lists are not rewritten. */
 export function omitRetiredDefaultSafeTerms(terms: SafeTerm[]): SafeTerm[] {
-  return terms.filter(t => !isRetiredDefaultSafeTerm(t));
+  return terms;
 }
 
 /**
- * Shipped defaults. Non-routable address space is not identifying, and leaving
- * it enabled makes the scrubber unusable on infrastructure documents.
- *
- * These are ordinary editable entries rather than hidden pattern logic — the
- * user can inspect or remove them. RFC 2606 example.* domains are intentionally
- * not included: they skipped email redaction on synthetic and documentation mailboxes.
+ * Shipped defaults. Non-routable address space and documentation mailboxes are
+ * not identifying. These are ordinary editable entries — visible in Safe terms
+ * so a demo can show why `*@example.com` is not treated as a person.
  */
 export const DEFAULT_SAFE_TERMS: SafeTerm[] = [
+  { id: "default-example-com", kind: "domain", value: "example.com", label: "RFC 2606 documentation domain — not a real mailbox" },
+  { id: "default-example-org", kind: "domain", value: "example.org", label: "RFC 2606 documentation domain — not a real mailbox" },
+  { id: "default-example-net", kind: "domain", value: "example.net", label: "RFC 2606 documentation domain — not a real mailbox" },
+  { id: "default-tld-test", kind: "domain", value: "test", label: "Reserved TLD (.test) — documentation / synthetic" },
+  { id: "default-tld-invalid", kind: "domain", value: "invalid", label: "Reserved TLD (.invalid) — documentation / synthetic" },
+  { id: "default-tld-localhost", kind: "domain", value: "localhost", label: "Reserved TLD (.localhost) — documentation / synthetic" },
+  { id: "default-tld-example", kind: "domain", value: "example", label: "Reserved TLD (.example) — documentation / synthetic" },
   { id: "default-rfc1918-10",  kind: "cidr", value: "10.0.0.0/8",     label: "RFC 1918 private range" },
   { id: "default-rfc1918-172", kind: "cidr", value: "172.16.0.0/12",  label: "RFC 1918 private range" },
   { id: "default-rfc1918-192", kind: "cidr", value: "192.168.0.0/16", label: "RFC 1918 private range" },
@@ -423,13 +422,6 @@ export function validateSafeTerm(
   }
   if (kind === "cidr" && !cidrContains(trimmed, trimmed.split("/")[0])) {
     return { ok: false, reason: "Not a valid IPv4 range." };
-  }
-
-  if (kind === "domain" && isRetiredRfc2606SafeDomain(trimmed)) {
-    return {
-      ok: false,
-      reason: "example.com / example.org / example.net cannot be domain exemptions — they would skip email detection.",
-    };
   }
 
   for (const def of PATTERNS.filter(p => !p.exemptible)) {

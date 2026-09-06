@@ -23,6 +23,7 @@ import { tooltipStyle, useChartTheme } from "./use-chart-theme";
 import { KpiCard } from "./kpi-card";
 import { fmtUsd, fmtUsdLabeled, shortModel } from "@/lib/analytics/client";
 import { useAnalyticsQuery } from "./use-analytics-query";
+import { RateTableEditor } from "./rate-table-editor";
 import { cn } from "@/lib/utils";
 
 type WorkspaceOpt = { id: string; name: string };
@@ -72,6 +73,7 @@ export function CostAnalyticsView({ workspaces, subject = null, onBackToAdmin }:
     range,
     workspaceId,
     asUser,
+    pollMs: 15_000,
   });
 
   const rangeLabel = rangeLabelOf(range);
@@ -112,7 +114,7 @@ export function CostAnalyticsView({ workspaces, subject = null, onBackToAdmin }:
     <AnalyticsShell
       active="cost"
       title="Estimated AI inference cost"
-      subtitle="Conservative list-price estimates (+10% uplift) from recorded token usage. Not an invoice or full AWS bill."
+      subtitle="Conservative list-price estimates (+10% uplift) from recorded token usage. Refreshes about every 15 seconds while this page is open. Not an invoice or full AWS bill."
       workspaces={workspaces}
       range={range}
       workspaceId={workspaceId}
@@ -214,10 +216,12 @@ export function CostAnalyticsView({ workspaces, subject = null, onBackToAdmin }:
         />
       </div>
 
+      <RateTableEditor />
+
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <ChartFrame
           title="Estimated cost over time"
-          interpretation="Daily estimated inference spend from recorded Groq usage."
+          interpretation="Daily estimated inference spend from recorded Groq and Bedrock token usage."
           rangeLabel={rangeLabel}
           workspaceLabel={workspaceLabel}
           disclaimer={disclaimer}

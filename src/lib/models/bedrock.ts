@@ -48,12 +48,35 @@ export async function bedrockBlockReason(): Promise<string | null> {
   return null;
 }
 
+export type BedrockTokenUsage = { promptTokens: number; completionTokens: number };
+
+/** Pull input/output token counts from a ConverseStream metadata event. */
+export function usageFromConverseStreamEvent(event: {
+  metadata?: {
+    usage?: {
+      inputTokens?: number;
+      outputTokens?: number;
+    };
+  };
+}): BedrockTokenUsage | null {
+  const usage = event.metadata?.usage;
+  if (!usage) return null;
+  const prompt = usage.inputTokens;
+  const completion = usage.outputTokens;
+  if (prompt == null && completion == null) return null;
+  return {
+    promptTokens: prompt ?? 0,
+    completionTokens: completion ?? 0,
+  };
+}
+
 /**
  * Stream a chat completion from Bedrock ConverseStream.
  */
 export async function* streamBedrockChat(
   messages: ChatMessage[],
   modelId: string,
+  onUsage?: (usage: BedrockTokenUsage) => void,
 ): AsyncGenerator<string> {
   const blocked = await bedrockBlockReason();
   if (blocked) throw new Error(blocked);
@@ -123,5 +146,7 @@ export async function* streamBedrockChat(
   for await (const event of response.stream) {
     const delta = event.contentBlockDelta?.delta?.text;
     if (delta) yield delta;
+    const usage = usageFromConverseStreamEvent(event);
+    if (usage && onUsage) onUsage(usage);
   }
 }

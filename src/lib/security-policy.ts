@@ -14,7 +14,6 @@ import { isHostedRuntime } from "@/lib/runtime-env";
 import {
   DEFAULT_SAFE_TERMS,
   DEFAULT_SENSITIVITY,
-  isRetiredRfc2606SafeDomain,
   omitRetiredDefaultSafeTerms,
   parsePiiSensitivityTier,
   SENSITIVITY_TIERS,
@@ -57,8 +56,7 @@ function parseSafeTerms(raw: unknown): SafeTerm[] {
   return omitRetiredDefaultSafeTerms(out);
 }
 
-/** Defaults + instance exemptions (instance wins on id collision by appending).
- *  Retired RFC 2606 example.* terms are dropped even if still stored. */
+/** Defaults + instance exemptions (instance wins on id collision by appending). */
 export function mergeSafeTerms(instance: SafeTerm[]): SafeTerm[] {
   const seen = new Set<string>();
   const out: SafeTerm[] = [];
@@ -225,7 +223,6 @@ export function normalizeSafeTermsInput(raw: unknown): SafeTerm[] | { error: str
     const r = item as Record<string, unknown>;
     const kind = r.kind as SafeTermKind;
     const value = typeof r.value === "string" ? r.value : "";
-    if (kind === "domain" && isRetiredRfc2606SafeDomain(value)) continue;
     const check = validateSafeTerm(value, kind);
     if (!check.ok) return { error: check.reason };
     out.push({

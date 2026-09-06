@@ -60,6 +60,7 @@ export function UsageAnalyticsView({ workspaces, subject = null, onBackToAdmin }
     range,
     workspaceId,
     asUser,
+    pollMs: 15_000,
   });
 
   const rangeLabel = rangeLabelOf(range);
@@ -78,7 +79,7 @@ export function UsageAnalyticsView({ workspaces, subject = null, onBackToAdmin }
     <AnalyticsShell
       active="usage"
       title="Usage"
-      subtitle="SecureMind and AI activity — requests, tokens, routing, grounding. Not AWS infrastructure consumption."
+      subtitle="SecureMind and AI activity — requests, tokens, routing, grounding. Refreshes about every 15 seconds while this page is open. Not AWS infrastructure consumption."
       workspaces={workspaces}
       range={range}
       workspaceId={workspaceId}

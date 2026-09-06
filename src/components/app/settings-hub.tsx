@@ -25,6 +25,7 @@ import { ProfileSettings } from "@/components/app/profile-settings";
 import {
   NON_EXEMPTIBLE_CATEGORIES,
   categoryLabel,
+  isShippedDefaultSafeTerm,
   type PiiSensitivityTier,
   type SafeTerm,
   type SafeTermKind,
@@ -102,11 +103,13 @@ function SafeTermsSection({
   const [page, setPage] = useState(0);
 
   const active = SAFE_TERM_KINDS.find(k => k.kind === kind)!;
-  const pageCount = Math.max(1, Math.ceil(safeTerms.length / SAFE_TERMS_PAGE_SIZE));
+  const shippedTerms = safeTerms.filter(isShippedDefaultSafeTerm);
+  const customTerms = safeTerms.filter(t => !isShippedDefaultSafeTerm(t));
+  const pageCount = Math.max(1, Math.ceil(customTerms.length / SAFE_TERMS_PAGE_SIZE));
   const safePage = Math.min(page, pageCount - 1);
   const pageStart = safePage * SAFE_TERMS_PAGE_SIZE;
-  const pageTerms = safeTerms.slice(pageStart, pageStart + SAFE_TERMS_PAGE_SIZE);
-  const showPager = safeTerms.length > SAFE_TERMS_PAGE_SIZE;
+  const pageTerms = customTerms.slice(pageStart, pageStart + SAFE_TERMS_PAGE_SIZE);
+  const showPager = customTerms.length > SAFE_TERMS_PAGE_SIZE;
 
   useEffect(() => {
     if (page > pageCount - 1) setPage(Math.max(0, pageCount - 1));
@@ -120,7 +123,7 @@ function SafeTermsSection({
     setValue("");
     setError(null);
     // New term appends to the end — show the last page after the list grows.
-    setPage(Math.floor(safeTerms.length / SAFE_TERMS_PAGE_SIZE));
+    setPage(Math.floor(customTerms.length / SAFE_TERMS_PAGE_SIZE));
   }
 
   return (
@@ -130,6 +133,8 @@ function SafeTermsSection({
         Declared exemptions matched before detection on new chat sends and new Knowledge
         ingest. A category can still be “on” at this tier while a matching exemption
         lets a specific value through. Instance policy is Admin-owned (stored server-side).
+        Shipped documentation names (<code className="font-mono text-foreground/45">example.com</code>,
+        reserved TLDs) are listed first so demos do not treat fake mailboxes as real people.
       </p>
 
       {!readOnly && (
@@ -183,6 +188,50 @@ function SafeTermsSection({
         </p>
       )}
 
+      {shippedTerms.length > 0 && (
+        <div className="mb-3">
+          <p className="text-[0.58rem] uppercase tracking-wider text-foreground/30 font-semibold mb-1.5">
+            Shipped — documentation &amp; non-routable
+          </p>
+          <ul className="space-y-1.5">
+            {shippedTerms.map(t => (
+              <li
+                key={t.id}
+                className="flex items-center justify-between gap-3 rounded-xl border border-indigo-500/15 bg-indigo-500/[0.06] px-3 py-2"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="rounded-md bg-indigo-500/15 border border-indigo-400/20 px-1.5 py-0.5 text-[0.55rem] uppercase tracking-wider text-indigo-200/80">
+                      Shipped
+                    </span>
+                    <span className="text-[0.58rem] uppercase tracking-wider text-foreground/30">
+                      {SAFE_TERM_KINDS.find(k => k.kind === t.kind)?.label ?? t.kind}
+                    </span>
+                    <code className="text-[0.72rem] font-mono text-foreground/70 break-all">{t.value}</code>
+                  </div>
+                  {t.label && <p className="text-[0.6rem] text-foreground/35 mt-0.5">{t.label}</p>}
+                </div>
+                {!readOnly && (
+                <button
+                  type="button"
+                  onClick={() => onRemove(t.id)}
+                  aria-label={`Remove safe term ${t.value}`}
+                  className="shrink-0 rounded-md border border-[var(--destructive-border)] bg-[var(--destructive-soft)] px-2.5 py-1 text-[0.62rem] font-semibold text-destructive hover:brightness-95 transition-colors cursor-pointer"
+                >
+                  Remove
+                </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {customTerms.length > 0 && (
+        <p className="text-[0.58rem] uppercase tracking-wider text-foreground/30 font-semibold mb-1.5">
+          Added on this instance
+        </p>
+      )}
       <ul className="space-y-1.5">
         {pageTerms.map(t => (
           <li
@@ -214,7 +263,7 @@ function SafeTermsSection({
       {showPager && (
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           <p className="text-[0.62rem] text-foreground/35 tabular-nums">
-            Page {safePage + 1} of {pageCount} · {safeTerms.length} terms
+            Page {safePage + 1} of {pageCount} · {customTerms.length} added
           </p>
           <div className="flex items-center gap-1.5">
             <button
@@ -401,7 +450,7 @@ export function SettingsSidebarNav({
   section: SettingsSection;
   onSectionChange: (s: SettingsSection) => void;
   /** Opens the full Usage / Cost / Security analytics views. */
-  onOpenInsightsDashboard: (view: InsightsDashboard) => void;
+  onOpenInsightsDashboard: (view: InsightsDashboard, hash?: string) => void;
   /** Which full dashboard is currently showing (highlights the matching nav item). */
   activeInsightsDashboard?: InsightsDashboard | null;
   /** Cognito Admin group (or local auth). Multiple admins are supported. */
@@ -616,7 +665,7 @@ export function SettingsHub({
 }: {
   section: SettingsSection;
   onSectionChange: (s: SettingsSection) => void;
-  onOpenInsightsDashboard: (view: InsightsDashboard) => void;
+  onOpenInsightsDashboard: (view: InsightsDashboard, hash?: string) => void;
   /** Admin console → scoped member Insights (Usage first). */
   onOpenUserInsights?: (subject: InsightsSubjectRef) => void;
   safeTerms: SafeTerm[];
@@ -863,11 +912,15 @@ export function SettingsHub({
                   }}
                 />
                 <div className="mt-3">
-                  <DetectionPolicyExplainer currentTier={piiSensitivity} safeTermCount={safeTerms.length} />
+                  <DetectionPolicyExplainer
+                    currentTier={piiSensitivity}
+                    safeTermCount={safeTerms.length}
+                    safeTerms={safeTerms}
+                  />
                 </div>
                 <button
                   type="button"
-                  onClick={() => onOpenInsightsDashboard("security")}
+                  onClick={() => onOpenInsightsDashboard("security", "#detection-log")}
                   className="mt-3 text-[0.68rem] font-medium text-indigo-300/85 hover:text-indigo-200 cursor-pointer"
                 >
                   Open detection log in Insights → Security

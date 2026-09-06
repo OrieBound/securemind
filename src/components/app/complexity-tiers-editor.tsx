@@ -98,6 +98,7 @@ export function ComplexityTiersEditor({
   const initialPageTier =
     lastRoute?.mode && TIERS.includes(lastRoute.mode as Tier) ? lastRoute.mode : "Standard";
   const [openPicker, setOpenPicker] = useState<string | null>(isPage ? initialPageTier : null);
+  const [fixedPickerOpen, setFixedPickerOpen] = useState(false);
   const picking = modelSelectionMode === "auto" && Boolean(openPicker) && !isPage;
 
   useEffect(() => {
@@ -105,13 +106,20 @@ export function ComplexityTiersEditor({
   }, [openPicker, modelSelectionMode, onNeedCatalog]);
 
   useEffect(() => {
-    if (!openPicker || isPage) return;
+    if (modelSelectionMode !== "fixed") setFixedPickerOpen(false);
+  }, [modelSelectionMode]);
+
+  useEffect(() => {
+    if ((!openPicker && !fixedPickerOpen) || isPage) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpenPicker(null);
+      if (e.key === "Escape") {
+        setOpenPicker(null);
+        setFixedPickerOpen(false);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [openPicker, isPage]);
+  }, [openPicker, fixedPickerOpen, isPage]);
 
   function assign(tier: string, id: string) {
     if (!isChatUsableModelId(id)) return;
@@ -147,6 +155,7 @@ export function ComplexityTiersEditor({
           onClick={() => {
             onModelSelectionModeChange("fixed");
             setOpenPicker(null);
+            setFixedPickerOpen(false);
           }}
           className={cn(
             "flex-1 text-[0.7rem] font-medium rounded-md py-1.5 transition-all duration-150 cursor-pointer",
@@ -234,17 +243,43 @@ export function ComplexityTiersEditor({
               {fixedModelId}
             </code>
             <p className="mt-2 text-[0.62rem] text-indigo-200/55 leading-relaxed">
-              Click any model below to switch. Applies to the next chat message — no save step.
+              Every chat message uses this model. Open the list only when you want to switch.
             </p>
+            <button
+              type="button"
+              onClick={() => {
+                onNeedCatalog?.();
+                setFixedPickerOpen(open => !open);
+              }}
+              className={cn(
+                "mt-2.5 w-full rounded-lg px-3 py-2 text-[0.72rem] font-semibold cursor-pointer",
+                fixedPickerOpen
+                  ? "bg-foreground/10 text-foreground/80 hover:bg-foreground/15"
+                  : "bg-primary text-primary-foreground hover:bg-[var(--primary-hover)]",
+              )}
+            >
+              {fixedPickerOpen ? "Keep this model" : "Change model"}
+            </button>
           </div>
-          <ModelPickerList
-            models={chatCatalogModels}
-            selectedId={fixedModelId}
-            onSelect={m => onFixedModelIdChange(m.id)}
-            maxHeightClass={isPage ? "max-h-[min(28rem,50vh)]" : "max-h-none"}
-            selectedBadgeLabel="In use"
-            emptyLabel="No models available — add a credential in Settings → Providers."
-          />
+          {fixedPickerOpen && (
+            <div className="rounded-xl border border-foreground/10 bg-foreground/[0.03] p-2">
+              <p className="px-1.5 pb-2 text-[0.62rem] text-foreground/45">
+                Search, then click a model. It applies to the next chat message — no save step.
+              </p>
+              <ModelPickerList
+                models={chatCatalogModels}
+                selectedId={fixedModelId}
+                autoFocusSearch
+                onSelect={m => {
+                  onFixedModelIdChange(m.id);
+                  setFixedPickerOpen(false);
+                }}
+                maxHeightClass={isPage ? "max-h-[min(28rem,50vh)]" : "max-h-72"}
+                selectedBadgeLabel="In use"
+                emptyLabel="No models available — add a credential in Settings → Providers."
+              />
+            </div>
+          )}
         </div>
       )}
 

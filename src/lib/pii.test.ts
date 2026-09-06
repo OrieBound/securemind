@@ -6,7 +6,6 @@ import {
   categoriesForTier,
   cidrContains,
   isSafeTerm,
-  omitRetiredDefaultSafeTerms,
   parsePiiSensitivityTier,
   passesCanadianSin,
   passesLuhn,
@@ -238,13 +237,20 @@ describe("sensitivity tiers", () => {
     expect(categories("bob@acme.io", { sensitivity: "low" })).toContain("email");
   });
 
-  it("redacts RFC 2606 documentation mailboxes under shipped defaults", () => {
+  it("does not treat RFC 2606 documentation mailboxes as people under shipped defaults", () => {
     expect(categories("jordan.test@example.com", { safeTerms: DEFAULT_SAFE_TERMS }))
-      .toContain("email");
+      .not.toContain("email");
     expect(categories("billing@example.org", { safeTerms: DEFAULT_SAFE_TERMS }))
-      .toContain("email");
+      .not.toContain("email");
     expect(categories("morgan.sample@example.net", { safeTerms: DEFAULT_SAFE_TERMS }))
-      .toContain("email");
+      .not.toContain("email");
+  });
+
+  it("does not treat reserved TLD mailboxes as people under shipped defaults", () => {
+    expect(categories("jordan.hale@northwind-synth.test", { safeTerms: DEFAULT_SAFE_TERMS }))
+      .not.toContain("email");
+    expect(categories("ops@lab.invalid", { safeTerms: DEFAULT_SAFE_TERMS }))
+      .not.toContain("email");
   });
 
   it("defaults to balanced when no sensitivity is supplied", () => {
@@ -309,16 +315,14 @@ describe("safe terms", () => {
       .not.toContain("IP address");
   });
 
-  it("does not ship RFC 2606 example.* domains as defaults", () => {
-    expect(DEFAULT_SAFE_TERMS.some(t => /example\.(com|org|net)/i.test(t.value))).toBe(false);
+  it("ships RFC 2606 example.* domains as visible defaults", () => {
+    expect(DEFAULT_SAFE_TERMS.some(t => t.value === "example.com" && t.kind === "domain")).toBe(true);
+    expect(DEFAULT_SAFE_TERMS.some(t => t.value === "test" && t.kind === "domain")).toBe(true);
   });
 
-  it("drops stored RFC 2606 example.* terms from a prior default list", () => {
-    const mixed: SafeTerm[] = [
-      ...DEFAULT_SAFE_TERMS,
-      { id: "default-example-com", kind: "domain", value: "example.com", label: "RFC 2606 reserved domain" },
-    ];
-    expect(omitRetiredDefaultSafeTerms(mixed).some(t => t.value === "example.com")).toBe(false);
+  it("still flags a real-looking mailbox that is not a documentation name", () => {
+    expect(categories("jordan.hale@northwind-industries.io", { safeTerms: DEFAULT_SAFE_TERMS }))
+      .toContain("email");
   });
 });
 
@@ -393,10 +397,8 @@ describe("validateSafeTerm", () => {
     expect(validateSafeTerm("   ", "literal").ok).toBe(false);
   });
 
-  it("rejects an RFC 2606 documentation domain as a safe term", () => {
-    const result = validateSafeTerm("example.com", "domain");
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toMatch(/example\.com/i);
+  it("accepts an RFC 2606 documentation domain as a safe term", () => {
+    expect(validateSafeTerm("example.com", "domain").ok).toBe(true);
   });
 
   it("accepts an ordinary hostname literal", () => {

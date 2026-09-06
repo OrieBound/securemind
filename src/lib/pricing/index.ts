@@ -20,6 +20,7 @@ import {
   lookupBedrockRates,
 } from "./bedrock";
 import { costFromRates, type CostEstimate, type TokenRate } from "./types";
+import { lookupOverride, type RateOverrideMap } from "./rate-overrides";
 
 export type { CostEstimate, TokenRate } from "./types";
 export {
@@ -69,7 +70,7 @@ export const UNPRICED_CLOUD_FLOOR_RATES: TokenRate =
 export const UNPRICED_CLOUD_FLOOR_VERSION = `${GROQ_PRICING_VERSION}+floor-${DEFAULT_COST_BASELINE_MODEL}`;
 
 export const COST_ESTIMATE_DISCLAIMER =
-  "Estimated at published list rates (Groq / Bedrock on-demand; Ollama as $0 local) with a +10% conservative uplift, rounded up. Not an invoice — excludes credits, discounts, Provisioned Throughput, and infrastructure. Unpriced cloud models use a Max-tier token floor for spend accounting.";
+  "Estimated from recorded tokens × list rates (Groq / Bedrock on-demand; local Ollama is $0) with a +10% conservative uplift, rounded up. Not an AWS invoice — Cost Explorer lags about a day and is not used here. Unpriced cloud models use a Max-tier token floor. Admins can update rates on this page; changes apply to new turns only.";
 
 /** Ceiling after uplift so estimates never under-count vs raw list rate. */
 export function applyConservativeUplift(rawUsd: number): number {
@@ -96,6 +97,7 @@ export function estimateInferenceCost(opts: {
   model: string;
   promptTokens: number;
   completionTokens: number;
+  rateOverrides?: RateOverrideMap;
 }): CostEstimate {
   const provider = opts.provider.toLowerCase();
   const { model, promptTokens, completionTokens } = opts;
@@ -106,6 +108,15 @@ export function estimateInferenceCost(opts: {
       pricingVersion: OLLAMA_PRICING_VERSION,
       priced: true,
     };
+  }
+
+  const override = lookupOverride(provider, model, opts.rateOverrides);
+  if (override) {
+    return withConservative({
+      estimatedCostUsd: costFromRates(override, promptTokens, completionTokens),
+      pricingVersion: `${PRICING_BUNDLE_VERSION}+override`,
+      priced: true,
+    });
   }
 
   if (provider === "groq") {
@@ -176,9 +187,14 @@ export function listPricedModelIds(): string[] {
   return [...Object.keys(GROQ_MODEL_PRICING), ...Object.keys(BEDROCK_MODEL_PRICING)];
 }
 
-export function hasListPrice(provider: string, model: string): boolean {
+export function hasListPrice(
+  provider: string,
+  model: string,
+  rateOverrides?: RateOverrideMap,
+): boolean {
   const p = provider.toLowerCase();
   if (p === "ollama") return true;
+  if (lookupOverride(p, model, rateOverrides)) return true;
   if (p === "groq") return model in GROQ_MODEL_PRICING;
   if (p === "bedrock") return lookupBedrockRates(model) != null;
   return false;

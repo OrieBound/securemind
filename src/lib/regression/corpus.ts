@@ -10,8 +10,9 @@ import ExcelJS from "exceljs";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 
 export const SYNTH = {
-  email: "jordan.hale@northwind-synth.test",
-  emailRepeat: "jordan.hale@northwind-synth.test",
+  email: "jordan.hale@northwind-industries.io",
+  emailRepeat: "jordan.hale@northwind-industries.io",
+  docMailbox: "docs@example.com",
   ssn: "123-45-6789",
   card: "4242424242424242",
   cardSpaced: "4242 4242 4242 4242",
@@ -52,6 +53,7 @@ export const MUST_PRESERVE_BALANCED = [
   SYNTH.routing,
   SYNTH.password,
   SYNTH.privateIp,
+  SYNTH.docMailbox,
 ] as const;
 
 export const EXPECTED_FINDINGS = {
@@ -278,6 +280,7 @@ export function buildIncidentNotesTxt(): string {
     SYNTH.controlProse,
     `Control ticket ${SYNTH.ticketId} closed after review.`,
     `Repeat email ${SYNTH.emailRepeat} appeared in the follow-up.`,
+    `Documentation mailbox (shipped Safe term, not a real person): ${SYNTH.docMailbox}`,
   ].join("\n");
 }
 

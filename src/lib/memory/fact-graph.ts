@@ -26,7 +26,7 @@ const IDENTITY_KEYS = new Set([
   "name", "age", "occupation", "location", "project", "projects", "goals", "skills", "interests",
 ]);
 const BEHAVIORAL_KEYS = new Set([
-  "response_length", "technical_level", "communication_style",
+  "response_length", "preferred_response_length", "technical_level", "communication_style",
   "preferred_topics", "tone_preference", "feedback_style",
 ]);
 

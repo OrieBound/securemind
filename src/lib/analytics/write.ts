@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { usesHostedAppStore } from "@/lib/workspaces/store";
 import { hostedAppStore } from "@/lib/workspaces/hosted-dynamo";
 import { estimateInferenceCost } from "@/lib/pricing";
+import { getPricingRateOverrides } from "@/lib/pricing/rate-overrides-store";
 import {
   riskLevelForCategory,
   type GroundingStatus,
@@ -105,6 +106,7 @@ export async function recordInferenceEvent(input: InferenceEventInput): Promise<
 
   // Ollama is $0 without tokens; cloud providers need token counts for a list estimate.
   const provider = input.provider.toLowerCase();
+  const rateOverrides = provider === "ollama" ? undefined : await getPricingRateOverrides();
   if (provider === "ollama") {
     const est = estimateInferenceCost({
       provider,
@@ -120,6 +122,7 @@ export async function recordInferenceEvent(input: InferenceEventInput): Promise<
       model: input.model,
       promptTokens: prompt,
       completionTokens: completion,
+      rateOverrides,
     });
     estimatedCostUsd = est.estimatedCostUsd;
     pricingVersion = est.pricingVersion;

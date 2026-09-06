@@ -42,6 +42,7 @@ type Stored = {
   storageBackend: string | null;
   voiceSttChoice: string | null;
   voiceSttAudioAckAt: string | null;
+  pricingRateOverrides?: unknown;
   updatedAt: string;
   updatedByUserId: string | null;
 };
@@ -82,6 +83,7 @@ export function emptyInstanceConfigRow(): InstanceConfigRow {
     storageBackend: "dynamodb",
     voiceSttChoice: null,
     voiceSttAudioAckAt: null,
+    pricingRateOverrides: null,
     updatedAt: new Date(),
     updatedByUserId: null,
   };
@@ -112,6 +114,7 @@ function toStored(row: InstanceConfigRow): Stored {
     storageBackend: row.storageBackend,
     voiceSttChoice: row.voiceSttChoice,
     voiceSttAudioAckAt: iso(row.voiceSttAudioAckAt),
+    pricingRateOverrides: row.pricingRateOverrides ?? null,
     updatedAt: iso(row.updatedAt) ?? new Date().toISOString(),
     updatedByUserId: row.updatedByUserId,
   };
@@ -143,6 +146,7 @@ function fromStored(raw: Stored): InstanceConfigRow {
     storageBackend: raw.storageBackend,
     voiceSttChoice: parseVoiceSttChoice(raw.voiceSttChoice),
     voiceSttAudioAckAt: asDate(raw.voiceSttAudioAckAt),
+    pricingRateOverrides: raw.pricingRateOverrides ?? null,
     updatedAt: asDate(raw.updatedAt) ?? new Date(),
     updatedByUserId: raw.updatedByUserId,
   };

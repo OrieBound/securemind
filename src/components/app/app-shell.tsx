@@ -100,6 +100,7 @@ import {
   useModelCatalog,
 } from "@/components/app/model-catalog";
 import { ComplexityTiersEditor, type ComplexityTiersBind } from "@/components/app/complexity-tiers-editor";
+import { SessionAvatar } from "@/components/app/user-avatar";
 import { isReferenceOnlyModel } from "@/lib/models/reference-catalog";
 import {
   DEFAULT_TIER_MODELS,
@@ -192,6 +193,7 @@ import {
   validateSafeTerm,
   omitRetiredDefaultSafeTerms,
   parsePiiSensitivityTier,
+  isShippedDefaultSafeTerm,
   DEFAULT_SAFE_TERMS,
   DEFAULT_SENSITIVITY,
   type MessageSegment,
@@ -2420,18 +2422,23 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
 
   const openInsightsDashboard = useCallback((
     view: InsightsDashboard,
-    subject?: InsightsSubjectRef | null,
+    subject?: InsightsSubjectRef | null | string,
   ) => {
     setSettingsMenuCollapsed(true);
-    if (subject?.userId) {
-      stashInsightsSubject(subject);
-      const params = new URLSearchParams({ asUser: subject.userId });
-      if (subject.label) params.set("label", subject.label);
-      router.push(`/analytics/${view}?${params.toString()}`);
+    const hash =
+      typeof subject === "string"
+        ? (subject.startsWith("#") ? subject : `#${subject}`)
+        : "";
+    const subjectRef = typeof subject === "string" ? null : subject;
+    if (subjectRef?.userId) {
+      stashInsightsSubject(subjectRef);
+      const params = new URLSearchParams({ asUser: subjectRef.userId });
+      if (subjectRef.label) params.set("label", subjectRef.label);
+      router.push(`/analytics/${view}?${params.toString()}${hash}`);
       return;
     }
     stashInsightsSubject(null);
-    router.push(`/analytics/${view}`);
+    router.push(`/analytics/${view}${hash}`);
   }, [router]);
 
   const [insightsSubject, setInsightsSubject] = useState<InsightsSubjectScope | null>(null);
@@ -2961,6 +2968,8 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   const sessionSummaryRef  = useRef("");
   const extractedFactsRef  = useRef<Record<string, string>>({});
   const summarizedCountRef = useRef(0);
+  const factExtractInFlightRef = useRef(false);
+  const lastFactExtractUserCountRef = useRef(-1);
   const messagesRef        = useRef<ChatMessage[]>([]);
   const loadedWorkspaceRef     = useRef<string | null>(null);
 
@@ -3285,6 +3294,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
         setSessionSummary(data.sessionSummary ?? "");
         setSummarizedCount(data.summarizedCount ?? 0);
         setExtractedFacts(data.extractedFacts ?? {});
+        lastFactExtractUserCountRef.current = -1;
       })
       .catch(() => {
         sessionIdRef.current = null;
@@ -3431,6 +3441,51 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       .finally(() => { summarizeInFlightRef.current = false; });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isStreaming]);
+
+  // Capture user-stated facts without waiting for thread compression.
+  useEffect(() => {
+    if (isStreaming) return;
+    if (factExtractInFlightRef.current) return;
+    if (!sessionIdRef.current || !activeWorkspaceId) return;
+
+    const msgs = messagesRef.current.filter(m => m.role !== "assistant" || m.content);
+    const userCount = msgs.filter(m => m.role === "user").length;
+    if (userCount === 0) return;
+    if (userCount === lastFactExtractUserCountRef.current) return;
+
+    const recent = msgs.slice(-16);
+    factExtractInFlightRef.current = true;
+    fetch("/api/summarize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        purpose: "facts",
+        messages: recent.map(m => ({ role: m.role, content: m.content })),
+        existingSummary: sessionSummaryRef.current,
+        existingFacts: extractedFactsRef.current,
+        sessionId: sessionIdRef.current,
+        workspaceId: activeWorkspaceId,
+      }),
+    })
+      .then(r => r.json() as Promise<{ summary?: string; facts?: Record<string, string> }>)
+      .then(({ summary, facts }) => {
+        lastFactExtractUserCountRef.current = userCount;
+        if (typeof summary === "string" && summary.trim()) setSessionSummary(summary);
+        if (facts && typeof facts === "object") setExtractedFacts(facts);
+        if (viewWorkspaceId) {
+          fetch(`/api/memory?workspaceId=${viewWorkspaceId}`)
+            .then(r => r.json())
+            .then(data => {
+              setWorkspaceFacts(data.workspaceFacts ?? []);
+              setAllSessionSummaries(data.sessionSummaries ?? []);
+              setMemoryStats(data.stats ?? null);
+            })
+            .catch(() => { /* live facts still show */ });
+        }
+      })
+      .catch(err => console.error("[memory] fact extract failed:", err))
+      .finally(() => { factExtractInFlightRef.current = false; });
+  }, [isStreaming, activeWorkspaceId, activeNav, viewWorkspaceId]);
 
   // ── voice input pipeline ─────────────────────────────────────────────────────
   useEffect(() => { voiceStateRef.current = voiceState; }, [voiceState]);
@@ -4757,7 +4812,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     if (!pending?.nav) return;
     const nav = pending.nav as NavId;
     if (nav === "security-dashboard") {
-      router.push("/analytics/security#detection-log");
+      router.push("/analytics/security");
       return;
     }
     if (nav === "home") {
@@ -5584,7 +5639,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                         </p>
                       )}
                       <Link
-                        href="/analytics/security#detection-log"
+                        href="/analytics/security"
                         className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary py-2.5 text-[0.72rem] font-semibold text-primary-foreground hover:bg-[var(--primary-hover)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         <Shield className="size-3.5 shrink-0" aria-hidden />
@@ -5592,7 +5647,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                         <ChevronRight className="size-3.5 shrink-0 opacity-80" aria-hidden />
                       </Link>
                       <p className="mt-1.5 text-center text-[0.55rem] text-foreground/30 leading-relaxed">
-                        Policy, detection log, Dismiss, and Delete. Same page as Settings → Insights → Security.
+                        Policy, detection log, and charts as separate tabs. Same page as Settings → Insights → Security.
                       </p>
                     </>
                   ),
@@ -5636,11 +5691,21 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                           while its category stays on.
                         </p>
                       )}
-                      <div className="flex items-center justify-between gap-2 rounded-lg bg-foreground/[0.04] border border-foreground/8 px-2.5 py-2 mb-2">
-                        <span className="text-[0.62rem] text-foreground/40">Safe terms</span>
-                        <span className="text-[0.65rem] font-medium tabular-nums text-foreground/65">
-                          {safeTerms.length} exemption{safeTerms.length !== 1 ? "s" : ""}
-                        </span>
+                      <div className="rounded-lg bg-foreground/[0.04] border border-foreground/8 px-2.5 py-2 mb-2 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-[0.62rem] text-foreground/40">Safe terms</span>
+                          <span className="text-[0.65rem] font-medium tabular-nums text-foreground/65">
+                            {safeTerms.length} exemption{safeTerms.length !== 1 ? "s" : ""}
+                          </span>
+                        </div>
+                        <p className="text-[0.55rem] text-foreground/32 leading-relaxed">
+                          Documentation mail is exempt:{" "}
+                          {safeTerms
+                            .filter(t => t.kind === "domain" && isShippedDefaultSafeTerm(t))
+                            .map(t => t.value)
+                            .join(", ") || "none"}
+                          . Not real people — listed in Settings → Workspace.
+                        </p>
                       </div>
                       <button
                         type="button"
@@ -5650,7 +5715,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                         Adjust sensitivity & safe terms
                       </button>
                       <Link
-                        href="/analytics/security#detection-log"
+                        href="/analytics/security"
                         className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary py-2.5 text-[0.72rem] font-semibold text-primary-foreground hover:bg-[var(--primary-hover)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         <Shield className="size-3.5 shrink-0" aria-hidden />
@@ -6423,12 +6488,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                 className="list-none flex items-center gap-2 cursor-pointer rounded-lg border border-border bg-card px-2 py-1 hover:bg-secondary/80 [&::-webkit-details-marker]:hidden"
                 aria-label="Account menu"
               >
-                <span
-                  className="size-7 rounded-full inline-flex items-center justify-center text-xs shrink-0 bg-indigo-500/20 text-indigo-200"
-                  aria-hidden
-                >
-                  {(authSession?.email ?? "SM").slice(0, 2).toUpperCase()}
-                </span>
+                <SessionAvatar size="sm" />
                 <span className="hidden sm:inline text-[0.65rem] text-muted-foreground truncate max-w-[8rem]">
                   {authSession?.email ?? "Local user"}
                 </span>
@@ -6658,8 +6718,8 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                   !memoryLoading ? (
                     <p className="text-[0.7rem] text-foreground/30 mt-0.5 px-1.5">
                       {viewWorkspaceId === activeWorkspaceId
-                        ? "Live profile for this workspace"
-                        : `Viewing ${viewWorkspaceName}'s learned profile`}
+                        ? "What this workspace has retained about you"
+                        : `Viewing ${viewWorkspaceName}'s saved memory`}
                     </p>
                   ) : (
                     <p className="text-[0.7rem] text-foreground/30 mt-0.5 px-1.5 animate-pulse">Syncing…</p>

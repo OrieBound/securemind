@@ -26,6 +26,21 @@ describe("hosted instance config", () => {
     expect(b.allowRealAws).toBe(false);
     expect(emptyInstanceConfigRow().storageBackend).toBe("dynamodb");
     expect(emptyInstanceConfigRow().voiceSttChoice).toBeNull();
+    expect(emptyInstanceConfigRow().pricingRateOverrides).toBeNull();
+  });
+
+  it("persists list-rate overrides on the hosted config blob", async () => {
+    const store = createHostedInstanceConfigStore(createMemoryDriver());
+    await store.merge({
+      pricingRateOverrides: {
+        "bedrock:amazon.nova-lite-v1:0": { inputPerM: 0.1, outputPerM: 0.2 },
+      },
+      updatedByUserId: "owner-1",
+    });
+    const row = await store.get();
+    expect(row?.pricingRateOverrides).toEqual({
+      "bedrock:amazon.nova-lite-v1:0": { inputPerM: 0.1, outputPerM: 0.2 },
+    });
   });
 
   it("persists an opt-in transcription choice", async () => {

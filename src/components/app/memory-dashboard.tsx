@@ -2,7 +2,7 @@
 
 import {
   Brain,
-  ChevronDown,
+  FileText,
   Layers,
   Loader2,
   MessageSquare,
@@ -12,8 +12,6 @@ import { useMemo, useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { formatFactValue, humanizeKey } from "@/lib/memory/format";
 import { buildFactAssociations, categoryLabel as factCategoryLabel, type FactAssociation } from "@/lib/memory/fact-graph";
-
-// ─── types ────────────────────────────────────────────────────────────────────
 
 export type MemoryFactRecord = {
   id: string;
@@ -40,9 +38,6 @@ export type MemoryStats = {
 };
 
 type SummaryPeriod = "day" | "month" | "year";
-type LayerId = "working" | "summary" | "facts" | "semantic" | "episodic";
-
-// ─── fact helpers ─────────────────────────────────────────────────────────────
 
 const IDENTITY_KEYS = new Set([
   "name",
@@ -56,13 +51,11 @@ const IDENTITY_KEYS = new Set([
   "interests",
 ]);
 
-type MemoryTab = "overview" | "facts" | "archive";
-
-const MEMORY_TABS: { id: MemoryTab; label: string; icon: typeof Brain }[] = [
-  { id: "overview", label: "Overview", icon: Brain },
-  { id: "facts", label: "Facts", icon: Layers },
-  { id: "archive", label: "Archive", icon: MessageSquare },
-];
+const PREFERENCE_KEYS = new Set([
+  "preferred_response_length",
+  "response_length",
+  "technical_level",
+]);
 
 function confidenceColor(c: number): string {
   if (c >= 0.85) return "bg-emerald-400";
@@ -124,8 +117,6 @@ function mergeLiveFacts(
   }
   return [...byKey.values()].sort((a, b) => a.key.localeCompare(b.key));
 }
-
-// ─── sub-components ───────────────────────────────────────────────────────────
 
 function StatCard({
   label,
@@ -197,47 +188,6 @@ function FactRow({
   );
 }
 
-function FactCard({
-  assoc,
-  selected,
-  onSelect,
-}: {
-  assoc: FactAssociation;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={cn(
-        "rounded-xl border px-3.5 py-3 text-left transition-colors cursor-pointer w-full",
-        selected
-          ? "border-indigo-400/35 bg-indigo-500/[0.1]"
-          : "border-foreground/[0.07] bg-foreground/[0.025] hover:border-foreground/12 hover:bg-foreground/[0.04]",
-      )}
-    >
-      <div className="flex items-center justify-between gap-2 mb-1.5">
-        <span className="text-[0.62rem] uppercase tracking-wider text-foreground/35 font-semibold">
-          {humanizeKey(assoc.key)}
-        </span>
-        <span className={cn(
-          "text-[0.58rem] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded",
-          assoc.category === "behavioral" && "text-rose-300/70 bg-rose-500/10",
-          assoc.category === "identity" && "text-emerald-300/70 bg-emerald-500/10",
-          assoc.category === "other" && "text-foreground/30 bg-foreground/[0.06]",
-        )}>
-          {factCategoryLabel(assoc.category)}
-        </span>
-      </div>
-      <p className="text-sm text-foreground/75 font-medium leading-snug line-clamp-2">{assoc.value}</p>
-      <p className="text-[0.62rem] text-foreground/25 mt-2">
-        {assoc.relatedSummaries.length} linked · {assoc.relatedFacts.length} related
-      </p>
-    </button>
-  );
-}
-
 function FactDetailPanel({
   assoc,
   fact,
@@ -263,7 +213,7 @@ function FactDetailPanel({
             "text-[0.58rem] uppercase tracking-wider font-bold px-2 py-1 rounded-md shrink-0",
             assoc.live ? "text-indigo-300 bg-indigo-500/15" : "text-foreground/35 bg-foreground/[0.06]",
           )}>
-            {assoc.live ? "Live" : `${Math.round(assoc.confidence * 100)}%`}
+            {assoc.live ? "Just captured" : `${Math.round(assoc.confidence * 100)}%`}
           </span>
         </div>
         <p className="text-[0.68rem] text-foreground/30 mt-2">
@@ -277,58 +227,41 @@ function FactDetailPanel({
           <FactActions fact={fact} onPatch={onPatch} onDelete={onDelete} />
         )}
       </div>
-
-      <div className="px-4 py-4 space-y-5">
-        <section>
-          <h4 className="text-[0.62rem] uppercase tracking-[0.18em] text-foreground/30 font-semibold mb-2.5">
-            Conversation links
-          </h4>
-          {assoc.relatedSummaries.length === 0 ? (
-            <p className="text-sm text-foreground/30 italic">
-              No direct summary match yet — this fact may come from live extraction or broader context.
-            </p>
-          ) : (
-            <div className="flex flex-col gap-2.5">
-              {assoc.relatedSummaries.map(s => (
-                <div key={s.id} className="rounded-lg border border-foreground/[0.06] bg-foreground/[0.05] px-3 py-2.5">
-                  <div className="flex items-center justify-between gap-2 mb-1.5">
-                    <span className="text-[0.6rem] text-foreground/28 uppercase tracking-wider">
-                      {s.id === "live-session" ? "Current session" : `${s.turnsCovered} turns`}
-                    </span>
-                    <span className="text-[0.6rem] text-foreground/22 tabular-nums">
-                      {new Date(s.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                    </span>
-                  </div>
-                  <p className="text-[0.78rem] text-foreground/50 leading-relaxed">{s.excerpt}</p>
-                </div>
-              ))}
+      {(assoc.relatedSummaries.length > 0 || assoc.relatedFacts.length > 0) && (
+        <div className="px-4 py-3 space-y-3">
+          {assoc.relatedSummaries.length > 0 && (
+            <div>
+              <p className="text-[0.62rem] uppercase tracking-wider text-foreground/30 font-semibold mb-1.5">
+                Seen in conversation notes
+              </p>
+              <ul className="space-y-1.5">
+                {assoc.relatedSummaries.slice(0, 4).map(s => (
+                  <li key={s.id} className="text-[0.78rem] text-foreground/55 leading-relaxed">
+                    {s.excerpt}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
-        </section>
-
-        <section>
-          <h4 className="text-[0.62rem] uppercase tracking-[0.18em] text-foreground/30 font-semibold mb-2.5">
-            Related facts
-          </h4>
-          {assoc.relatedFacts.length === 0 ? (
-            <p className="text-sm text-foreground/30 italic">No closely related facts yet.</p>
-          ) : (
-            <div className="flex flex-col gap-2">
-              {assoc.relatedFacts.map(rf => (
-                <div key={rf.key} className="flex items-start gap-2 rounded-lg border border-foreground/[0.05] px-3 py-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[0.65rem] text-foreground/35 capitalize">{humanizeKey(rf.key)}</p>
-                    <p className="text-sm text-foreground/65 mt-0.5">{rf.value}</p>
-                  </div>
-                  <span className="text-[0.58rem] text-foreground/22 shrink-0 max-w-[5rem] text-right leading-tight">
-                    {rf.reason}
-                  </span>
-                </div>
-              ))}
+          {assoc.relatedFacts.length > 0 && (
+            <div>
+              <p className="text-[0.62rem] uppercase tracking-wider text-foreground/30 font-semibold mb-1.5">
+                Related
+              </p>
+              <ul className="space-y-1">
+                {assoc.relatedFacts.map(r => (
+                  <li key={r.key} className="text-[0.78rem] text-foreground/50">
+                    <span className="capitalize">{humanizeKey(r.key)}</span>
+                    {": "}
+                    {r.value}
+                    <span className="text-foreground/28"> · {r.reason}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
-        </section>
-      </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -402,117 +335,13 @@ function FactActions({
   );
 }
 
-function MemoryTabBar({
-  tab,
-  onTabChange,
-}: {
-  tab: MemoryTab;
-  onTabChange: (t: MemoryTab) => void;
-}) {
-  return (
-    <div
-      role="tablist"
-      aria-label="Memory sections"
-      className="flex flex-wrap gap-1 rounded-xl border border-foreground/[0.07] bg-foreground/[0.02] p-1"
-    >
-      {MEMORY_TABS.map(({ id, label, icon: Icon }) => (
-        <button
-          key={id}
-          type="button"
-          role="tab"
-          aria-selected={tab === id}
-          onClick={() => onTabChange(id)}
-          className={cn(
-            "flex items-center gap-1.5 px-3 py-2 rounded-lg text-[0.78rem] font-medium transition-colors cursor-pointer",
-            tab === id
-              ? "bg-indigo-500/20 text-indigo-100"
-              : "text-foreground/40 hover:text-foreground/65 hover:bg-foreground/[0.04]",
-          )}
-        >
-          <Icon className="size-3.5 opacity-70" aria-hidden />
-          {label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function TagCloud({ label, items, accent }: { label: string; items: string[]; accent?: string }) {
-  if (!items.length) return null;
-  return (
-    <div>
-      <h4 className="text-[0.62rem] uppercase tracking-[0.18em] text-foreground/30 font-semibold mb-2">{label}</h4>
-      <div className="flex flex-wrap gap-1.5">
-        {items.map(item => (
-          <span
-            key={item}
-            className={cn(
-              "rounded-md border px-2 py-1 text-[0.72rem] text-foreground/55",
-              accent ?? "border-foreground/10 bg-foreground/[0.04]",
-            )}
-          >
-            {item}
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function LayerCard({
-  id,
-  name,
-  detail,
-  active,
-  expanded,
-  onToggle,
-  children,
-}: {
-  id: LayerId;
-  name: string;
-  detail: string;
-  active: boolean;
-  expanded: boolean;
-  onToggle: (id: LayerId) => void;
-  children?: React.ReactNode;
-}) {
-  return (
-    <div className={cn(
-      "rounded-xl border transition-colors overflow-hidden",
-      active ? "border-indigo-500/25 bg-indigo-500/[0.04]" : "border-foreground/[0.06] bg-foreground/[0.02]",
-    )}>
-      <button
-        type="button"
-        onClick={() => onToggle(id)}
-        className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left cursor-pointer hover:bg-foreground/[0.03] transition-colors"
-      >
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className={cn("size-2 rounded-full shrink-0", active ? "bg-indigo-400" : "bg-foreground/15")} />
-          <span className={cn("text-sm font-medium", active ? "text-foreground/80" : "text-foreground/40")}>{name}</span>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <span className={cn(
-            "text-[0.68rem] font-mono",
-            active ? "text-indigo-300/80" : "text-foreground/20",
-          )}>
-            {detail}
-          </span>
-          <ChevronDown className={cn(
-            "size-4 text-foreground/30 transition-transform",
-            expanded && "rotate-180",
-          )} />
-        </div>
-      </button>
-      {expanded && children && (
-        <div className="border-t border-foreground/[0.06] px-4 py-3 bg-foreground/[0.05]">
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── MemoryDashboard ──────────────────────────────────────────────────────────
+type AccountSnapshot = {
+  displayName: string | null;
+  handle: string | null;
+  jobTitle: string | null;
+  bio: string | null;
+  email: string | null;
+};
 
 export function MemoryDashboard({
   workspaceName,
@@ -542,23 +371,52 @@ export function MemoryDashboard({
   onFactDelete?: (factId: string) => void;
 }) {
   const [summaryPeriod, setSummaryPeriod] = useState<SummaryPeriod>("day");
-  const [expandedLayer, setExpandedLayer] = useState<LayerId | null>("facts");
-  const [memoryTab, setMemoryTab] = useState<MemoryTab>("overview");
   const [selectedFactId, setSelectedFactId] = useState<string | null>(null);
+  const [account, setAccount] = useState<AccountSnapshot | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/me/profile", { credentials: "same-origin" })
+      .then(r => (r.ok ? r.json() : null))
+      .then((body: { profile?: AccountSnapshot } | null) => {
+        if (cancelled || !body?.profile) return;
+        setAccount({
+          displayName: body.profile.displayName ?? null,
+          handle: body.profile.handle ?? null,
+          jobTitle: body.profile.jobTitle ?? null,
+          bio: body.profile.bio ?? null,
+          email: body.profile.email ?? null,
+        });
+      })
+      .catch(() => { /* profile is optional chrome */ });
+    return () => { cancelled = true; };
+  }, []);
 
   const allFacts = useMemo(
     () => mergeLiveFacts(workspaceFacts, isActiveWorkspace ? liveFacts : {}),
     [workspaceFacts, liveFacts, isActiveWorkspace],
   );
 
-  const identityFacts = useMemo(
-    () => allFacts.filter(f => IDENTITY_KEYS.has(f.key.toLowerCase())),
-    [allFacts],
-  );
-
   const visibleFacts = useMemo(
     () => allFacts.filter(f => formatFactValue(f.value) !== "—" && !f.forgotten),
     [allFacts],
+  );
+
+  const identityFacts = useMemo(
+    () => visibleFacts.filter(f => IDENTITY_KEYS.has(f.key.toLowerCase())),
+    [visibleFacts],
+  );
+
+  const preferenceFacts = useMemo(
+    () => visibleFacts.filter(f => PREFERENCE_KEYS.has(f.key.toLowerCase())),
+    [visibleFacts],
+  );
+
+  const otherFacts = useMemo(
+    () => visibleFacts.filter(f =>
+      !IDENTITY_KEYS.has(f.key.toLowerCase()) && !PREFERENCE_KEYS.has(f.key.toLowerCase()),
+    ),
+    [visibleFacts],
   );
 
   const allSummaries = useMemo(() => {
@@ -583,7 +441,6 @@ export function MemoryDashboard({
     [allSummaries, summaryPeriod],
   );
 
-
   const factAssociations = useMemo(
     () => buildFactAssociations(allFacts, allSummaries),
     [allFacts, allSummaries],
@@ -594,349 +451,271 @@ export function MemoryDashboard({
     [factAssociations, selectedFactId],
   );
 
-  const selectFact = (fact: MemoryFactRecord) => {
-    setSelectedFactId(fact.id);
-    setMemoryTab("facts");
-  };
-
-  useEffect(() => {
-    if (memoryTab === "facts" && !selectedFactId && factAssociations[0]) {
-      setSelectedFactId(factAssociations[0].factId);
-    }
-  }, [memoryTab, selectedFactId, factAssociations]);
-
   const rawTurns = isActiveWorkspace
     ? Math.max(0, messageCount - summarizedCount)
     : 0;
 
-  const toggleLayer = (id: LayerId) => {
-    setExpandedLayer(prev => (prev === id ? null : id));
-  };
+  const accountLines = account
+    ? [
+        account.displayName && { label: "Display name", value: account.displayName },
+        account.jobTitle && { label: "Job title", value: account.jobTitle },
+        account.handle && { label: "Handle", value: `@${account.handle}` },
+        account.email && { label: "Email", value: account.email },
+        account.bio && { label: "Bio", value: account.bio },
+      ].filter(Boolean) as { label: string; value: string }[]
+    : [];
 
-  const isEmpty = !memoryLoading
-    && visibleFacts.length === 0
-    && allSummaries.length === 0;
+  const knowledgeChunks = memoryStats?.documentFragmentCount ?? 0;
 
   return (
     <div className="flex flex-col gap-6">
-      {/* Guidance */}
       <div className="rounded-xl border border-foreground/[0.06] bg-foreground/[0.02] px-4 py-3.5 space-y-2">
-        <p className="text-sm text-foreground/50 leading-relaxed">
-          What{" "}
-          <span className="text-foreground/75 font-medium">{workspaceName}</span>
-          {" "}has retained from investigations — facts and rolling summaries grounded in this
-          workspace&apos;s knowledge. This memory is isolated to this workspace and is available
-          only to you and to Admins or the Super Admin of this account.
+        <p className="text-sm text-foreground/55 leading-relaxed">
+          This is what{" "}
+          <span className="text-foreground/80 font-medium">{workspaceName}</span>
+          {" "}has actually retained — not a personality profile. Facts come only from what you
+          say in chat. Assistant replies, Knowledge files, and guesses are not stored as “who you are.”
         </p>
         <p className="text-[0.72rem] text-foreground/32 leading-relaxed">
-          Chat to grow this memory. Summaries compress past threads; extracted facts persist
-          across sessions for this workspace.
+          Pin or correct a fact if it is wrong. Forgotten facts stay saved but are hidden from chat.
         </p>
       </div>
 
       {memoryLoading && (
         <div className="flex items-center gap-2 text-sm text-foreground/35">
           <Loader2 className="size-4 animate-spin shrink-0" aria-hidden />
-          Syncing memory…
+          Reading what this workspace has stored…
         </div>
       )}
 
-      {/* At-a-glance stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <StatCard label="Known facts" value={visibleFacts.length} hint="Identity + style" accent="violet" />
-        <StatCard label="Summaries" value={allSummaries.length} hint={`Grouped by ${summaryPeriod}`} accent="indigo" />
+        <StatCard label="Learned about you" value={visibleFacts.length} hint="From what you said" accent="violet" />
+        <StatCard label="Conversation notes" value={allSummaries.length} hint="Saved thread summaries" accent="indigo" />
         <StatCard
-          label="Working turns"
+          label="Still in this thread"
           value={isActiveWorkspace ? rawTurns : "—"}
-          hint={isActiveWorkspace ? "Uncompressed in thread" : "Open Chat"}
+          hint={isActiveWorkspace ? "Messages not yet compressed" : "Open Chat to see live turns"}
           accent="emerald"
         />
         <StatCard
-          label="Semantic chunks"
-          value={memoryStats?.semanticFragmentCount ?? "—"}
-          hint="Vector-indexed memory"
+          label="Knowledge chunks"
+          value={knowledgeChunks}
+          hint="Indexed files — not facts about you"
           accent="amber"
         />
       </div>
 
-      {!isEmpty && (
-        <>
-          <MemoryTabBar tab={memoryTab} onTabChange={setMemoryTab} />
+      <section>
+        <div className="flex items-center gap-2 mb-3">
+          <User className="size-4 text-violet-400/70" aria-hidden />
+          <h3 className="text-[0.65rem] uppercase tracking-[0.22em] text-foreground/35 font-semibold">
+            How {workspaceName} sees you
+          </h3>
+        </div>
+        <div className="rounded-2xl border border-foreground/[0.07] bg-foreground/[0.03] overflow-hidden">
+          {visibleFacts.length === 0 ? (
+            <div className="px-4 py-8 text-center space-y-2">
+              <Brain className="size-8 text-violet-400/25 mx-auto" aria-hidden />
+              <p className="text-sm text-foreground/50">Nothing durable has been saved from chat yet.</p>
+              <p className="text-[0.72rem] text-foreground/32 leading-relaxed max-w-md mx-auto">
+                After you send a message, SecureMind looks for things you stated about yourself
+                (name, work, location, projects, how you like replies). A short “what do you think
+                of Cursor?” chat will not fill this in — there was nothing autobiographical to keep.
+              </p>
+            </div>
+          ) : (
+            <div className="divide-y divide-foreground/[0.05]">
+              {identityFacts.length > 0 && identityFacts.map(f => (
+                <FactRow
+                  key={f.id}
+                  fact={f}
+                  live={f.id.startsWith("live-")}
+                  selected={selectedFactId === f.id}
+                  onSelect={fact => setSelectedFactId(fact.id)}
+                />
+              ))}
+              {preferenceFacts.map(f => (
+                <FactRow
+                  key={f.id}
+                  fact={f}
+                  live={f.id.startsWith("live-")}
+                  selected={selectedFactId === f.id}
+                  onSelect={fact => setSelectedFactId(fact.id)}
+                />
+              ))}
+              {otherFacts.map(f => (
+                <FactRow
+                  key={f.id}
+                  fact={f}
+                  live={f.id.startsWith("live-")}
+                  selected={selectedFactId === f.id}
+                  onSelect={fact => setSelectedFactId(fact.id)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+        {selectedAssociation && (
+          <div className="mt-3">
+            <FactDetailPanel
+              assoc={selectedAssociation}
+              fact={visibleFacts.find(f => f.id === selectedAssociation.factId)}
+              onPatch={onFactPatch}
+              onDelete={onFactDelete}
+            />
+          </div>
+        )}
+      </section>
 
-          {memoryTab === "overview" && (
+      <section>
+        <div className="flex items-center gap-2 mb-3">
+          <User className="size-4 text-foreground/40" aria-hidden />
+          <h3 className="text-[0.65rem] uppercase tracking-[0.22em] text-foreground/35 font-semibold">
+            From My Profile
+          </h3>
+        </div>
+        <div className="rounded-2xl border border-foreground/[0.07] bg-foreground/[0.03] px-4 py-4">
+          {accountLines.length === 0 ? (
+            <p className="text-sm text-foreground/35 leading-relaxed">
+              No display name, title, or bio yet. That lives in Settings → My Profile and is
+              account-wide — it is not copied into this workspace’s learned facts.
+            </p>
+          ) : (
             <>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-                <section>
-                  <div className="flex items-center gap-2 mb-3">
-                    <User className="size-4 text-violet-400/70" aria-hidden />
-                    <h3 className="text-[0.65rem] uppercase tracking-[0.22em] text-foreground/35 font-semibold">
-                      Who you are
-                    </h3>
+              <dl className="space-y-2.5">
+                {accountLines.map(row => (
+                  <div key={row.label} className="flex flex-col sm:flex-row sm:gap-4">
+                    <dt className="text-[0.68rem] uppercase tracking-wider text-foreground/35 sm:w-32 shrink-0 pt-0.5">
+                      {row.label}
+                    </dt>
+                    <dd className="text-sm text-foreground/75 leading-relaxed">{row.value}</dd>
                   </div>
-                  <div className="rounded-2xl border border-foreground/[0.07] bg-foreground/[0.03] divide-y divide-foreground/[0.05] overflow-hidden min-h-[8rem]">
-                    {identityFacts.filter(f => formatFactValue(f.value) !== "—").length === 0 ? (
-                      <p className="px-4 py-6 text-sm text-foreground/30 text-center">No identity facts yet.</p>
-                    ) : (
-                      identityFacts.map(f => (
-                        <FactRow
-                          key={f.id}
-                          fact={f}
-                          live={f.id.startsWith("live-")}
-                          selected={selectedFactId === f.id}
-                          onSelect={selectFact}
-                        />
-                      ))
-                    )}
-                  </div>
-                </section>
-
-              </div>
-
-              <section>
-                <div className="flex items-center gap-2 mb-3">
-                  <Layers className="size-4 text-foreground/40" aria-hidden />
-                  <h3 className="text-[0.65rem] uppercase tracking-[0.22em] text-foreground/35 font-semibold">
-                    Memory layers
-                  </h3>
-                  <span className="text-[0.62rem] text-foreground/25">Click a layer or fact to inspect</span>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <LayerCard
-                    id="working"
-                    name="Working memory"
-                    detail={isActiveWorkspace ? `${rawTurns} raw turns` : "Open Chat"}
-                    active={isActiveWorkspace && rawTurns > 0}
-                    expanded={expandedLayer === "working"}
-                    onToggle={toggleLayer}
-                  >
-                    <p className="text-[0.78rem] text-foreground/45 leading-relaxed">
-                      The most recent messages kept in full before compression. When the conversation grows,
-                      older turns roll into the session summary below.
-                    </p>
-                    {isActiveWorkspace && (
-                      <p className="text-[0.72rem] text-indigo-300/70 mt-2">
-                        {rawTurns} turn{rawTurns === 1 ? "" : "s"} currently uncompressed · {messageCount} total in thread
-                      </p>
-                    )}
-                  </LayerCard>
-
-                  <LayerCard
-                    id="summary"
-                    name="Session summary"
-                    detail={allSummaries.length > 0 ? `${allSummaries.length} archived` : "—"}
-                    active={allSummaries.length > 0}
-                    expanded={expandedLayer === "summary"}
-                    onToggle={toggleLayer}
-                  >
-                    <p className="text-[0.78rem] text-foreground/45 leading-relaxed mb-2">
-                      Rolling narrative compression of your conversations — updated in the background every few turns.
-                    </p>
-                    {liveSessionSummary && isActiveWorkspace && (
-                      <p className="text-sm text-foreground/55 leading-relaxed border-l-2 border-indigo-400/40 pl-3">
-                        {liveSessionSummary}
-                      </p>
-                    )}
-                  </LayerCard>
-
-                  <LayerCard
-                    id="facts"
-                    name="Extracted facts"
-                    detail={`${visibleFacts.length} known`}
-                    active={visibleFacts.length > 0}
-                    expanded={expandedLayer === "facts"}
-                    onToggle={toggleLayer}
-                  >
-                    <p className="text-[0.78rem] text-foreground/45 leading-relaxed mb-3">
-                      Structured knowledge pulled from conversations — click any fact to see how it links to summaries.
-                    </p>
-                    <div className="rounded-xl border border-foreground/[0.06] divide-y divide-foreground/[0.05] max-h-64 overflow-y-auto">
-                      {visibleFacts.map(f => (
-                        <FactRow
-                          key={f.id}
-                          fact={f}
-                          live={f.id.startsWith("live-")}
-                          selected={selectedFactId === f.id}
-                          onSelect={selectFact}
-                        />
-                      ))}
-                    </div>
-                  </LayerCard>
-
-                  <LayerCard
-                    id="semantic"
-                    name="Semantic index"
-                    detail={
-                      memoryStats && memoryStats.semanticFragmentCount + memoryStats.documentFragmentCount > 0
-                        ? `${memoryStats.semanticFragmentCount + memoryStats.documentFragmentCount} chunks`
-                        : "Empty"
-                    }
-                    active={!!memoryStats && memoryStats.semanticFragmentCount + memoryStats.documentFragmentCount > 0}
-                    expanded={expandedLayer === "semantic"}
-                    onToggle={toggleLayer}
-                  >
-                    <p className="text-[0.78rem] text-foreground/45 leading-relaxed">
-                      Vector embeddings of past exchanges and uploaded documents. Retrieved automatically during chat
-                      when your question matches stored content.
-                    </p>
-                    {memoryStats && (
-                      <div className="mt-2 flex flex-wrap gap-2 text-[0.68rem]">
-                        <span className="rounded-md border border-foreground/10 bg-foreground/[0.04] px-2 py-1 text-foreground/45">
-                          Conversation: {memoryStats.semanticFragmentCount} chunks
-                        </span>
-                        <span className="rounded-md border border-foreground/10 bg-foreground/[0.04] px-2 py-1 text-foreground/45">
-                          Documents: {memoryStats.documentFragmentCount} chunks
-                        </span>
-                      </div>
-                    )}
-                  </LayerCard>
-
-                  <LayerCard
-                    id="episodic"
-                    name="Episodic archive"
-                    detail={allSummaries.length > 0 ? `${allSummaries.length} summaries` : "Empty"}
-                    active={allSummaries.length > 0}
-                    expanded={expandedLayer === "episodic"}
-                    onToggle={toggleLayer}
-                  >
-                    <p className="text-[0.78rem] text-foreground/45 leading-relaxed">
-                      Older conversations live here as session summaries — the chronological archive
-                      for this workspace. Open the Archive tab to read them by day.
-                    </p>
-                  </LayerCard>
-                </div>
-              </section>
+                ))}
+              </dl>
+              <p className="text-[0.65rem] text-foreground/28 mt-3 leading-relaxed">
+                You wrote this in Settings. Chat does not treat it as a learned workspace fact
+                unless you also say it in conversation.
+              </p>
             </>
           )}
+        </div>
+      </section>
 
-          {memoryTab === "facts" && (
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-              <div className="lg:col-span-2 flex flex-col gap-2 max-h-[32rem] overflow-y-auto pr-1">
-                <p className="text-[0.68rem] text-foreground/30 mb-1">
-                  {factAssociations.length} facts · select to inspect associations
-                </p>
-                {factAssociations.map(assoc => (
-                  <FactCard
-                    key={assoc.factId}
-                    assoc={assoc}
-                    selected={selectedFactId === assoc.factId}
-                    onSelect={() => setSelectedFactId(assoc.factId)}
-                  />
-                ))}
-              </div>
-              <div className="lg:col-span-3 lg:sticky lg:top-4 lg:self-start">
-                {selectedAssociation ? (
-                  <FactDetailPanel
-                    assoc={selectedAssociation}
-                    fact={visibleFacts.find(f => f.id === selectedAssociation.factId)}
-                    onPatch={onFactPatch}
-                    onDelete={onFactDelete}
-                  />
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-foreground/10 px-5 py-16 text-center">
-                    <Layers className="size-8 text-foreground/15 mx-auto mb-3" aria-hidden />
-                    <p className="text-sm text-foreground/40">Select a fact to see conversation links and related traits.</p>
-                  </div>
-                )}
-              </div>
+      <section>
+        <div className="flex items-center gap-2 mb-3">
+          <MessageSquare className="size-4 text-indigo-400/70" aria-hidden />
+          <h3 className="text-[0.65rem] uppercase tracking-[0.22em] text-foreground/35 font-semibold">
+            What it remembers from conversation
+          </h3>
+        </div>
+        <div className="rounded-2xl border border-foreground/[0.07] bg-foreground/[0.03] px-4 py-4 space-y-3">
+          {isActiveWorkspace && (
+            <p className="text-[0.72rem] text-foreground/40">
+              {rawTurns} message{rawTurns === 1 ? "" : "s"} in this thread {summarizedCount > 0
+                ? `(${summarizedCount} older turns already compressed).`
+                : "are still held in full — a rolling summary is written as the thread gets long."}
+            </p>
+          )}
+          {liveSessionSummary.trim() ? (
+            <p className="text-sm text-foreground/70 leading-relaxed border-l-2 border-indigo-400/40 pl-3">
+              {liveSessionSummary}
+            </p>
+          ) : allSummaries.length === 0 ? (
+            <p className="text-sm text-foreground/35 leading-relaxed">
+              No saved notes yet. Recent messages stay in the chat thread. A summary appears here
+              once the model has something durable from what you said — not from the assistant’s
+              opinions (for example, a take on Cursor).
+            </p>
+          ) : null}
+        </div>
+      </section>
+
+      <section>
+        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Layers className="size-4 text-foreground/40" aria-hidden />
+            <h3 className="text-[0.65rem] uppercase tracking-[0.22em] text-foreground/35 font-semibold">
+              Saved conversation notes
+            </h3>
+          </div>
+          {allSummaries.length > 0 && (
+            <div className="flex rounded-lg border border-foreground/8 bg-foreground/[0.03] p-0.5">
+              {(["day", "month", "year"] as const).map(p => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setSummaryPeriod(p)}
+                  className={cn(
+                    "px-2.5 py-1 text-[0.68rem] font-medium rounded-md capitalize transition-colors cursor-pointer",
+                    summaryPeriod === p
+                      ? "bg-indigo-500/20 text-indigo-200"
+                      : "text-foreground/35 hover:text-foreground/55",
+                  )}
+                >
+                  {p}
+                </button>
+              ))}
             </div>
           )}
-
-          {memoryTab === "archive" && allSummaries.length > 0 && (
-            <section>
-              <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-                <div className="flex items-center gap-2">
-                  <MessageSquare className="size-4 text-indigo-400/70" aria-hidden />
-                  <h3 className="text-[0.65rem] uppercase tracking-[0.22em] text-foreground/35 font-semibold">
-                    Conversation archive
-                  </h3>
-                </div>
-                <div className="flex rounded-lg border border-foreground/8 bg-foreground/[0.03] p-0.5">
-                  {(["day", "month", "year"] as const).map(p => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setSummaryPeriod(p)}
-                      className={cn(
-                        "px-2.5 py-1 text-[0.68rem] font-medium rounded-md capitalize transition-colors cursor-pointer",
-                        summaryPeriod === p
-                          ? "bg-indigo-500/20 text-indigo-200"
-                          : "text-foreground/35 hover:text-foreground/55",
-                      )}
-                    >
-                      {p}
-                    </button>
-                  ))}
+        </div>
+        {allSummaries.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-foreground/10 px-5 py-8 text-center">
+            <p className="text-sm text-foreground/40">No archived summaries for this workspace yet.</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {groupedSummaries.map(group => (
+              <div key={group.key}>
+                <h4 className="mb-2 text-[0.65rem] uppercase tracking-[0.2em] text-foreground/28 font-semibold">
+                  {group.label}
+                </h4>
+                <div className="flex flex-col gap-2.5 pl-3 border-l-2 border-indigo-500/20">
+                  {group.items.map(s => {
+                    const isLive = s.id === "live-session";
+                    return (
+                      <div
+                        key={s.id}
+                        className={cn(
+                          "rounded-xl border px-4 py-3.5",
+                          isLive
+                            ? "bg-indigo-500/[0.06] border-indigo-400/20"
+                            : "bg-foreground/[0.025] border-foreground/[0.06]",
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <span className={cn(
+                            "text-[0.62rem] uppercase tracking-wider font-semibold",
+                            isLive ? "text-indigo-400/70" : "text-foreground/28",
+                          )}>
+                            {isLive ? "Current session" : `${s.turnsCovered} turns`}
+                          </span>
+                        </div>
+                        <p className="text-sm text-foreground/60 leading-relaxed">{s.summary}</p>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
+            ))}
+          </div>
+        )}
+      </section>
 
-              <div className="flex flex-col gap-4">
-                {groupedSummaries.map(group => (
-                  <div key={group.key}>
-                    <h4 className="sticky top-0 z-[1] -mx-1 mb-2 px-1 py-1 text-[0.65rem] uppercase tracking-[0.2em] text-foreground/28 font-semibold backdrop-blur-sm bg-card/85">
-                      {group.label}
-                      <span className="ml-2 normal-case tracking-normal text-foreground/20 font-normal">
-                        · {group.items.length} {group.items.length === 1 ? "session" : "sessions"}
-                      </span>
-                    </h4>
-                    <div className="flex flex-col gap-2.5 pl-3 border-l-2 border-indigo-500/20">
-                      {group.items.map(s => {
-                        const isLive = s.id === "live-session";
-                        return (
-                          <div
-                            key={s.id}
-                            className={cn(
-                              "rounded-xl border px-4 py-3.5",
-                              isLive
-                                ? "bg-indigo-500/[0.06] border-indigo-400/20"
-                                : "bg-foreground/[0.025] border-foreground/[0.06]",
-                            )}
-                          >
-                            <div className="flex items-center justify-between gap-2 mb-2">
-                              <span className={cn(
-                                "text-[0.62rem] uppercase tracking-wider font-semibold",
-                                isLive ? "text-indigo-400/70" : "text-foreground/28",
-                              )}>
-                                {isLive ? "Current session" : `${s.turnsCovered} turns`}
-                              </span>
-                              {!isLive && (
-                                <span className="text-[0.6rem] text-foreground/22 tabular-nums">
-                                  {new Date(s.session.createdAt).toLocaleTimeString(undefined, {
-                                    hour: "numeric",
-                                    minute: "2-digit",
-                                  })}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-sm text-foreground/60 leading-relaxed">{s.summary}</p>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {memoryTab === "archive" && allSummaries.length === 0 && (
-            <div className="rounded-2xl border border-dashed border-foreground/10 px-5 py-12 text-center">
-              <MessageSquare className="size-8 text-foreground/15 mx-auto mb-3" aria-hidden />
-              <p className="text-sm text-foreground/40">No archived summaries yet — keep chatting to build the archive.</p>
-            </div>
-          )}
-        </>
-      )}
-
-      {isEmpty && (
-        <div className="rounded-2xl border border-dashed border-foreground/10 px-5 py-12 text-center space-y-3">
-          <Brain className="size-10 text-violet-400/25 mx-auto" aria-hidden />
-          <p className="text-sm font-medium text-foreground/50">No memory built yet</p>
-          <p className="text-xs text-foreground/30 leading-relaxed max-w-sm mx-auto">
-            Start an investigation in {workspaceName}. Facts and summaries will appear here
-            automatically as you work.
+      <section>
+        <div className="flex items-center gap-2 mb-3">
+          <FileText className="size-4 text-amber-400/70" aria-hidden />
+          <h3 className="text-[0.65rem] uppercase tracking-[0.22em] text-foreground/35 font-semibold">
+            Knowledge in this workspace
+          </h3>
+        </div>
+        <div className="rounded-2xl border border-foreground/[0.07] bg-foreground/[0.03] px-4 py-4">
+          <p className="text-sm text-foreground/60 leading-relaxed">
+            {knowledgeChunks === 0
+              ? "No Knowledge files are indexed here yet. Uploads become searchable sources with citations — they are not listed as facts about you."
+              : `${knowledgeChunks} document chunk${knowledgeChunks === 1 ? "" : "s"} are indexed for citations in chat. That is workspace Knowledge, not a profile of you.`}
           </p>
         </div>
-      )}
+      </section>
     </div>
   );
 }

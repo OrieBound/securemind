@@ -10,6 +10,8 @@ export function useAnalyticsQuery<T>(
     range: AnalyticsRange;
     workspaceId?: string | null;
     asUser?: string | null;
+    /** Silent refetch interval while the view is open. */
+    pollMs?: number;
   },
 ) {
   const [data, setData] = useState<T | null>(null);
@@ -17,7 +19,13 @@ export function useAnalyticsQuery<T>(
   const [error, setError] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
   const asUser = opts.asUser ?? null;
+  const pollMs = opts.pollMs ?? 0;
   const prevUser = useRef<string | null>(asUser);
+  const silent = useRef(false);
+
+  useEffect(() => {
+    silent.current = false;
+  }, [path, opts.range, opts.workspaceId, asUser]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -25,7 +33,7 @@ export function useAnalyticsQuery<T>(
       setData(null);
       prevUser.current = asUser;
     }
-    setLoading(true);
+    if (!silent.current) setLoading(true);
     setError(null);
     fetchAnalyticsJson<T>(
       path,
@@ -40,11 +48,26 @@ export function useAnalyticsQuery<T>(
         setError(e instanceof Error ? e.message : "Failed to load");
       })
       .finally(() => {
-        if (!ac.signal.aborted) setLoading(false);
+        if (!ac.signal.aborted) {
+          setLoading(false);
+          silent.current = true;
+        }
       });
     return () => ac.abort();
   }, [path, opts.range, opts.workspaceId, asUser, nonce]);
 
-  const retry = useCallback(() => setNonce(n => n + 1), []);
+  useEffect(() => {
+    if (!pollMs || pollMs < 5000) return;
+    const id = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      setNonce(n => n + 1);
+    }, pollMs);
+    return () => window.clearInterval(id);
+  }, [pollMs, path, opts.range, opts.workspaceId, asUser]);
+
+  const retry = useCallback(() => {
+    silent.current = false;
+    setNonce(n => n + 1);
+  }, []);
   return { data, loading, error, retry };
 }

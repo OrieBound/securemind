@@ -61,6 +61,8 @@ export type InstanceConfigRow = {
   storageBackend: string | null;
   voiceSttChoice: string | null;
   voiceSttAudioAckAt: Date | null;
+  /** Sparse Admin list-rate overrides. Hosted Dynamo JSON; local file. Not Prisma. */
+  pricingRateOverrides?: unknown;
   updatedAt: Date;
   updatedByUserId: string | null;
 };
