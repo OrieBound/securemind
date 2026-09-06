@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -28,9 +28,11 @@ import {
   DetectionPolicyExplainer,
   DetectionPolicyMatrix,
 } from "@/components/app/detection-policy-panel";
-import { DEFAULT_SENSITIVITY, parsePiiSensitivityTier, type PiiSensitivityTier } from "@/lib/pii";
+import { DetectionLog, groupDetectionLog, type DetectionLogItem } from "@/components/app/detection-log";
+import { categoryLabel, DEFAULT_SENSITIVITY, parsePiiSensitivityTier, type PiiSensitivityTier } from "@/lib/pii";
+import { parseSecurityHash } from "@/lib/analytics/security-hash";
 
-type WorkspaceOpt = { id: string; name: string };
+type WorkspaceOpt = { id: string; name: string; emoji?: string };
 
 type SecurityPayload = {
   kpis: {
@@ -72,12 +74,32 @@ function sourceLabel(source: string) {
   return SOURCE_LABELS[source] ?? source;
 }
 
+function detectionInRange(at: string, range: "today" | "7d" | "30d" | "all"): boolean {
+  if (range === "all") return true;
+  const t = new Date(at).getTime();
+  if (range === "today") {
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    return t >= start.getTime();
+  }
+  const days = range === "7d" ? 7 : 30;
+  return t >= Date.now() - days * 86_400_000;
+}
+
 
 type Props = {
   workspaces: WorkspaceOpt[];
   subject?: InsightsSubjectScope | null;
   onBackToAdmin?: () => void;
   onEditPolicy?: () => void;
+  onOpenSafeTerms?: () => void;
+  currentPolicyTier?: PiiSensitivityTier;
+  onSelectPolicyTier?: (tier: PiiSensitivityTier) => void;
+  detectionLog?: DetectionLogItem[];
+  dismissedDetectionIds?: string[];
+  highlightedDetectionId?: string | null;
+  onDismissDetection?: (recordId: string) => void;
+  onDeleteDetection?: (recordId: string) => void;
 };
 
 export function SecurityAnalyticsView({
@@ -85,6 +107,14 @@ export function SecurityAnalyticsView({
   subject = null,
   onBackToAdmin,
   onEditPolicy,
+  onOpenSafeTerms,
+  currentPolicyTier,
+  onSelectPolicyTier,
+  detectionLog = [],
+  dismissedDetectionIds = [],
+  highlightedDetectionId = null,
+  onDismissDetection,
+  onDeleteDetection,
 }: Props) {
   const chart = useChartTheme();
   const { range, setRange, workspaceId, setWorkspaceId } = useAnalyticsFilters("30d");
@@ -99,8 +129,14 @@ export function SecurityAnalyticsView({
     asUser,
   });
 
-  const [policyTier, setPolicyTier] = useState<PiiSensitivityTier>(DEFAULT_SENSITIVITY);
+  const [policyTier, setPolicyTier] = useState<PiiSensitivityTier>(
+    currentPolicyTier ?? DEFAULT_SENSITIVITY,
+  );
   const [safeTermCount, setSafeTermCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (currentPolicyTier) setPolicyTier(currentPolicyTier);
+  }, [currentPolicyTier]);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -141,6 +177,99 @@ export function SecurityAnalyticsView({
     });
   }, [data, categoryFilter, riskFilter, sourceFilter, outcomeFilter]);
 
+  const [showDismissedLog, setShowDismissedLog] = useState(false);
+  const [locationHash, setLocationHash] = useState(() =>
+    typeof window === "undefined" ? "" : window.location.hash,
+  );
+  const hashRangeAdjusted = useRef(false);
+  const dismissedSet = useMemo(() => new Set(dismissedDetectionIds), [dismissedDetectionIds]);
+
+  useEffect(() => {
+    const read = () => setLocationHash(window.location.hash);
+    read();
+    window.addEventListener("hashchange", read);
+    window.addEventListener("popstate", read);
+    const onClick = (e: MouseEvent) => {
+      const anchor = (e.target as HTMLElement | null)?.closest?.("a");
+      if (!anchor?.getAttribute("href")?.includes("#")) return;
+      window.setTimeout(read, 0);
+    };
+    document.addEventListener("click", onClick);
+    return () => {
+      window.removeEventListener("hashchange", read);
+      window.removeEventListener("popstate", read);
+      document.removeEventListener("click", onClick);
+    };
+  }, []);
+
+  const securityHash = useMemo(() => parseSecurityHash(locationHash), [locationHash]);
+  const hashRecordId = securityHash?.kind === "record" ? securityHash.recordId : null;
+
+  const logGroups = useMemo(() => {
+    const filtered = detectionLog.filter(item => {
+      if (workspaceId !== "all" && item.entry.workspaceId !== workspaceId) return false;
+      return detectionInRange(item.entry.at, range);
+    });
+    return groupDetectionLog(filtered, dismissedSet, showDismissedLog);
+  }, [detectionLog, workspaceId, range, dismissedSet, showDismissedLog]);
+
+  const logCategoryCounts = useMemo(() => {
+    const acc: Record<string, number> = {};
+    for (const group of logGroups) {
+      for (const { rec } of group.items) {
+        const label = categoryLabel(rec.category);
+        acc[label] = (acc[label] ?? 0) + 1;
+      }
+    }
+    return Object.entries(acc).sort((a, b) => b[1] - a[1]);
+  }, [logGroups]);
+
+  useEffect(() => {
+    hashRangeAdjusted.current = false;
+  }, [hashRecordId]);
+
+  useEffect(() => {
+    if (!hashRecordId || hashRangeAdjusted.current) return;
+    const item = detectionLog.find(i => i.rec.id === hashRecordId);
+    if (!item) return;
+    hashRangeAdjusted.current = true;
+    if (dismissedSet.has(hashRecordId)) setShowDismissedLog(true);
+    if (workspaceId !== "all" && item.entry.workspaceId && item.entry.workspaceId !== workspaceId) {
+      setWorkspaceId("all");
+    }
+    if (!detectionInRange(item.entry.at, range) && range !== "all") setRange("all");
+  }, [detectionLog, hashRecordId, dismissedSet, range, setRange, workspaceId, setWorkspaceId]);
+
+  useEffect(() => {
+    const targetId = hashRecordId
+      ? `pii-record-${hashRecordId}`
+      : securityHash?.kind === "log"
+        ? "detection-log"
+        : securityHash?.kind === "policy"
+          ? "detection-policy"
+          : securityHash?.kind === "charts"
+            ? "security-charts"
+            : null;
+    if (!targetId) return;
+    let attempts = 0;
+    let timer = 0;
+    const tick = () => {
+      const el = document.getElementById(targetId);
+      if (el) {
+        el.scrollIntoView({
+          behavior: "smooth",
+          block: targetId.startsWith("pii-record-") ? "center" : "start",
+        });
+        return;
+      }
+      if (attempts++ < 24) timer = window.setTimeout(tick, 50);
+    };
+    timer = window.setTimeout(tick, 80);
+    return () => window.clearTimeout(timer);
+  }, [logGroups, hashRecordId, securityHash, showDismissedLog, range]);
+
+  const pulseId = highlightedDetectionId ?? hashRecordId;
+
   const categories = data?.byCategory.map(c => c.category) ?? [];
   const overTimeKeys = useMemo(() => {
     const keys = new Set<string>();
@@ -156,7 +285,7 @@ export function SecurityAnalyticsView({
     <AnalyticsShell
       active="security"
       title="Security"
-      subtitle="Detected-finding metadata only — raw matched values are not stored or charted. Detection is best-effort."
+      subtitle="Detection policy, this browser’s detection log (Dismiss / Delete), and finding charts — one page. Raw matched values are not stored. Detection is risk reduction, not a guarantee."
       workspaces={workspaces}
       range={range}
       workspaceId={workspaceId}
@@ -164,6 +293,11 @@ export function SecurityAnalyticsView({
       onWorkspaceChange={setWorkspaceId}
       subject={subject}
       onBackToAdmin={onBackToAdmin}
+      sectionLinks={[
+        { href: "#detection-policy", label: "Policy" },
+        { href: "#detection-log", label: "Detection log" },
+        { href: "#security-charts", label: "Charts" },
+      ]}
       extraFilters={
         <>
           <FilterSelect label="Category" value={categoryFilter} onChange={setCategoryFilter} options={categories} />
@@ -197,13 +331,17 @@ export function SecurityAnalyticsView({
         </div>
       )}
 
-      <section className="rounded-xl border border-foreground/10 bg-foreground/[0.03] p-4 sm:p-5 space-y-3">
+      <section
+        id="detection-policy"
+        className="rounded-xl border border-foreground/10 bg-foreground/[0.03] p-4 sm:p-5 space-y-3 scroll-mt-24"
+      >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-foreground/90">Detection policy</h3>
             <p className="text-xs text-foreground/40 mt-1 max-w-2xl leading-relaxed">
-              What each sensitivity tier includes. Insights counts findings that already
-              happened; this table is the rule that runs on the next chat send or Knowledge ingest.
+              {onSelectPolicyTier
+                ? "Click a tier column to change sensitivity going forward. Safe terms (exemptions) are edited in Settings → Workspace."
+                : "What each sensitivity tier includes. Insights counts findings that already happened; this table is the rule that runs on the next chat send or Knowledge ingest."}
             </p>
           </div>
           {onEditPolicy && (
@@ -212,19 +350,74 @@ export function SecurityAnalyticsView({
               onClick={onEditPolicy}
               className="shrink-0 rounded-lg border border-indigo-500/35 bg-indigo-500/15 px-3 py-1.5 text-[0.7rem] font-medium text-indigo-100 cursor-pointer hover:bg-indigo-500/25"
             >
-              Edit in Settings
+              Edit safe terms in Settings
             </button>
           )}
         </div>
         <DetectionForwardOnlyNotice />
-        <DetectionPolicyMatrix currentTier={policyTier} />
+        <DetectionPolicyMatrix
+          currentTier={policyTier}
+          selectable={Boolean(onSelectPolicyTier)}
+          onSelectTier={onSelectPolicyTier}
+        />
         <DetectionPolicyExplainer
           currentTier={policyTier}
           safeTermCount={safeTermCount ?? undefined}
         />
       </section>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+      <section
+        id="detection-log"
+        className="rounded-xl border border-foreground/10 bg-foreground/[0.03] p-4 sm:p-5 space-y-3 scroll-mt-24"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground/90">Detection log</h3>
+            <p className="text-xs text-foreground/40 mt-1 max-w-2xl leading-relaxed">
+              This browser’s detections for the selected range. Dismiss hides a row (you can show
+              it again). Delete removes the row from this browser. Neither action deletes a
+              Knowledge file, undoes a redaction, or whitelists a value.
+            </p>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showDismissedLog}
+              onChange={e => setShowDismissedLog(e.target.checked)}
+              className="accent-indigo-500"
+            />
+            <span className="text-[0.65rem] text-foreground/40">Show dismissed</span>
+          </label>
+        </div>
+        {logCategoryCounts.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {logCategoryCounts.map(([label, count]) => (
+              <span
+                key={label}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-foreground/[0.04] border border-foreground/8 px-2.5 py-1 text-[0.68rem] text-foreground/55"
+              >
+                {label}
+                <span className="font-mono font-semibold text-foreground/80 tabular-nums">{count}</span>
+              </span>
+            ))}
+          </div>
+        )}
+        <DetectionLog
+          groups={logGroups}
+          workspaceName={id => {
+            if (!id) return { name: "Unknown workspace" };
+            const w = workspaces.find(x => x.id === id);
+            return w ? { name: w.name, emoji: w.emoji } : { name: "Removed workspace" };
+          }}
+          dismissedIds={dismissedSet}
+          highlightedId={pulseId}
+          onDismiss={onDismissDetection ?? (() => undefined)}
+          onDelete={onDeleteDetection ?? (() => undefined)}
+          onOpenSafeTerms={onOpenSafeTerms}
+        />
+      </section>
+
+      <div id="security-charts" className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 scroll-mt-24">
         <KpiCard label="Total findings" value={loading ? "…" : String(data?.kpis.totalFindings ?? 0)} />
         <KpiCard label="High-risk blocked" value={loading ? "…" : String(data?.kpis.highRiskBlocked ?? 0)} />
         <KpiCard label="Items redacted" value={loading ? "…" : String(data?.kpis.itemsRedacted ?? 0)} />
@@ -407,7 +600,11 @@ export function SecurityAnalyticsView({
       </ChartFrame>
 
       <section className="rounded-xl border border-foreground/10 bg-foreground/[0.03] p-4 sm:p-5">
-        <h3 className="text-sm font-semibold text-foreground/90 mb-3">Event history</h3>
+        <h3 className="text-sm font-semibold text-foreground/90 mb-1">Event history</h3>
+        <p className="text-xs text-foreground/40 mb-3 max-w-2xl leading-relaxed">
+          Aggregated analytics events for the filters above. Dismiss and Delete apply only to the
+          detection log — not these rows.
+        </p>
         {loading && <p className="text-sm text-foreground/40">Loading…</p>}
         {error && <p className="text-sm text-rose-300/80">{error}</p>}
         {!loading && !error && filteredEvents.length === 0 && (

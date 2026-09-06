@@ -25,6 +25,8 @@ type Props = {
   onRangeChange: (r: AnalyticsRange) => void;
   onWorkspaceChange: (id: string) => void;
   extraFilters?: ReactNode;
+  /** In-page jump links (e.g. Policy / Detection log / Charts on Security). */
+  sectionLinks?: { href: string; label: string }[];
   children: ReactNode;
   /** Admin observing another member's Insights. */
   subject?: InsightsSubjectScope | null;
@@ -61,6 +63,7 @@ export function AnalyticsShell({
   onRangeChange,
   onWorkspaceChange,
   extraFilters,
+  sectionLinks,
   children,
   subject = null,
   onBackToAdmin,
@@ -146,6 +149,22 @@ export function AnalyticsShell({
             {subject ? `${title} · ${subject.label}` : title}
           </h1>
           <p className="text-sm text-muted-foreground mt-1 max-w-3xl">{subtitle}</p>
+          {sectionLinks && sectionLinks.length > 0 && (
+            <nav
+              aria-label="On this page"
+              className="mt-3 flex flex-wrap gap-2"
+            >
+              {sectionLinks.map(link => (
+                <a
+                  key={link.href}
+                  href={link.href}
+                  className="rounded-lg border border-foreground/12 bg-foreground/[0.04] px-3 py-1.5 text-[0.72rem] font-medium text-foreground/70 hover:bg-foreground/[0.08] hover:text-foreground"
+                >
+                  {link.label}
+                </a>
+              ))}
+            </nav>
+          )}
 
           <div className="mt-4 flex flex-wrap items-end gap-3">
             <label className="text-xs text-muted-foreground">
