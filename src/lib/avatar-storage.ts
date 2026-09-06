@@ -1,16 +1,32 @@
 /**
- * Per-user avatar bytes on disk — same idea as Knowledge originals.
- * Paths are derived from userId only. Not S3 (local / on-prem default).
+ * Per-user avatar bytes.
+ *
+ * Local / on-prem: `.data/avatars/{userId}/` (or AVATAR_STORAGE_PATH).
+ * Hosted AWS: private S3 object when AVATAR_S3_BUCKET is set (Lambda IAM, no UI keys).
+ * The browser never talks to S3 — it only hits /api/me/avatar.
  */
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
-import type { AvatarImageKind } from "@/lib/avatar-image";
+import type { AvatarImageKind, AvatarMeta } from "@/lib/avatar-image";
+import { isHostedRuntime } from "@/lib/runtime-env";
+import {
+  s3HeadAvatar,
+  s3ReadAvatar,
+  s3RemoveAvatar,
+  s3WriteAvatar,
+} from "@/lib/avatar-s3";
 
-export type AvatarMeta = {
-  contentType: AvatarImageKind;
-  updatedAt: string;
-};
+export type { AvatarMeta };
+
+export function avatarS3Bucket(): string | undefined {
+  const raw = process.env.AVATAR_S3_BUCKET?.trim();
+  return raw && raw.length > 0 ? raw : undefined;
+}
+
+export function avatarObjectKey(userId: string): string {
+  return `avatars/${safeSegment(userId)}/avatar`;
+}
 
 function storageRoot(): string {
   const configured = process.env.AVATAR_STORAGE_PATH?.trim();
@@ -39,10 +55,9 @@ function metaPath(userId: string): string {
   return join(userDir(userId), "meta.json");
 }
 
-export function readAvatarMeta(userId: string): AvatarMeta | null {
+function parseMeta(raw: string): AvatarMeta | null {
   try {
-    if (!existsSync(bytesPath(userId)) || !existsSync(metaPath(userId))) return null;
-    const parsed = JSON.parse(readFileSync(metaPath(userId), "utf8")) as AvatarMeta;
+    const parsed = JSON.parse(raw) as AvatarMeta;
     if (parsed?.contentType !== "image/jpeg" && parsed?.contentType !== "image/png") return null;
     if (typeof parsed.updatedAt !== "string") return null;
     return parsed;
@@ -51,12 +66,17 @@ export function readAvatarMeta(userId: string): AvatarMeta | null {
   }
 }
 
-export function avatarExists(userId: string): boolean {
-  return readAvatarMeta(userId) !== null;
+function diskReadMeta(userId: string): AvatarMeta | null {
+  try {
+    if (!existsSync(bytesPath(userId)) || !existsSync(metaPath(userId))) return null;
+    return parseMeta(readFileSync(metaPath(userId), "utf8"));
+  } catch {
+    return null;
+  }
 }
 
-export function readAvatar(userId: string): { bytes: Buffer; meta: AvatarMeta } | null {
-  const meta = readAvatarMeta(userId);
+function diskRead(userId: string): { bytes: Buffer; meta: AvatarMeta } | null {
+  const meta = diskReadMeta(userId);
   if (!meta) return null;
   try {
     return { bytes: readFileSync(bytesPath(userId)), meta };
@@ -65,7 +85,7 @@ export function readAvatar(userId: string): { bytes: Buffer; meta: AvatarMeta } 
   }
 }
 
-export function writeAvatar(userId: string, bytes: Buffer, contentType: AvatarImageKind): AvatarMeta {
+function diskWrite(userId: string, bytes: Buffer, contentType: AvatarImageKind): AvatarMeta {
   const dest = bytesPath(userId);
   mkdirSync(dirname(dest), { recursive: true });
   const meta: AvatarMeta = { contentType, updatedAt: new Date().toISOString() };
@@ -74,7 +94,7 @@ export function writeAvatar(userId: string, bytes: Buffer, contentType: AvatarIm
   return meta;
 }
 
-export function removeAvatar(userId: string): void {
+function diskRemove(userId: string): void {
   try {
     rmSync(bytesPath(userId), { force: true });
     rmSync(metaPath(userId), { force: true });
@@ -83,8 +103,57 @@ export function removeAvatar(userId: string): void {
   }
 }
 
+export async function readAvatarMeta(userId: string): Promise<AvatarMeta | null> {
+  const bucket = avatarS3Bucket();
+  if (bucket) return s3HeadAvatar(bucket, avatarObjectKey(userId));
+  return diskReadMeta(userId);
+}
+
+export async function avatarExists(userId: string): Promise<boolean> {
+  return (await readAvatarMeta(userId)) !== null;
+}
+
+export async function readAvatar(userId: string): Promise<{ bytes: Buffer; meta: AvatarMeta } | null> {
+  const bucket = avatarS3Bucket();
+  if (bucket) return s3ReadAvatar(bucket, avatarObjectKey(userId));
+  return diskRead(userId);
+}
+
+export async function writeAvatar(
+  userId: string,
+  bytes: Buffer,
+  contentType: AvatarImageKind,
+): Promise<AvatarMeta> {
+  const bucket = avatarS3Bucket();
+  if (bucket) {
+    return s3WriteAvatar(bucket, avatarObjectKey(userId), bytes, contentType);
+  }
+  if (isHostedRuntime()) {
+    const err = new Error("Avatar object store is not configured for this install.");
+    Object.assign(err, { status: 503 });
+    throw err;
+  }
+  return diskWrite(userId, bytes, contentType);
+}
+
+export async function removeAvatar(userId: string): Promise<void> {
+  const bucket = avatarS3Bucket();
+  if (bucket) {
+    await s3RemoveAvatar(bucket, avatarObjectKey(userId));
+    return;
+  }
+  diskRemove(userId);
+}
+
+export async function resolveAvatarPublicUrl(userId: string): Promise<string | null> {
+  const meta = await readAvatarMeta(userId);
+  if (!meta) return null;
+  return `/api/me/avatar?v=${encodeURIComponent(meta.updatedAt)}`;
+}
+
+/** @deprecated use resolveAvatarPublicUrl — sync disk-only hint for tests */
 export function avatarPublicUrl(userId: string): string | null {
-  const meta = readAvatarMeta(userId);
+  const meta = diskReadMeta(userId);
   if (!meta) return null;
   return `/api/me/avatar?v=${encodeURIComponent(meta.updatedAt)}`;
 }

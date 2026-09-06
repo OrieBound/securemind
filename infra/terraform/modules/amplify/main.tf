@@ -66,6 +66,16 @@ variable "vendor_keys_secret_arn" {
   default = ""
 }
 
+variable "avatar_s3_bucket_name" {
+  type    = string
+  default = ""
+}
+
+variable "avatar_s3_bucket_arn" {
+  type    = string
+  default = ""
+}
+
 variable "branch_name" {
   type    = string
   default = "main"
@@ -218,6 +228,30 @@ resource "aws_iam_role_policy" "amplify_vendor_keys" {
   policy = data.aws_iam_policy_document.amplify_vendor_keys.json
 }
 
+data "aws_iam_policy_document" "amplify_avatars" {
+  statement {
+    sid = "ProfilePhotos"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
+      "s3:DeleteObject",
+    ]
+    resources = ["${var.avatar_s3_bucket_arn}/*"]
+  }
+  statement {
+    sid       = "ProfilePhotosList"
+    actions   = ["s3:ListBucket"]
+    resources = [var.avatar_s3_bucket_arn]
+  }
+}
+
+resource "aws_iam_role_policy" "amplify_avatars" {
+  count  = var.avatar_s3_bucket_arn != "" ? 1 : 0
+  name   = "securemind-amplify-avatars-${var.env_name}"
+  role   = aws_iam_role.amplify.id
+  policy = data.aws_iam_policy_document.amplify_avatars.json
+}
+
 resource "random_id" "instance_encryption" {
   byte_length = 32
 }
@@ -250,7 +284,7 @@ resource "aws_amplify_app" "this" {
           commands:
             - export DATABASE_URL="$${DATABASE_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
             - export DIRECT_URL="$${DIRECT_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
-            - node -e "const fs=require('fs'); const k=['AUTH_MODE','AUTH_ALLOW_LOCAL_FALLBACK','COGNITO_USER_POOL_ID','COGNITO_CLIENT_ID','COGNITO_REGION','COGNITO_ISSUER','NEXT_PUBLIC_API_BASE_URL','INSTANCE_ENCRYPTION_KEY','SETUP_CLAIM_SECRET','DYNAMODB_FRAGMENTS_TABLE','VENDOR_KEYS_SECRET_ARN']; fs.appendFileSync('.env.production', k.map(n=>n+'='+(process.env[n]||'')).join('\\n')+'\\nSECUREMIND_EDITION=cloud\\nSTORAGE_BACKEND=dynamodb\\n');"
+            - node -e "const fs=require('fs'); const k=['AUTH_MODE','AUTH_ALLOW_LOCAL_FALLBACK','COGNITO_USER_POOL_ID','COGNITO_CLIENT_ID','COGNITO_REGION','COGNITO_ISSUER','NEXT_PUBLIC_API_BASE_URL','INSTANCE_ENCRYPTION_KEY','SETUP_CLAIM_SECRET','DYNAMODB_FRAGMENTS_TABLE','VENDOR_KEYS_SECRET_ARN','AVATAR_S3_BUCKET']; fs.appendFileSync('.env.production', k.map(n=>n+'='+(process.env[n]||'')).join('\\n')+'\\nSECUREMIND_EDITION=cloud\\nSTORAGE_BACKEND=dynamodb\\n');"
             - npm run build
             - node infra/scripts/amplify-prune-compute.mjs
       artifacts:
@@ -277,6 +311,7 @@ resource "aws_amplify_app" "this" {
     SETUP_CLAIM_SECRET        = random_password.setup_claim.result
     DYNAMODB_FRAGMENTS_TABLE  = var.fragments_table_name
     VENDOR_KEYS_SECRET_ARN    = var.vendor_keys_secret_arn
+    AVATAR_S3_BUCKET          = var.avatar_s3_bucket_name
   }
 
   tags = {

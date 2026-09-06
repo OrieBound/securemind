@@ -9,7 +9,7 @@ import {
   DEFAULT_AVATAR_PRESET,
   isAvatarPresetId,
 } from "@/lib/avatar-presets";
-import { avatarPublicUrl } from "@/lib/avatar-storage";
+import { resolveAvatarPublicUrl } from "@/lib/avatar-storage";
 import { LOCAL_USER_ID } from "@/lib/identity";
 import {
   DEFAULT_MONTHLY_COST_CAP_USD,
@@ -64,7 +64,7 @@ function asStatus(v: string | null | undefined): ProfileStatus {
   return "active";
 }
 
-function toPublic(row: {
+async function toPublic(row: {
   userId: string;
   email: string | null;
   displayName: string | null;
@@ -86,8 +86,8 @@ function toPublic(row: {
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
-}): UserProfilePublic {
-  const url = avatarPublicUrl(row.userId);
+}): Promise<UserProfilePublic> {
+  const url = await resolveAvatarPublicUrl(row.userId);
   return {
     userId: row.userId,
     email: row.email,
@@ -115,7 +115,7 @@ function toPublic(row: {
   };
 }
 
-function hostedToPublic(row: HostedProfile): UserProfilePublic {
+async function hostedToPublic(row: HostedProfile): Promise<UserProfilePublic> {
   return toPublic({
     userId: row.userId,
     email: row.email,

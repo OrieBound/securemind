@@ -90,6 +90,11 @@ export const EXPECTED_FINDINGS = {
       expectCategories: ["email", "SSN", "secret"],
       location: "nested object keys preserved",
     },
+    "SecureMind_Synthetic_Utility_Invoice.docx": {
+      format: "docx",
+      expectCategories: ["email", "SSN", "phone", "card number", "address"],
+      location: "utility bill body — detect-able domains, not example.com",
+    },
   },
   controls: {
     privateIpSafeListed: SYNTH.privateIp,
@@ -177,18 +182,7 @@ function para(text: string): string {
   return `<w:p><w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
 }
 
-export function buildCustomerCaseDocx(): Buffer {
-  const paragraphs = [
-    "Northwind Synth — customer case (synthetic)",
-    `Contact: ${SYNTH.email}  Phone: ${SYNTH.phone}`,
-    `Government id on file: ${SYNTH.ssn}`,
-    `Repeat contact for consistency check: ${SYNTH.emailRepeat}`,
-    `AWS access key id quoted in ticket: ${SYNTH.awsKey}`,
-    `Date of birth (not a detection family at balanced): ${SYNTH.dob}`,
-    `Ship-to note (street address at balanced): ${SYNTH.street}`,
-    SYNTH.controlProse,
-    `Control ticket ${SYNTH.ticketId} closed after review.`,
-  ];
+function wrapDocx(paragraphs: string[]): Buffer {
   const documentXml =
     `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>` +
     `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">` +
@@ -212,6 +206,39 @@ export function buildCustomerCaseDocx(): Buffer {
       `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`,
     "word/document.xml": documentXml,
   });
+}
+
+export function buildCustomerCaseDocx(): Buffer {
+  return wrapDocx([
+    "Northwind Synth — customer case (synthetic)",
+    `Contact: ${SYNTH.email}  Phone: ${SYNTH.phone}`,
+    `Government id on file: ${SYNTH.ssn}`,
+    `Repeat contact for consistency check: ${SYNTH.emailRepeat}`,
+    `AWS access key id quoted in ticket: ${SYNTH.awsKey}`,
+    `Date of birth (not a detection family at balanced): ${SYNTH.dob}`,
+    `Ship-to note (street address at balanced): ${SYNTH.street}`,
+    SYNTH.controlProse,
+    `Control ticket ${SYNTH.ticketId} closed after review.`,
+  ]);
+}
+
+/** Municipal electric bill — second invoice type vs the professional-services Northstar invoice. */
+export function buildUtilityInvoiceDocx(): Buffer {
+  return wrapDocx([
+    "CEDAR HILL ELECTRIC — SYNTHETIC UTILITY BILL",
+    "TEST DATA ONLY. No real account. No payment is requested. Not a valid bill.",
+    `Account UTIL-SYNTH-4419    Statement ${SYNTH.ticketId}    Issued September 6, 2026`,
+    "Service period: August 1–31, 2026    Meter 77821    Usage 612 kWh",
+    `Service address: ${SYNTH.street}, Toronto, ON`,
+    `Bill-to: Jordan Hale    Email: ${SYNTH.email}    Phone: ${SYNTH.phone}`,
+    `Repeat notice copy: ${SYNTH.emailRepeat}`,
+    `Card on file: ${SYNTH.cardSpaced}    Expiry 12/30`,
+    `Legacy KYC government id on file: ${SYNTH.ssn}`,
+    "Amount due: $142.18 CAD    Due October 6, 2026    Auto-pay enrolled",
+    `Documentation mailbox (shipped Safe term, should survive balanced): ${SYNTH.docMailbox}`,
+    SYNTH.controlProse,
+    "Cedar Hill Electric does not exist. Values are for Knowledge ingest and detection checks only.",
+  ]);
 }
 
 export async function buildServiceAgreementPdf(): Promise<Buffer> {
@@ -346,6 +373,11 @@ export async function buildCorpusFiles(): Promise<CorpusFile[]> {
       name: "app-config.json",
       mime: "application/json",
       buffer: Buffer.from(buildAppConfigJson(), "utf8"),
+    },
+    {
+      name: "SecureMind_Synthetic_Utility_Invoice.docx",
+      mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      buffer: buildUtilityInvoiceDocx(),
     },
   ];
 }

@@ -59,6 +59,17 @@
         "secret"
       ],
       "location": "nested object keys preserved"
+    },
+    "SecureMind_Synthetic_Utility_Invoice.docx": {
+      "format": "docx",
+      "expectCategories": [
+        "email",
+        "SSN",
+        "phone",
+        "card number",
+        "address"
+      ],
+      "location": "utility bill body — detect-able domains, not example.com"
     }
   },
   "controls": {

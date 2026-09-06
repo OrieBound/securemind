@@ -80,6 +80,40 @@ variable "embed_dimensions" {
 
 data "aws_region" "current" {}
 
+data "aws_caller_identity" "current" {}
+
+resource "aws_s3_bucket" "avatars" {
+  bucket = "securemind-avatars-${var.env_name}-${data.aws_caller_identity.current.account_id}"
+  tags = {
+    Project = "SecureMind"
+    Env     = var.env_name
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "avatars" {
+  bucket                  = aws_s3_bucket.avatars.id
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "avatars" {
+  bucket = aws_s3_bucket.avatars.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_ownership_controls" "avatars" {
+  bucket = aws_s3_bucket.avatars.id
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
 locals {
   env_vars = {
     NODE_OPTIONS               = "--enable-source-maps"
@@ -100,6 +134,7 @@ locals {
     FRAGMENTS_TABLE_SECRET_ARN = var.fragments_secret_arn
     GROQ_SECRET_ARN            = var.groq_secret_arn
     VENDOR_KEYS_SECRET_ARN     = var.vendor_keys_secret_arn
+    AVATAR_S3_BUCKET           = aws_s3_bucket.avatars.bucket
     SECUREMIND_EDITION         = "cloud"
   }
 }
@@ -164,6 +199,20 @@ resource "aws_iam_role_policy" "lambda" {
           Effect   = "Allow"
           Action   = ["secretsmanager:GetSecretValue"]
           Resource = compact([var.fragments_secret_arn, var.groq_secret_arn, var.vendor_keys_secret_arn])
+        },
+        {
+          Effect = "Allow"
+          Action = [
+            "s3:GetObject",
+            "s3:PutObject",
+            "s3:DeleteObject",
+          ]
+          Resource = "${aws_s3_bucket.avatars.arn}/*"
+        },
+        {
+          Effect   = "Allow"
+          Action   = ["s3:ListBucket"]
+          Resource = aws_s3_bucket.avatars.arn
         },
       ],
     )
@@ -372,6 +421,14 @@ output "chat_function_name" {
 
 output "warm_function_name" {
   value = aws_lambda_function.warm.function_name
+}
+
+output "avatar_bucket_name" {
+  value = aws_s3_bucket.avatars.bucket
+}
+
+output "avatar_bucket_arn" {
+  value = aws_s3_bucket.avatars.arn
 }
 
 output "chat_function_arn" {

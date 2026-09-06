@@ -8,6 +8,8 @@ These files exist **only for tests**. Every name, address, identifier, card numb
 |------|------|
 | `customer-case.docx` | Word narrative / customer-case |
 | `SecureMind_Synthetic_Residential_Tenancy_Agreement.docx` | Word tenancy / lease narrative |
+| `SecureMind_Synthetic_PII_Test_Invoice.docx` | Hand-authored **professional-services** invoice (Northstar). Uses `example.com` mailboxes — those are shipped Safe terms, so email will not redact at Balanced. |
+| `SecureMind_Synthetic_Utility_Invoice.docx` | Generated **utility bill** (Cedar Hill Electric). Uses `northwind-industries.io` so email, phone, street, card, and SSN **do** redact at Balanced. |
 | `service-agreement.pdf` | PDF contract-style text |
 | `employee-register.xlsx` | Excel employees, credentials, and control sheet |
 | `support-tickets.csv` | Exported support tickets |

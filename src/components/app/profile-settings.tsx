@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  AVATAR_PRESETS,
-} from "@/lib/avatar-presets";
+import { AVATAR_PRESETS } from "@/lib/avatar-presets";
+import { AVATAR_SOURCE_MAX_BYTES } from "@/lib/avatar-crop";
 import type { UserProfilePublic } from "@/lib/user-profile";
 import { useAuthSession } from "@/components/app/auth-session";
 import { notifyAvatarChanged, UserAvatarFace } from "@/components/app/user-avatar";
+import { AvatarCropDialog } from "@/components/app/avatar-crop-dialog";
 
 type WorkspaceBrief = { id: string; name: string; emoji: string; isDefault: boolean };
 
@@ -56,6 +56,7 @@ export function ProfileSettings() {
   const [security, setSecurity] = useState<SecurityInfo | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
 
   const [displayName, setDisplayName] = useState("");
@@ -66,6 +67,8 @@ export function ProfileSettings() {
   const [avatarPreset, setAvatarPreset] = useState("shield");
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [cropFile, setCropFile] = useState<File | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [themePreference, setThemePreference] = useState<string>("");
 
@@ -76,14 +79,14 @@ export function ProfileSettings() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    setError(null);
+    setLoadError(null);
     try {
       const [pRes, sRes] = await Promise.all([
         fetch("/api/me/profile", { credentials: "same-origin" }),
         fetch("/api/me/security", { credentials: "same-origin" }),
       ]);
       if (!pRes.ok) {
-        setError("Could not load profile.");
+        setLoadError("Could not load profile.");
         return;
       }
       const pBody = (await pRes.json()) as {
@@ -105,7 +108,7 @@ export function ProfileSettings() {
       setDirty(false);
       if (sRes.ok) setSecurity((await sRes.json()) as SecurityInfo);
     } catch {
-      setError("Could not load profile.");
+      setLoadError("Could not load profile.");
     } finally {
       setLoading(false);
     }
@@ -114,6 +117,12 @@ export function ProfileSettings() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    return () => {
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    };
+  }, []);
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
@@ -154,13 +163,34 @@ export function ProfileSettings() {
     }
   }
 
-  async function uploadPhoto(file: File) {
+  function pickPhoto(file: File | undefined) {
+    if (!file) return;
+    if (file.size > AVATAR_SOURCE_MAX_BYTES) {
+      setError("Choose a JPEG or PNG under 8 MB, then crop the part you want.");
+      return;
+    }
+    const kind = file.type.toLowerCase();
+    if (kind && kind !== "image/jpeg" && kind !== "image/png" && kind !== "image/jpg") {
+      setError("Use a JPEG or PNG image.");
+      return;
+    }
+    setError(null);
+    setNotice(null);
+    setCropFile(file);
+  }
+
+  async function acceptCrop(blob: Blob) {
     setPhotoBusy(true);
     setNotice(null);
     setError(null);
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    const preview = URL.createObjectURL(blob);
+    previewUrlRef.current = preview;
+    setPhotoUrl(preview);
+    setCropFile(null);
     try {
       const body = new FormData();
-      body.append("file", file);
+      body.append("file", blob, "avatar.jpg");
       const res = await fetch("/api/me/avatar", {
         method: "PUT",
         credentials: "same-origin",
@@ -168,14 +198,19 @@ export function ProfileSettings() {
       });
       const data = (await res.json()) as { error?: string; avatarUrl?: string };
       if (!res.ok) {
-        setError(data.error ?? "Could not upload that image.");
+        setError(data.error ?? "Could not save that photo.");
         return;
       }
-      setPhotoUrl(data.avatarUrl ?? `/api/me/avatar?v=${Date.now()}`);
-      setNotice("Photo saved. It shows in the header for this account.");
+      const next = data.avatarUrl ?? `/api/me/avatar?v=${Date.now()}`;
+      setPhotoUrl(next);
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
+      setNotice("Photo saved. It shows here and in the header.");
       notifyAvatarChanged();
     } catch {
-      setError("Could not upload that image.");
+      setError("Could not save that photo.");
     } finally {
       setPhotoBusy(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -242,11 +277,11 @@ export function ProfileSettings() {
     );
   }
 
-  if (error || !profile || !role) {
+  if (loadError || !profile || !role) {
     return (
       <div className="space-y-3 py-6 max-w-md">
         <p className="text-sm text-red-200/90" role="alert">
-          {error ?? "Could not load profile."}
+          {loadError ?? "Could not load profile."}
         </p>
         <button
           type="button"
@@ -291,7 +326,7 @@ export function ProfileSettings() {
               displayName={displayName}
               email={profile.email}
               photoUrl={photoUrl}
-              size="lg"
+              size="xl"
             />
             <div className="min-w-0">
               <p className="text-sm text-foreground/80 truncate">
@@ -305,8 +340,8 @@ export function ProfileSettings() {
                   accept="image/jpeg,image/png,.jpg,.jpeg,.png"
                   className="sr-only"
                   onChange={e => {
-                    const file = e.target.files?.[0];
-                    if (file) void uploadPhoto(file);
+                    pickPhoto(e.target.files?.[0]);
+                    e.target.value = "";
                   }}
                 />
                 <button
@@ -315,7 +350,7 @@ export function ProfileSettings() {
                   onClick={() => fileRef.current?.click()}
                   className="rounded-lg border border-foreground/15 px-2.5 py-1 text-[0.68rem] cursor-pointer disabled:opacity-40"
                 >
-                  {photoBusy ? "Working…" : "Upload photo"}
+                  {photoBusy ? "Saving…" : photoUrl ? "Change photo" : "Upload photo"}
                 </button>
                 {photoUrl && (
                   <button
@@ -329,7 +364,8 @@ export function ProfileSettings() {
                 )}
               </div>
               <p className="mt-1.5 text-[0.62rem] text-foreground/35 leading-relaxed">
-                JPEG or PNG, up to 2 MB. This photo replaces the header icon for your account.
+                JPEG or PNG, up to 8 MB. You crop a square before it is saved. It replaces the
+                glyph here and in the header.
               </p>
             </div>
           </div>
@@ -342,14 +378,18 @@ export function ProfileSettings() {
                   key={p.id}
                   type="button"
                   onClick={() => {
+                    if (photoUrl) {
+                      setNotice("Remove the photo first if you want a glyph instead.");
+                      return;
+                    }
                     setAvatarPreset(p.id);
                     setDirty(true);
-                    if (photoUrl) void clearPhoto();
                   }}
                   aria-pressed={!photoUrl && avatarPreset === p.id}
                   aria-label={p.label}
                   className={cn(
                     "size-10 rounded-full border text-base transition-colors cursor-pointer",
+                    photoUrl && "opacity-40",
                     !photoUrl && avatarPreset === p.id
                       ? "border-indigo-400/60 ring-2 ring-indigo-400/30"
                       : "border-foreground/10 hover:border-foreground/25",
@@ -592,6 +632,16 @@ export function ProfileSettings() {
           <li>Security and Data Handling (placeholder)</li>
         </ul>
       </section>
+      {cropFile && (
+        <AvatarCropDialog
+          file={cropFile}
+          onCancel={() => {
+            setCropFile(null);
+            if (fileRef.current) fileRef.current.value = "";
+          }}
+          onAccept={blob => acceptCrop(blob)}
+        />
+      )}
     </div>
   );
 }
