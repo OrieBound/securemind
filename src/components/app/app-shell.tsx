@@ -154,11 +154,6 @@ import { SecurityAnalyticsView } from "@/components/analytics/security-view";
 import { UsageAnalyticsView } from "@/components/analytics/usage-view";
 import { CostAnalyticsView } from "@/components/analytics/cost-view";
 import {
-  DetectionForwardOnlyNotice,
-  DetectionPolicyExplainer,
-  DetectionPolicyMatrix,
-} from "@/components/app/detection-policy-panel";
-import {
   fetchAnalyticsJson,
   postSecurityEvents,
 } from "@/lib/analytics/client";
@@ -704,27 +699,6 @@ function WorkspaceBreadcrumb({
       {!agent && <span className="font-semibold text-foreground/70">{sectionLabel}</span>}
     </nav>
   );
-}
-
-function groupPiiByDate(
-  entries: SessionScrubEntry[],
-  dismissed: Set<string> = new Set(),
-): { dayKey: string; label: string; items: { entry: SessionScrubEntry; rec: RedactionRecord }[] }[] {
-  const map = new Map<string, { label: string; items: { entry: SessionScrubEntry; rec: RedactionRecord }[] }>();
-  for (const entry of entries) {
-    const dayKey = new Date(entry.at).toDateString();
-    const label = formatDateDivider(entry.at);
-    if (!map.has(dayKey)) map.set(dayKey, { label, items: [] });
-    for (const rec of entry.redactions) {
-      if (dismissed.has(rec.id)) continue;
-      map.get(dayKey)!.items.push({ entry, rec });
-    }
-  }
-  return [...map.entries()]
-    .sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime())
-    .map(([dayKey, v]) => ({ dayKey, ...v, items: v.items.sort(
-      (a, b) => new Date(b.entry.at).getTime() - new Date(a.entry.at).getTime(),
-    ) }));
 }
 
 function startOfToday(): Date {
@@ -2252,7 +2226,6 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   const [insightsTab, setInsightsTab] = useState<InsightsTabId>("context");
   const [featureOrder, setFeatureOrder] = useWorkspaceFeatureOrder();
   const [settingsSection, setSettingsSectionState] = useState<SettingsSection>(() => defaultSettingsSection);
-  const [securityBackLabel, setSecurityBackLabel] = useState("Back to investigate");
   const settingsReturnSectionRef = useRef<SettingsSection | null>(null);
   const lastWorkNavRef = useRef<NavId>("thread");
   const [settingsAnimatingOut, setSettingsAnimatingOut] = useState(false);
@@ -2272,7 +2245,23 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     () => Boolean(analyticsView),
   );
 
+  /** Leave /analytics/* and land on Settings for `section` (survives AppShell remount). */
+  const returnToSettingsSection = useCallback((section: SettingsSection) => {
+    stashInsightsSubject(null);
+    try {
+      localStorage.setItem(SETTINGS_SECTION_KEY, section);
+      sessionStorage.setItem(OPEN_SETTINGS_KEY, section);
+    } catch { /* quota */ }
+    router.push(`/?settings=${encodeURIComponent(section)}`);
+  }, [router]);
+
   const openSettings = useCallback((section?: SettingsSection) => {
+    // Insights dashboards own the center pane — opening a Settings section
+    // must leave /analytics/* or the editor never appears (only the left nav).
+    if (analyticsView) {
+      returnToSettingsSection(section ?? "overview");
+      return;
+    }
     if (
       activeNav !== "settings"
       && activeNav !== "security-dashboard"
@@ -2283,17 +2272,15 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     else if (settingsIsAdmin && settingsSection === "overview") setSettingsSection(defaultSettingsSection);
     setSettingsMenuCollapsed(false);
     setActiveNav("settings");
-  }, [activeNav, defaultSettingsSection, setSettingsSection, settingsIsAdmin, settingsSection]);
-
-  /** Leave /analytics/* and land on Settings for `section` (survives AppShell remount). */
-  const returnToSettingsSection = useCallback((section: SettingsSection) => {
-    stashInsightsSubject(null);
-    try {
-      localStorage.setItem(SETTINGS_SECTION_KEY, section);
-      sessionStorage.setItem(OPEN_SETTINGS_KEY, section);
-    } catch { /* quota */ }
-    router.push(`/?settings=${encodeURIComponent(section)}`);
-  }, [router]);
+  }, [
+    activeNav,
+    analyticsView,
+    defaultSettingsSection,
+    returnToSettingsSection,
+    setSettingsSection,
+    settingsIsAdmin,
+    settingsSection,
+  ]);
 
   const closeSettings = useCallback(() => {
     // Don't clobber a nav change that already left Settings (e.g. workspace click).
@@ -2445,10 +2432,6 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     }
     stashInsightsSubject(null);
     router.push(`/analytics/${view}`);
-  }, [router]);
-
-  const exitSecurityDashboard = useCallback(() => {
-    router.push("/");
   }, [router]);
 
   const [insightsSubject, setInsightsSubject] = useState<InsightsSubjectScope | null>(null);
@@ -2667,13 +2650,11 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   }>(null);
   const [securityNotice, setSecurityNotice] = useState<string | null>(null);
   const [pendingSend, setPendingSend]         = useState<PendingSend | null>(null);
-  const [highlightedPiiRecordId, setHighlightedPiiRecordId] = useState<string | null>(null);
   const [openWorkspacePickerId, setOpenWorkspacePickerId] = useState<string | null>(null);
   const [deleteConfirmWorkspace, setDeleteConfirmWorkspace] = useState<Workspace | null>(null);
   const [deleteWithBackup, setDeleteWithBackup]     = useState(true);
   const [deleteBusy, setDeleteBusy]                 = useState(false);
   const [dismissedPiiIds, setDismissedPiiIds]       = useState<Set<string>>(new Set());
-  const [showDismissedPii, setShowDismissedPii]     = useState(false);
   const toggleWorkspacePicker = useCallback((id: string) => {
     setOpenWorkspacePickerId(prev => (prev === id ? null : id));
   }, []);
@@ -4775,6 +4756,10 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     }
     if (!pending?.nav) return;
     const nav = pending.nav as NavId;
+    if (nav === "security-dashboard") {
+      router.push("/analytics/security#detection-log");
+      return;
+    }
     if (nav === "home") {
       setActiveNav("home");
       lastWorkNavRef.current = "home";
@@ -4787,9 +4772,9 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     setExpandedWorkspaceId(agent.id);
     setActiveNav(nav);
     lastWorkNavRef.current =
-      nav === "settings" || nav === "security-dashboard" ? "thread" : nav;
+      nav === "settings" ? "thread" : nav;
     if (nav === "thread" && agent.id !== activeWorkspaceId) switchWorkspace(agent);
-  }, [analyticsView, workspaces, activeWorkspaceId, switchWorkspace]);
+  }, [analyticsView, workspaces, activeWorkspaceId, switchWorkspace, router]);
 
   // Poll status only (?meta=1) so we never download chunks on a timer.
   const pollDocument = useCallback((id: string, ms = 3000) => {
@@ -5150,12 +5135,29 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   }, [activeWorkspaceId, viewWorkspaceId]);
 
   const dismissPiiRecord = useCallback((recordId: string) => {
+    let category = "unknown";
+    let workspaceId: string | undefined;
+    let source: "investigate" | "knowledge_document" = "investigate";
+    for (const entry of [...piiArchive, ...scrubLog]) {
+      const rec = entry.redactions.find(r => r.id === recordId);
+      if (rec) {
+        category = rec.category;
+        workspaceId = entry.workspaceId;
+        source = entry.source === "document" ? "knowledge_document" : "investigate";
+        break;
+      }
+    }
     setDismissedPiiIds(prev => {
       const next = new Set([...prev, recordId]);
       persistPiiDismissed(next);
       return next;
     });
-  }, []);
+    void postSecurityEvents({
+      workspaceId,
+      sensitivity: piiSensitivity,
+      events: [{ category, source, outcome: "dismissed", count: 1 }],
+    });
+  }, [piiArchive, scrubLog, piiSensitivity]);
 
   const deletePiiRecord = useCallback((recordId: string) => {
     const strip = (entries: SessionScrubEntry[]) =>
@@ -5380,32 +5382,11 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   const activePiiCategories = categoriesForTier(piiSensitivity);
   const inactivePiiCategories = allScannedCategories()
     .filter(c => !activePiiCategories.includes(c));
-  const piiGroupedByDate = groupPiiByDate(
-    filteredPiiEntries,
-    showDismissedPii ? new Set<string>() : dismissedPiiIds,
-  );
   const recentPiiItems = useMemo(() =>
     [...activePiiItems]
       .sort((a, b) => new Date(b.entry.at).getTime() - new Date(a.entry.at).getTime())
       .slice(0, 3),
   [activePiiItems]);
-
-  const openPiiRecord = useCallback((recordId: string, workspaceId?: string) => {
-    if (workspaceId) setPiiStatsWorkspaceId(workspaceId);
-    setHighlightedPiiRecordId(recordId);
-    setActiveNav("security-dashboard");
-  }, []);
-
-  useEffect(() => {
-    if (activeNav !== "security-dashboard" || !highlightedPiiRecordId) return;
-    const scrollToRecord = () => {
-      const el = document.getElementById(`pii-record-${highlightedPiiRecordId}`);
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-    };
-    const t1 = window.setTimeout(scrollToRecord, 80);
-    const t2 = window.setTimeout(() => setHighlightedPiiRecordId(null), 4000);
-    return () => { window.clearTimeout(t1); window.clearTimeout(t2); };
-  }, [activeNav, highlightedPiiRecordId, piiGroupedByDate]);
 
   // ── intelligence panel ───────────────────────────────────────────────────────
   const IntelligencePanel = (
@@ -5565,10 +5546,9 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                               const ag = workspaceDisplay(workspaces, entry.workspaceId);
                               return (
                                 <li key={rec.id}>
-                                  <button
-                                    type="button"
-                                    onClick={() => openPiiRecord(rec.id, entry.workspaceId)}
-                                    className="w-full text-left rounded-lg border border-border bg-elevated px-2.5 py-2 hover:bg-muted hover:border-indigo-500/25 transition-colors cursor-pointer group"
+                                  <Link
+                                    href={`/analytics/security#pii-record-${rec.id}`}
+                                    className="w-full text-left rounded-lg border border-border bg-elevated px-2.5 py-2 hover:bg-muted hover:border-indigo-500/25 transition-colors cursor-pointer group block"
                                   >
                                     <div className="flex items-center justify-between gap-2">
                                       <span className="text-[0.62rem] font-medium text-red-300/80 truncate">
@@ -5586,8 +5566,11 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                                     <p className="text-[0.55rem] text-foreground/25 mt-0.5 truncate">
                                       {ag.emoji && <span aria-hidden>{ag.emoji} </span>}
                                       {ag.name}
+                                      <span className="text-indigo-300/50 group-hover:text-indigo-300/80">
+                                        {" · "}Open in Security
+                                      </span>
                                     </p>
-                                  </button>
+                                  </Link>
                                 </li>
                               );
                             })}
@@ -5601,13 +5584,16 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                         </p>
                       )}
                       <Link
-                        href="/analytics/security"
+                        href="/analytics/security#detection-log"
                         className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary py-2.5 text-[0.72rem] font-semibold text-primary-foreground hover:bg-[var(--primary-hover)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                       >
                         <Shield className="size-3.5 shrink-0" aria-hidden />
                         Open full security view
                         <ChevronRight className="size-3.5 shrink-0 opacity-80" aria-hidden />
                       </Link>
+                      <p className="mt-1.5 text-center text-[0.55rem] text-foreground/30 leading-relaxed">
+                        Policy, detection log, Dismiss, and Delete. Same page as Settings → Insights → Security.
+                      </p>
                     </>
                   ),
                 },
@@ -5663,6 +5649,14 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                       >
                         Adjust sensitivity & safe terms
                       </button>
+                      <Link
+                        href="/analytics/security#detection-log"
+                        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary py-2.5 text-[0.72rem] font-semibold text-primary-foreground hover:bg-[var(--primary-hover)] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        <Shield className="size-3.5 shrink-0" aria-hidden />
+                        Open full security view
+                        <ChevronRight className="size-3.5 shrink-0 opacity-80" aria-hidden />
+                      </Link>
                     </>
                   ),
                 },
@@ -6514,11 +6508,33 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                 workspaces={
                   insightsSubject
                     ? subjectWorkspaces
-                    : workspaces.map(w => ({ id: w.id, name: w.name }))
+                    : workspaces.map(w => ({ id: w.id, name: w.name, emoji: w.emoji }))
                 }
                 subject={insightsSubject}
                 onBackToAdmin={insightsSubject ? backToAdminFromInsights : undefined}
-                onEditPolicy={() => openSettings("workspace")}
+                onEditPolicy={() => returnToSettingsSection("workspace")}
+                onOpenSafeTerms={() => returnToSettingsSection("workspace")}
+                currentPolicyTier={piiSensitivity}
+                onSelectPolicyTier={
+                  canEditSecurity || !authSession
+                    ? (tier) => { void setPiiSensitivity(tier); }
+                    : undefined
+                }
+                detectionLog={mergedPiiEntries.flatMap(entry =>
+                  entry.redactions.map(rec => ({
+                    rec,
+                    entry: {
+                      at: entry.at,
+                      turn: entry.turn,
+                      workspaceId: entry.workspaceId,
+                      source: entry.source,
+                      documentName: entry.documentName,
+                    },
+                  })),
+                )}
+                dismissedDetectionIds={[...dismissedPiiIds]}
+                onDismissDetection={dismissPiiRecord}
+                onDeleteDetection={deletePiiRecord}
               />
             )}
             {analyticsView === "usage" && (
@@ -6682,179 +6698,6 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                   }
                 }}
               />
-            </div>
-          </div>
-
-        ) : workNav === "security-dashboard" ? (
-          /* ── Security dashboard (full center view) ── */
-          <div className="flex-1 overflow-y-auto px-5 py-6">
-            <div className="max-w-3xl mx-auto flex flex-col gap-5">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <button
-                    type="button"
-                    onClick={exitSecurityDashboard}
-                    className="flex items-center gap-1.5 text-sm text-foreground/45 hover:text-foreground/70 transition-colors mb-3 cursor-pointer"
-                  >
-                    <ChevronLeft className="size-4" aria-hidden />
-                    {securityBackLabel}
-                  </button>
-                  <h2 className="text-lg font-bold text-foreground/90 tracking-tight">Security</h2>
-                  <p className="text-sm text-foreground/40 mt-1 max-w-lg">
-                    Detection history for this account. Sensitivity tiers and safe terms reduce false
-                    positives. Replacements cannot be restored. This is risk reduction, not a guarantee.
-                  </p>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-2xl font-bold tabular-nums text-foreground/90">{totalPiiFiltered}</p>
-                  <p className="text-[0.65rem] text-foreground/35">active in range</p>
-                </div>
-              </div>
-
-              <div className="rounded-2xl bg-foreground/[0.03] border border-foreground/8 px-4 py-3 space-y-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <p className="text-[0.58rem] uppercase tracking-wider text-foreground/30 font-semibold">
-                    Detection policy
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => openSettings("workspace")}
-                    className="text-[0.62rem] text-indigo-300/80 hover:text-indigo-200 cursor-pointer"
-                  >
-                    Edit in Settings
-                  </button>
-                </div>
-                <DetectionForwardOnlyNotice />
-                <DetectionPolicyMatrix currentTier={piiSensitivity} />
-                <DetectionPolicyExplainer
-                  currentTier={piiSensitivity}
-                  safeTermCount={safeTerms.length}
-                />
-              </div>
-
-              <WorkspaceStatsFilter
-                workspaces={workspaces}
-                value={piiStatsWorkspaceId}
-                onChange={setPiiStatsWorkspaceId}
-              />
-
-              <div className="flex flex-wrap items-center gap-3">
-                <StatsRangePicker value={piiStatsRange} onChange={setPiiStatsRange} />
-                <label className="flex items-center gap-2 ml-auto cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={showDismissedPii}
-                    onChange={e => setShowDismissedPii(e.target.checked)}
-                    className="accent-indigo-500"
-                  />
-                  <span className="text-[0.65rem] text-foreground/40">Show dismissed</span>
-                </label>
-              </div>
-
-              {piiCategoryCounts.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {piiCategoryCounts.map(([label, count]) => (
-                    <span
-                      key={label}
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-foreground/[0.04] border border-foreground/8 px-2.5 py-1 text-[0.68rem] text-foreground/55"
-                    >
-                      {label}
-                      <span className="font-mono font-semibold text-foreground/80 tabular-nums">{count}</span>
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {piiGroupedByDate.length === 0 ? (
-                <div className="rounded-2xl border border-foreground/8 bg-foreground/[0.03] px-6 py-14 text-center">
-                  <ShieldCheck className="size-8 text-foreground/15 mx-auto mb-3" aria-hidden />
-                  <p className="text-sm text-foreground/40">No detections recorded for this time range.</p>
-                </div>
-              ) : (
-                piiGroupedByDate.map(({ dayKey, label, items }) => (
-                  <section key={dayKey}>
-                    <div className="flex items-center gap-3 mb-3">
-                      <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground/45 shrink-0">{label}</h3>
-                      <div className="flex-1 h-px bg-foreground/[0.06]" />
-                      <span className="text-[0.65rem] text-foreground/25 tabular-nums">{items.length} event{items.length !== 1 ? "s" : ""}</span>
-                    </div>
-                    <ul className="space-y-2 border-l-2 border-foreground/[0.08] ml-2 pl-4">
-                      {items.map(({ entry, rec }) => {
-                        const isDismissed = dismissedPiiIds.has(rec.id);
-                        const ag = workspaceDisplay(workspaces, entry.workspaceId);
-                        return (
-                          <li
-                            key={rec.id}
-                            id={`pii-record-${rec.id}`}
-                            className={cn(
-                              "rounded-xl border px-4 py-3 space-y-2 scroll-mt-24 transition-shadow duration-500",
-                              highlightedPiiRecordId === rec.id && "ring-2 ring-indigo-500/60 shadow-lg shadow-indigo-500/10",
-                              isDismissed
-                                ? "bg-foreground/[0.02] border-foreground/[0.06] opacity-60"
-                                : "bg-foreground/[0.04] border-foreground/[0.08]",
-                            )}
-                          >
-                            <div className="flex items-center justify-between gap-2 flex-wrap">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="inline-flex items-center rounded-full bg-red-400/10 border border-red-400/20 px-2 py-0.5 text-[0.62rem] text-red-400/80 font-medium uppercase tracking-wider">
-                                  {categoryLabel(rec.category)}
-                                </span>
-                                {isDismissed && (
-                                  <span className="text-[0.6rem] text-foreground/30">Dismissed</span>
-                                )}
-                              </div>
-                              <div className="flex flex-col items-end gap-0.5 shrink-0">
-                                <span className="inline-flex items-center gap-1 text-[0.62rem] text-foreground/40">
-                                  {ag.emoji && <span aria-hidden>{ag.emoji}</span>}
-                                  {ag.name}
-                                </span>
-                                <span className="text-[0.65rem] text-foreground/30 tabular-nums">
-                                  {formatMsgTime(entry.at)}
-                                  {entry.source === "document"
-                                    ? ` · Document${entry.documentName ? `: ${entry.documentName}` : ""}`
-                                    : ` · Turn ${entry.turn}`}
-                                </span>
-                              </div>
-                            </div>
-                            <p className="text-[0.75rem] text-foreground/50 font-mono leading-relaxed break-all">{rec.context}</p>
-                            {(
-                              <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                                {!isDismissed && (
-                                  <button
-                                    type="button"
-                                    onClick={() => dismissPiiRecord(rec.id)}
-                                    className="text-[0.65rem] text-foreground/35 hover:text-foreground/60 transition-colors cursor-pointer"
-                                  >
-                                    Dismiss
-                                  </button>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => deletePiiRecord(rec.id)}
-                                  className="text-[0.65rem] text-red-400/50 hover:text-red-400/80 transition-colors cursor-pointer inline-flex items-center gap-1"
-                                >
-                                  <Trash2 className="size-3" aria-hidden />
-                                  Delete
-                                </button>
-                              </div>
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </section>
-                ))
-              )}
-
-              <div className="rounded-xl border border-foreground/8 bg-foreground/[0.02] px-4 py-3 text-[0.62rem] text-foreground/35 leading-relaxed">
-                <p className="text-foreground/50 font-medium mb-1">How detection works</p>
-                Client-side patterns scan messages before send and replace matches with placeholders
-                like <code className="font-mono text-foreground/45">[phone redacted]</code>.
-                Detected values are not stored. The scan can miss values — you still review content.
-                Reduce false positives with sensitivity tiers and safe terms in Settings.
-                Detected API keys and private-key blocks cannot be safe-listed.
-                Answers cite retrieved Knowledge as numbered sources when available.
-              </div>
             </div>
           </div>
 

@@ -748,7 +748,7 @@ export function SettingsHub({
               />
               <OverviewCard
                 title="Security"
-                description="Detected-data history, sensitivity, and safe terms. Risk reduction, not a guarantee."
+                description="Detection log (Dismiss / Delete), sensitivity, and safe terms. Risk reduction, not a guarantee."
                 stat={totalPiiActive > 0 ? `${totalPiiActive} active detections` : "No detections"}
                 accent="amber"
                 onClick={() => onOpenInsightsDashboard("security")}
@@ -865,6 +865,13 @@ export function SettingsHub({
                 <div className="mt-3">
                   <DetectionPolicyExplainer currentTier={piiSensitivity} safeTermCount={safeTerms.length} />
                 </div>
+                <button
+                  type="button"
+                  onClick={() => onOpenInsightsDashboard("security")}
+                  className="mt-3 text-[0.68rem] font-medium text-indigo-300/85 hover:text-indigo-200 cursor-pointer"
+                >
+                  Open detection log in Insights → Security
+                </button>
               </div>
 
               <SafeTermsSection
