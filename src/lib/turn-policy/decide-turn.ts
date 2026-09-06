@@ -34,7 +34,7 @@ const WORKSPACE_DEIXIS_RE =
 
 /** Knowledge already in the workspace, named without "our/uploaded knowledge". */
 const KNOWLEDGE_FILE_DEIXIS_RE =
-  /\b(?:tenancy|lease|rental)\s+(?:document|agreement|file)|(?:document|file|agreement|lease)\s+provided|(?:uploaded|attached)\s+(?:document|file|knowledge)|(?:document|file|pdf|attachment)\s+attached|about\s+(?:the|this|that)\s+(?:document|file|pdf|attachment|agreement)|(?:the|this|that)\s+(?:pdf|attachment)(?:\s|$|[?.!,])|(?:in|from)\s+(?:the\s+)?(?:knowledge|(?:your\s+)?memory)\b/i;
+  /\b(?:tenancy|lease|rental)\s+(?:document|agreement|file)|(?:document|file|agreement|lease)\s+provided|(?:uploaded|attached)\s+(?:document|file|knowledge)|(?:document|file|pdf|attachment)\s+attached|about\s+(?:the|this|that)\s+(?:document|file|pdf|attachment|agreement)|(?:in|inside|from|of)\s+(?:the|this|that)\s+(?:document|file|pdf|attachment|agreement)|(?:the|this|that)\s+(?:pdf|attachment)(?:\s|$|[?.!,])|(?:in|from)\s+(?:the\s+)?(?:knowledge|(?:your\s+)?memory)\b/i;
 
 const INVESTIGATION_RE =
   /\b(?:what\s+(?:caused|probably\s+caused)|why\s+did|root\s+cause|investigate|compare|what\s+should\s+we|which\s+(?:control|controls)|outage|failed|failure|authentication\s+fail|timeout|rollback|blast\s+radius)\b/i;
@@ -238,6 +238,19 @@ export function decideTurn(input: DecideTurnInput): TurnDecision {
       showSourcesUi: true,
       showGroundingBadge: true,
       responseStyle: isInvestigation ? "investigation" : "concise_fact",
+    });
+  }
+
+  if (input.priorTurnHadAttachments && body.length >= 8) {
+    return base("grounded_follow_up", "follow-up-prior-attachment", {
+      shouldRetrieve: true,
+      retrievalQuery: body,
+      sourceScope: "prior_sources",
+      requiresCitations: true,
+      requiresWorkspaceEvidence: false,
+      showSourcesUi: true,
+      showGroundingBadge: true,
+      responseStyle: "concise_fact",
     });
   }
 

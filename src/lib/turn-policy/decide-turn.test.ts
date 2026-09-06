@@ -108,6 +108,22 @@ describe("decideTurn matrix", () => {
     expect(d.mode).toBe("workspace_grounded");
   });
 
+  it("asks about emails inside that document retrieve Knowledge", () => {
+    const d = decideTurn({
+      message: "Do you have access to any of the email addresses inside that document?",
+    });
+    expect(d.shouldRetrieve).toBe(true);
+  });
+
+  it("follow-up after an attachment retrieves even without file deixis", () => {
+    const d = decideTurn({
+      message: "Could you confirm the main subjects mentioned?",
+      priorTurnHadAttachments: true,
+    });
+    expect(d.shouldRetrieve).toBe(true);
+    expect(d.mode).toBe("grounded_follow_up");
+  });
+
   it("follow-up that the answer is in memory retrieves Knowledge", () => {
     const d = decideTurn({
       message: "I already did. It should be in your memory",

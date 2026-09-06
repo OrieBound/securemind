@@ -39,26 +39,54 @@ export function estimateChatUsage(
 
 /**
  * Select the most recent messages that fit within a token budget.
- * Always includes the most recent messages and works backwards.
- *
- * @param messages  Full history array (oldest → newest)
- * @param budget    Max tokens for the working memory window (default 3000)
- * @returns         Slice of messages that fits within budget
+ * Attachment extracts are pinned first so a long first reply cannot drop the file
+ * on the next turn (the live message has the extract; history otherwise would not).
  */
 export function selectWorkingMemory(
   messages: { role: string; content: string }[],
   budget = 3000,
 ): { role: string; content: string }[] {
-  let used = 0;
-  const selected: { role: string; content: string }[] = [];
+  if (messages.length === 0 || budget <= 0) return [];
 
-  // Walk backwards from newest — always prioritize recent context
+  const isPinned = (m: { role: string; content: string }) =>
+    m.role === "user" && m.content.includes("[Attached document:");
+
+  const contents = messages.map(m => m.content);
+  const included = new Array(messages.length).fill(false);
+  let used = 0;
+
+  const pinBudget = Math.max(Math.floor(budget * 0.7), budget - 800);
+  const pinnedNewestFirst: number[] = [];
   for (let i = messages.length - 1; i >= 0; i--) {
-    const tokens = estimateTokens(messages[i].content);
-    if (used + tokens > budget) break;
+    if (isPinned(messages[i])) pinnedNewestFirst.push(i);
+  }
+  for (const i of pinnedNewestFirst.slice(0, 2)) {
+    const remaining = pinBudget - used;
+    if (remaining < 80) break;
+    const clipped = truncateToTokens(contents[i], remaining);
+    const tokens = estimateTokens(clipped);
+    if (tokens > remaining) break;
+    contents[i] = clipped;
     used += tokens;
-    selected.unshift(messages[i]);
+    included[i] = true;
   }
 
-  return selected;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (included[i]) continue;
+    const tokens = estimateTokens(contents[i]);
+    if (used + tokens > budget) continue;
+    used += tokens;
+    included[i] = true;
+  }
+
+  return messages.flatMap((m, i) =>
+    included[i] ? [{ role: m.role, content: contents[i] }] : [],
+  );
+}
+
+function truncateToTokens(text: string, maxTokens: number): string {
+  if (estimateTokens(text) <= maxTokens) return text;
+  const suffix = "\n…[truncated to fit this turn]";
+  const maxChars = Math.max(0, maxTokens * CHARS_PER_TOKEN - suffix.length);
+  return `${text.slice(0, maxChars)}${suffix}`;
 }

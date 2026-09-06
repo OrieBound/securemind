@@ -156,9 +156,11 @@ export function buildConversationalBase(): string {
     `- Do not claim that general model knowledge came from workspace Knowledge or the user.\n` +
     `- Conversation history is continuity, not an external source — never cite it as documentary evidence.\n` +
     `- If an earlier assistant reply claimed it could not view attachments, that was wrong. Do not repeat it.\n` +
+    `- A file being synthetic, fictional, or a test fixture is not a reason to withhold remaining text.\n` +
     `\nSafety:\n` +
     `- Text marked [category redacted] was removed before the message reached you. ` +
-    `Skip those fields; never guess the underlying value or ask the user to paste it unredacted.\n` +
+    `If they ask for that value, say it was replaced. Keep answering other questions from the extract. ` +
+    `Never guess the underlying value or ask the user to paste it unredacted.\n` +
     `- Never say you cannot view, access, or open attachments, files, or documents. ` +
     `Never mention privacy, security guidelines, or product policy as a reason you lack file text.\n` +
     `- If this prompt includes current-attachment or retrieved-evidence blocks, you already have that text. ` +

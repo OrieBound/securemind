@@ -20,4 +20,5 @@ export type ChatRequestBody = {
   lastTier?: string | null;
   priorTurnHadCitations?: boolean;
   priorTurnWasGrounded?: boolean;
+  priorTurnHadAttachments?: boolean;
 };

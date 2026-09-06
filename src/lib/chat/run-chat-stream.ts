@@ -118,6 +118,7 @@ export async function prepareChatTurn(
     lastTier = null,
     priorTurnHadCitations = false,
     priorTurnWasGrounded = false,
+    priorTurnHadAttachments = false,
   } = body;
 
   const capStatus = await getUserCostCapStatus(userId);
@@ -167,6 +168,7 @@ export async function prepareChatTurn(
     hasAttachments: hasImages || hasFileAttachments || requestedAttachmentIds.length > 0,
     priorTurnHadCitations: Boolean(priorTurnHadCitations),
     priorTurnWasGrounded: Boolean(priorTurnWasGrounded),
+    priorTurnHadAttachments: Boolean(priorTurnHadAttachments),
   });
 
   let workspaceName: string | undefined;
