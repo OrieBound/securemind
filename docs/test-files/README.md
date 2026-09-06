@@ -21,10 +21,10 @@ Values intentionally include PII-shaped data, payment-card test numbers, AWS/Git
 
 Detection follows `src/lib/pii.ts` and the instance default (`balanced` + `DEFAULT_SAFE_TERMS`). That means:
 
-- Email, SSN, Luhn-valid cards, phones, public IPv4, and high-signal secrets **are** redacted.
-- RFC1918 addresses are **safe-listed** by default.
+- Email, SSN, Luhn-valid cards, phones, public IPv4, street addresses, and high-signal secrets **are** redacted.
+- RFC1918 addresses are **safe-listed** by default. RFC 2606 `example.com` / `.org` / `.net` mailboxes are **not** exempted.
 - Dates of birth, names, bank routing numbers, and ordinary passwords are **not** pattern families at balanced — they are control/negative examples, not missing-feature bugs.
-- Street addresses require **high** sensitivity.
+- Passport / national ID patterns require **high** sensitivity.
 
 There is **no restore path**. Tests assert that the sanitized form is what would be persisted or sent to a model.
 

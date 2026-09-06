@@ -40,6 +40,7 @@ export const MUST_REDACT_BALANCED = [
   SYNTH.publicIp,
   SYNTH.awsKey,
   SYNTH.githubPat,
+  SYNTH.street,
 ] as const;
 
 /** Harmless / out-of-policy strings that must survive balanced scrub. */
@@ -59,7 +60,7 @@ export const EXPECTED_FINDINGS = {
   files: {
     "customer-case.docx": {
       format: "docx",
-      expectCategories: ["email", "SSN", "phone", "secret"],
+      expectCategories: ["email", "SSN", "phone", "secret", "address"],
       location: "paragraph / document body",
     },
     "service-agreement.pdf": {
@@ -182,7 +183,7 @@ export function buildCustomerCaseDocx(): Buffer {
     `Repeat contact for consistency check: ${SYNTH.emailRepeat}`,
     `AWS access key id quoted in ticket: ${SYNTH.awsKey}`,
     `Date of birth (not a detection family at balanced): ${SYNTH.dob}`,
-    `Ship-to note at high sensitivity: ${SYNTH.street}`,
+    `Ship-to note (street address at balanced): ${SYNTH.street}`,
     SYNTH.controlProse,
     `Control ticket ${SYNTH.ticketId} closed after review.`,
   ];

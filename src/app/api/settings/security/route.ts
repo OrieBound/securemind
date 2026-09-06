@@ -7,10 +7,10 @@ import {
   applySecurityPolicy,
   clearPendingProposal,
   getSecurityPolicy,
-  isPiiSensitivityTier,
   normalizeSafeTermsInput,
   proposeSecurityPolicy,
 } from "@/lib/security-policy";
+import { parsePiiSensitivityTier } from "@/lib/pii";
 
 export async function GET(req: NextRequest) {
   try {
@@ -46,7 +46,8 @@ export async function PUT(req: NextRequest) {
       return Response.json({ ...policy, canEdit: true });
     }
 
-    if (!isPiiSensitivityTier(body.piiSensitivity)) {
+    const piiSensitivity = parsePiiSensitivityTier(body.piiSensitivity);
+    if (!piiSensitivity) {
       return Response.json({ error: "Invalid piiSensitivity" }, { status: 422 });
     }
 
@@ -60,7 +61,7 @@ export async function PUT(req: NextRequest) {
 
     const result = await applySecurityPolicy({
       actorUserId: identity.userId,
-      piiSensitivity: body.piiSensitivity,
+      piiSensitivity,
       safeTerms,
     });
     return Response.json({
@@ -85,7 +86,8 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    if (!isPiiSensitivityTier(body.piiSensitivity)) {
+    const piiSensitivity = parsePiiSensitivityTier(body.piiSensitivity);
+    if (!piiSensitivity) {
       return Response.json({ error: "Invalid piiSensitivity" }, { status: 422 });
     }
     const termsRaw =
@@ -96,7 +98,7 @@ export async function POST(req: NextRequest) {
 
     const policy = await proposeSecurityPolicy({
       actorUserId: identity.userId,
-      piiSensitivity: body.piiSensitivity,
+      piiSensitivity,
       safeTerms: Array.isArray(termsRaw) ? termsRaw : undefined,
       note: typeof body.note === "string" ? body.note : undefined,
     });

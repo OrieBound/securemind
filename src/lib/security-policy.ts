@@ -14,20 +14,22 @@ import { isHostedRuntime } from "@/lib/runtime-env";
 import {
   DEFAULT_SAFE_TERMS,
   DEFAULT_SENSITIVITY,
+  isRetiredRfc2606SafeDomain,
+  omitRetiredDefaultSafeTerms,
+  parsePiiSensitivityTier,
+  SENSITIVITY_TIERS,
   validateSafeTerm,
   type PiiSensitivityTier,
   type SafeTerm,
   type SafeTermKind,
 } from "@/lib/pii";
 
-const TIERS: PiiSensitivityTier[] = ["low", "balanced", "high", "extreme"];
-
 export function isPiiSensitivityTier(v: unknown): v is PiiSensitivityTier {
-  return typeof v === "string" && (TIERS as string[]).includes(v);
+  return parsePiiSensitivityTier(v) !== null;
 }
 
 export function tierRank(tier: PiiSensitivityTier): number {
-  return TIERS.indexOf(tier);
+  return SENSITIVITY_TIERS.indexOf(tier);
 }
 
 export function isStricterTier(next: PiiSensitivityTier, current: PiiSensitivityTier): boolean {
@@ -52,14 +54,15 @@ function parseSafeTerms(raw: unknown): SafeTerm[] {
       label: typeof r.label === "string" ? r.label : undefined,
     });
   }
-  return out;
+  return omitRetiredDefaultSafeTerms(out);
 }
 
-/** Defaults + instance exemptions (instance wins on id collision by appending). */
+/** Defaults + instance exemptions (instance wins on id collision by appending).
+ *  Retired RFC 2606 example.* terms are dropped even if still stored. */
 export function mergeSafeTerms(instance: SafeTerm[]): SafeTerm[] {
   const seen = new Set<string>();
   const out: SafeTerm[] = [];
-  for (const t of [...DEFAULT_SAFE_TERMS, ...instance]) {
+  for (const t of omitRetiredDefaultSafeTerms([...DEFAULT_SAFE_TERMS, ...instance])) {
     const key = `${t.kind}:${t.value.toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -86,13 +89,9 @@ export type SecurityPolicyPublic = {
 export async function getSecurityPolicy(): Promise<SecurityPolicyPublic> {
   await ensureInstanceConfig();
   const row = await getInstanceConfig();
-  const piiSensitivity = isPiiSensitivityTier(row?.piiSensitivity)
-    ? row!.piiSensitivity
-    : DEFAULT_SENSITIVITY;
+  const piiSensitivity = parsePiiSensitivityTier(row?.piiSensitivity) ?? DEFAULT_SENSITIVITY;
   const safeTerms = parseSafeTerms(row?.safeTerms);
-  const pendingTier = isPiiSensitivityTier(row?.pendingPiiSensitivity)
-    ? row!.pendingPiiSensitivity
-    : null;
+  const pendingTier = parsePiiSensitivityTier(row?.pendingPiiSensitivity);
   const pendingTerms = row?.pendingSafeTerms != null ? parseSafeTerms(row.pendingSafeTerms) : null;
 
   return {
@@ -226,6 +225,7 @@ export function normalizeSafeTermsInput(raw: unknown): SafeTerm[] | { error: str
     const r = item as Record<string, unknown>;
     const kind = r.kind as SafeTermKind;
     const value = typeof r.value === "string" ? r.value : "";
+    if (kind === "domain" && isRetiredRfc2606SafeDomain(value)) continue;
     const check = validateSafeTerm(value, kind);
     if (!check.ok) return { error: check.reason };
     out.push({
