@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, useEffect, type ReactNode } from "react";
 import { ArrowLeft, Shield } from "lucide-react";
 import type { AnalyticsRange } from "@/lib/analytics/types";
+import { COST_SECTION_HREF, costPageSection } from "@/lib/analytics/cost-hash";
+import { USAGE_SECTION_HREF, usagePageSection } from "@/lib/analytics/usage-hash";
 
 export type AnalyticsTab = "security" | "usage" | "cost";
 
@@ -27,8 +29,10 @@ type Props = {
   extraFilters?: ReactNode;
   /** Hide date/workspace filters (Policy tab has no time series). */
   hideScopeFilters?: boolean;
-  /** In-page section tabs (Policy / Detection log / Charts). */
+  /** In-page section tabs (Policy / Detection log / Charts, or Cost/Usage splits). */
   sectionLinks?: { href: string; label: string }[];
+  /** Accessible name for the in-page tablist. */
+  sectionTablistLabel?: string;
   /** Which section tab is current — Policy is the Security default. */
   activeSectionHref?: string;
   onSectionTab?: (href: string) => void;
@@ -51,6 +55,16 @@ const RANGE_OPTS: { id: AnalyticsRange; label: string }[] = [
   { id: "all", label: "All time" },
 ];
 
+const COST_SECTION_LINKS = [
+  { href: COST_SECTION_HREF.estimates, label: "Estimates" },
+  { href: COST_SECTION_HREF.charts, label: "Charts" },
+];
+
+const USAGE_SECTION_LINKS = [
+  { href: USAGE_SECTION_HREF.overview, label: "Overview" },
+  { href: USAGE_SECTION_HREF.charts, label: "Charts" },
+];
+
 function tabHref(path: string, subject?: InsightsSubjectScope | null) {
   if (!subject?.userId) return path;
   const params = new URLSearchParams({ asUser: subject.userId });
@@ -70,12 +84,42 @@ export function AnalyticsShell({
   extraFilters,
   hideScopeFilters = false,
   sectionLinks,
+  sectionTablistLabel,
   activeSectionHref,
   onSectionTab,
   children,
   subject = null,
   onBackToAdmin,
 }: Props) {
+  const { locationHash, selectSectionTab } = useSectionHash();
+  const resolvedSectionLinks = useMemo(() => {
+    if (sectionLinks && sectionLinks.length > 0) return sectionLinks;
+    if (active === "cost") return COST_SECTION_LINKS;
+    if (active === "usage") return USAGE_SECTION_LINKS;
+    return undefined;
+  }, [sectionLinks, active]);
+  const resolvedActiveHref = useMemo(() => {
+    if (activeSectionHref) return activeSectionHref;
+    if (active === "cost") {
+      return costPageSection(locationHash) === "charts"
+        ? COST_SECTION_HREF.charts
+        : COST_SECTION_HREF.estimates;
+    }
+    if (active === "usage") {
+      return usagePageSection(locationHash) === "charts"
+        ? USAGE_SECTION_HREF.charts
+        : USAGE_SECTION_HREF.overview;
+    }
+    return resolvedSectionLinks?.[0]?.href;
+  }, [activeSectionHref, active, locationHash, resolvedSectionLinks]);
+  const resolvedTablistLabel =
+    sectionTablistLabel
+    ?? (active === "cost" ? "Cost sections" : active === "usage" ? "Usage sections" : "Page sections");
+  const handleSectionTab = (href: string) => {
+    selectSectionTab(href);
+    onSectionTab?.(href);
+  };
+
   const workspaceLabel = useMemo(() => {
     if (workspaceId === "all") return "All workspaces";
     return workspaces.find(w => w.id === workspaceId)?.name ?? "Workspace";
@@ -157,23 +201,23 @@ export function AnalyticsShell({
             {subject ? `${title} · ${subject.label}` : title}
           </h1>
           <p className="text-sm text-muted-foreground mt-1 max-w-3xl">{subtitle}</p>
-          {sectionLinks && sectionLinks.length > 0 && (
+          {resolvedSectionLinks && resolvedSectionLinks.length > 0 && (
             <nav
               role="tablist"
-              aria-label="Security sections"
+              aria-label={resolvedTablistLabel}
               className="mt-4 flex w-full max-w-2xl rounded-xl border border-border bg-muted p-1.5 gap-1"
             >
-              {sectionLinks.map(link => {
-                const active = (activeSectionHref ?? sectionLinks[0]?.href) === link.href;
+              {resolvedSectionLinks.map(link => {
+                const tabActive = (resolvedActiveHref ?? resolvedSectionLinks[0]?.href) === link.href;
                 return (
                   <button
                     key={link.href}
                     type="button"
                     role="tab"
-                    aria-selected={active}
-                    onClick={() => onSectionTab?.(link.href)}
+                    aria-selected={tabActive}
+                    onClick={() => handleSectionTab(link.href)}
                     className={
-                      active
+                      tabActive
                         ? "flex-1 rounded-lg bg-card px-4 py-2.5 text-sm font-semibold text-[var(--primary-soft-foreground)] shadow-[var(--shadow-sm)] ring-1 ring-[var(--primary-border)] cursor-pointer"
                         : "flex-1 rounded-lg px-4 py-2.5 text-sm font-medium text-muted-foreground hover:bg-[var(--surface-hover)] hover:text-foreground cursor-pointer"
                     }
@@ -241,4 +285,30 @@ export function useAnalyticsFilters(defaultRange: AnalyticsRange = "30d") {
 
 export function rangeLabelOf(range: AnalyticsRange): string {
   return RANGE_OPTS.find(r => r.id === range)?.label ?? range;
+}
+
+/** Hash-backed in-page tabs (Cost Estimates/Charts, Usage Overview/Charts). */
+export function useSectionHash() {
+  const [locationHash, setLocationHash] = useState(() =>
+    typeof window === "undefined" ? "" : window.location.hash,
+  );
+
+  useEffect(() => {
+    const read = () => setLocationHash(window.location.hash);
+    read();
+    window.addEventListener("hashchange", read);
+    window.addEventListener("popstate", read);
+    return () => {
+      window.removeEventListener("hashchange", read);
+      window.removeEventListener("popstate", read);
+    };
+  }, []);
+
+  const selectSectionTab = (href: string) => {
+    const url = `${window.location.pathname}${window.location.search}${href}`;
+    window.history.pushState(null, "", url);
+    setLocationHash(href);
+  };
+
+  return { locationHash, selectSectionTab };
 }

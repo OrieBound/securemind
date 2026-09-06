@@ -16,6 +16,7 @@ import {
   AnalyticsShell,
   rangeLabelOf,
   useAnalyticsFilters,
+  useSectionHash,
   type InsightsSubjectScope,
 } from "./analytics-shell";
 import { ChartFrame } from "./chart-frame";
@@ -23,6 +24,7 @@ import { tooltipStyle, useChartTheme } from "./use-chart-theme";
 import { KpiCard } from "./kpi-card";
 import { fmtPct, shortModel } from "@/lib/analytics/client";
 import { useAnalyticsQuery } from "./use-analytics-query";
+import { USAGE_SECTION_HREF, usagePageSection } from "@/lib/analytics/usage-hash";
 
 type WorkspaceOpt = { id: string; name: string };
 
@@ -55,6 +57,8 @@ type Props = {
 export function UsageAnalyticsView({ workspaces, subject = null, onBackToAdmin }: Props) {
   const chart = useChartTheme();
   const { range, setRange, workspaceId, setWorkspaceId } = useAnalyticsFilters("30d");
+  const { locationHash, selectSectionTab } = useSectionHash();
+  const pageSection = usagePageSection(locationHash);
   const asUser = subject?.userId ?? null;
   const { data, loading, error, retry } = useAnalyticsQuery<UsagePayload>("usage", {
     range,
@@ -79,7 +83,7 @@ export function UsageAnalyticsView({ workspaces, subject = null, onBackToAdmin }
     <AnalyticsShell
       active="usage"
       title="Usage"
-      subtitle="SecureMind and AI activity — requests, tokens, routing, grounding. Refreshes about every 15 seconds while this page is open. Not AWS infrastructure consumption."
+      subtitle="Request totals and by-workspace on Overview; volume, routing, and grounding charts on Charts. Refreshes about every 15 seconds. Not AWS infrastructure consumption."
       workspaces={workspaces}
       range={range}
       workspaceId={workspaceId}
@@ -87,6 +91,15 @@ export function UsageAnalyticsView({ workspaces, subject = null, onBackToAdmin }
       onWorkspaceChange={setWorkspaceId}
       subject={subject}
       onBackToAdmin={onBackToAdmin}
+      sectionTablistLabel="Usage sections"
+      sectionLinks={[
+        { href: USAGE_SECTION_HREF.overview, label: "Overview" },
+        { href: USAGE_SECTION_HREF.charts, label: "Charts" },
+      ]}
+      activeSectionHref={
+        pageSection === "charts" ? USAGE_SECTION_HREF.charts : USAGE_SECTION_HREF.overview
+      }
+      onSectionTab={selectSectionTab}
     >
       {error && (
         <div className="flex items-center gap-3 text-sm text-destructive">
@@ -96,6 +109,9 @@ export function UsageAnalyticsView({ workspaces, subject = null, onBackToAdmin }
           </button>
         </div>
       )}
+
+      {pageSection === "overview" && (
+      <div id="usage-overview" role="tabpanel" className="space-y-5">
       <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
         <KpiCard label="AI requests" value={loading ? "…" : String(data?.kpis.totalRequests ?? 0)} />
         <KpiCard label="Input tokens" value={loading ? "…" : String(data?.kpis.promptTokens ?? 0)} />
@@ -110,6 +126,41 @@ export function UsageAnalyticsView({ workspaces, subject = null, onBackToAdmin }
         <KpiCard label="Most-used model" value={loading ? "…" : shortModel(data?.kpis.topModel)} />
       </div>
 
+      <section className="rounded-xl border border-foreground/10 bg-foreground/[0.03] p-4 sm:p-5">
+        <h3 className="text-sm font-semibold text-foreground/90 mb-3">By workspace</h3>
+        {!loading && (data?.byWorkspace.length ?? 0) === 0 && (
+          <p className="text-sm text-foreground/35">No usage events yet. Ask a question in Chat to start recording.</p>
+        )}
+        {(data?.byWorkspace.length ?? 0) > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left">
+              <thead>
+                <tr className="text-foreground/40 border-b border-foreground/10">
+                  <th className="py-2 pr-3">Workspace</th>
+                  <th className="py-2 pr-3">Requests</th>
+                  <th className="py-2 pr-3">Input tokens</th>
+                  <th className="py-2">Output tokens</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(data?.byWorkspace ?? []).map(r => (
+                  <tr key={r.workspaceId} className="border-b border-foreground/5 text-foreground/70">
+                    <td className="py-2 pr-3">{r.name}</td>
+                    <td className="py-2 pr-3 tabular-nums">{r.requests}</td>
+                    <td className="py-2 pr-3 tabular-nums">{r.prompt}</td>
+                    <td className="py-2 tabular-nums">{r.completion}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      </div>
+      )}
+
+      {pageSection === "charts" && (
+      <div id="usage-charts" role="tabpanel" className="space-y-5">
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <ChartFrame
           title="Request volume over time"
@@ -253,37 +304,8 @@ export function UsageAnalyticsView({ workspaces, subject = null, onBackToAdmin }
           </ResponsiveContainer>
         </ChartFrame>
       </div>
-
-      <section className="rounded-xl border border-foreground/10 bg-foreground/[0.03] p-4 sm:p-5">
-        <h3 className="text-sm font-semibold text-foreground/90 mb-3">By workspace</h3>
-        {!loading && (data?.byWorkspace.length ?? 0) === 0 && (
-          <p className="text-sm text-foreground/35">No usage events yet. Ask a question in Chat to start recording.</p>
-        )}
-        {(data?.byWorkspace.length ?? 0) > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead>
-                <tr className="text-foreground/40 border-b border-foreground/10">
-                  <th className="py-2 pr-3">Workspace</th>
-                  <th className="py-2 pr-3">Requests</th>
-                  <th className="py-2 pr-3">Input tokens</th>
-                  <th className="py-2">Output tokens</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data?.byWorkspace ?? []).map(r => (
-                  <tr key={r.workspaceId} className="border-b border-foreground/5 text-foreground/70">
-                    <td className="py-2 pr-3">{r.name}</td>
-                    <td className="py-2 pr-3 tabular-nums">{r.requests}</td>
-                    <td className="py-2 pr-3 tabular-nums">{r.prompt}</td>
-                    <td className="py-2 tabular-nums">{r.completion}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+      </div>
+      )}
     </AnalyticsShell>
   );
 }
