@@ -8,7 +8,7 @@
 
 import { builtinChatModels } from "./router";
 import { getModelCatalogCached } from "./catalog";
-import { BEDROCK_TEXT_MODELS, isChatUsableModelId } from "./catalog-shared";
+import { BEDROCK_TEXT_MODELS, isBedrockRestrictedAccessId, isChatUsableModelId } from "./catalog-shared";
 import type { ModelProvider } from "./types";
 
 export type AllowedModel = {
@@ -25,6 +25,7 @@ export async function resolveAllowedModel(
 ): Promise<AllowedModel | null> {
   const id = requested?.trim();
   if (!id) return null;
+  if (isBedrockRestrictedAccessId(id) || !isChatUsableModelId(id)) return null;
 
   const builtins = builtinChatModels();
   const builtinProvider = builtins.get(id);
@@ -46,7 +47,7 @@ export async function resolveAllowedModel(
       catalog.openai.find(m => m.id === id) ??
       catalog.anthropic.find(m => m.id === id) ??
       catalog.google.find(m => m.id === id);
-    if (hit && hit.modality !== "other" && isChatUsableModelId(hit.id)) {
+    if (hit && hit.modality !== "other" && isChatUsableModelId(hit.id) && hit.access !== "needs_enablement") {
       return { model: hit.id, provider: hit.provider };
     }
   } catch {

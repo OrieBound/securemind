@@ -17,6 +17,16 @@ describe("isChatUsableModelId", () => {
     expect(isChatUsableModelId("gemini-3.1-pro-preview")).toBe(true);
   });
 
+  it("omits Bedrock models that AWS does not open to every account", () => {
+    expect(isChatUsableModelId("anthropic.claude-opus-5")).toBe(false);
+    expect(isChatUsableModelId("us.anthropic.claude-opus-5")).toBe(false);
+    expect(isChatUsableModelId("global.anthropic.claude-opus-5")).toBe(false);
+    expect(isChatUsableModelId("anthropic.claude-mythos-preview")).toBe(false);
+    expect(isChatUsableModelId("us.anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe(true);
+    expect(isChatUsableModelId("anthropic.claude-opus-4-6")).toBe(true);
+    expect(isChatUsableModelId("us.anthropic.claude-opus-4-5-20251101-v1:0")).toBe(true);
+  });
+
   it("rejects TTS, embeddings, image, guard, and retired Gemini 2.5 Flash/Pro", () => {
     expect(isChatUsableModelId("canopylabs/orpheus-v1-english")).toBe(false);
     expect(isChatUsableModelId("whisper-large-v3")).toBe(false);
@@ -131,7 +141,7 @@ describe("formatBedrockCatalogError", () => {
     const msg = formatBedrockCatalogError(err, "cloud");
     expect(msg).toContain("AccessDeniedException");
     expect(msg).toMatch(/do not create an IAM role by hand/i);
-    expect(msg).toMatch(/Model access/i);
+    expect(msg).toMatch(/Model catalog/i);
     expect(msg).toMatch(/Lambda/i);
   });
 

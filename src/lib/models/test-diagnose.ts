@@ -6,6 +6,8 @@
  * that first so we do not tell the operator to fix a role that already works.
  */
 
+import { BEDROCK_NOT_ENTITLED_REMEDIATION } from "./catalog-shared";
+
 export type ModelTestDiagnosis = {
   code: string;
   message: string;
@@ -27,7 +29,7 @@ export function diagnoseModelTestError(
       message: raw,
       remediation:
         provider === "bedrock"
-          ? "AWS listed this id, but this account cannot invoke it — it may need a Marketplace agreement, AWS Sales access, or is not generally available yet. That is not an IAM role problem; Tests that already succeeded used the same role. Pick a model that Tested OK."
+          ? BEDROCK_NOT_ENTITLED_REMEDIATION
           : "This model is not available on this API key or plan.",
     };
   }

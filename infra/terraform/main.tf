@@ -97,22 +97,22 @@ module "secrets" {
 }
 
 module "api" {
-  source               = "./modules/api"
-  env_name             = var.env_name
-  allowed_origin       = var.allowed_origin
-  chat_zip_path        = local.chat_zip
-  warm_zip_path        = local.warm_zip
-  fragments_table_name = module.data_dynamodb.table_name
-  fragments_table_arn  = module.data_dynamodb.table_arn
-  fragments_secret_arn = module.secrets.fragments_table_secret_arn
-  groq_secret_arn      = module.secrets.groq_secret_arn
+  source                 = "./modules/api"
+  env_name               = var.env_name
+  allowed_origin         = var.allowed_origin
+  chat_zip_path          = local.chat_zip
+  warm_zip_path          = local.warm_zip
+  fragments_table_name   = module.data_dynamodb.table_name
+  fragments_table_arn    = module.data_dynamodb.table_arn
+  fragments_secret_arn   = module.secrets.fragments_table_secret_arn
+  groq_secret_arn        = module.secrets.groq_secret_arn
   vendor_keys_secret_arn = module.secrets.vendor_keys_secret_arn
-  auth_mode            = var.auth_mode
-  cognito_user_pool_id = module.auth_cognito.user_pool_id
-  cognito_client_id    = module.auth_cognito.client_id
-  cognito_region       = var.aws_region
-  cognito_issuer       = module.auth_cognito.issuer
-  embed_dimensions     = tostring(var.embed_dimensions)
+  auth_mode              = var.auth_mode
+  cognito_user_pool_id   = module.auth_cognito.user_pool_id
+  cognito_client_id      = module.auth_cognito.client_id
+  cognito_region         = var.aws_region
+  cognito_issuer         = module.auth_cognito.issuer
+  embed_dimensions       = tostring(var.embed_dimensions)
 }
 
 module "amplify" {
@@ -130,7 +130,6 @@ module "amplify" {
   fragments_table_arn    = module.data_dynamodb.table_arn
   vendor_keys_secret_arn = module.secrets.vendor_keys_secret_arn
   avatar_s3_bucket_name  = module.api.avatar_bucket_name
-  avatar_s3_bucket_arn   = module.api.avatar_bucket_arn
 }
 
 output "api_base_url" {

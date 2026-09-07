@@ -34,6 +34,7 @@ resource "aws_iam_policy" "bedrock_lab" {
           "bedrock:InvokeModelWithResponseStream",
           "bedrock:ListFoundationModels",
           "bedrock:GetFoundationModel",
+          "bedrock:GetFoundationModelAvailability",
           "bedrock:ListInferenceProfiles",
         ]
         Resource = "*"

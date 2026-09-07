@@ -176,6 +176,8 @@ resource "aws_iam_role_policy" "lambda" {
             "bedrock:InvokeModel",
             "bedrock:InvokeModelWithResponseStream",
             "bedrock:ListFoundationModels",
+            "bedrock:GetFoundationModel",
+            "bedrock:GetFoundationModelAvailability",
             "bedrock:ListInferenceProfiles",
           ]
           Resource = "*"
@@ -207,12 +209,12 @@ resource "aws_iam_role_policy" "lambda" {
             "s3:PutObject",
             "s3:DeleteObject",
           ]
-          Resource = "${aws_s3_bucket.avatars.arn}/*"
+          Resource = "arn:aws:s3:::${aws_s3_bucket.avatars.bucket}/*"
         },
         {
           Effect   = "Allow"
           Action   = ["s3:ListBucket"]
-          Resource = aws_s3_bucket.avatars.arn
+          Resource = "arn:aws:s3:::${aws_s3_bucket.avatars.bucket}"
         },
       ],
     )

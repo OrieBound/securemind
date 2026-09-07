@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyBedrockAvailability,
+  classifyBedrockAccess,
   foundationModelIdFromArn,
   isBedrockModelAvailable,
   selectInvocableBedrockModels,
@@ -128,7 +129,7 @@ describe("bedrock-catalog", () => {
     ).toBe(true);
   });
 
-  it("drops models the availability probe says this account cannot use", () => {
+  it("keeps un-enabled models in the catalog flagged for Settings, and omits ready-only drops", () => {
     const candidates = selectInvocableBedrockModels(
       [
         {
@@ -168,9 +169,115 @@ describe("bedrock-catalog", () => {
         },
       ],
     ] as const);
-    expect(applyBedrockAvailability(candidates, new Map(availability)).map(m => m.id)).toEqual([
-      "amazon.nova-micro-v1:0",
-    ]);
+    const listed = applyBedrockAvailability(candidates, new Map(availability));
+    expect(listed.map(m => m.id)).toEqual(["amazon.nova-micro-v1:0", "anthropic.claude-sonnet-5"]);
+    expect(listed.find(m => m.id === "anthropic.claude-sonnet-5")?.access).toBe("needs_enablement");
+    expect(listed.find(m => m.id === "amazon.nova-micro-v1:0")?.access).toBeUndefined();
+  });
+
+  it("omits models that are not offered in this region", () => {
+    const candidates = selectInvocableBedrockModels(
+      [
+        {
+          modelId: "anthropic.claude-v2",
+          responseStreamingSupported: true,
+          inferenceTypesSupported: ["ON_DEMAND"],
+          modelLifecycle: { status: "ACTIVE" },
+        },
+      ],
+      [],
+    );
+    const listed = applyBedrockAvailability(
+      candidates,
+      new Map([
+        [
+          "anthropic.claude-v2",
+          {
+            authorizationStatus: "AUTHORIZED",
+            entitlementAvailability: "AVAILABLE",
+            regionAvailability: "NOT_AVAILABLE",
+          },
+        ],
+      ]),
+    );
+    expect(listed).toEqual([]);
+  });
+
+  it("flags a pending model-access agreement as needs enablement", () => {
+    expect(
+      classifyBedrockAccess({
+        authorizationStatus: "AUTHORIZED",
+        entitlementAvailability: "AVAILABLE",
+        regionAvailability: "AVAILABLE",
+        agreementStatus: "PENDING",
+      }),
+    ).toBe("needs_enablement");
+  });
+
+  it("omits Opus 5 even when availability reports ready", () => {
+    const candidates = selectInvocableBedrockModels(
+      [
+        {
+          modelId: "anthropic.claude-opus-5",
+          modelName: "Claude Opus 5",
+          providerName: "Anthropic",
+          responseStreamingSupported: true,
+          inferenceTypesSupported: ["ON_DEMAND"],
+          modelLifecycle: { status: "ACTIVE" },
+        },
+        {
+          modelId: "amazon.nova-micro-v1:0",
+          responseStreamingSupported: true,
+          inferenceTypesSupported: ["ON_DEMAND"],
+          modelLifecycle: { status: "ACTIVE" },
+        },
+      ],
+      [],
+    );
+    expect(candidates.map(c => c.model.id)).toEqual(["amazon.nova-micro-v1:0"]);
+    const listed = applyBedrockAvailability(
+      [
+        {
+          foundationModelId: "anthropic.claude-opus-5",
+          model: {
+            id: "us.anthropic.claude-opus-5",
+            name: "Claude Opus 5",
+            provider: "bedrock",
+            modality: "text",
+          },
+        },
+        {
+          foundationModelId: "amazon.nova-micro-v1:0",
+          model: {
+            id: "amazon.nova-micro-v1:0",
+            name: "Nova Micro",
+            provider: "bedrock",
+            modality: "text",
+          },
+        },
+      ],
+      new Map([
+        [
+          "anthropic.claude-opus-5",
+          {
+            authorizationStatus: "AUTHORIZED",
+            entitlementAvailability: "AVAILABLE",
+            regionAvailability: "AVAILABLE",
+            agreementStatus: "AVAILABLE",
+          },
+        ],
+        [
+          "amazon.nova-micro-v1:0",
+          {
+            authorizationStatus: "AUTHORIZED",
+            entitlementAvailability: "AVAILABLE",
+            regionAvailability: "AVAILABLE",
+            agreementStatus: "AVAILABLE",
+          },
+        ],
+      ]),
+    );
+    expect(listed.map(m => m.id)).toEqual(["amazon.nova-micro-v1:0"]);
   });
 
   it("keeps models when availability was not probed", () => {

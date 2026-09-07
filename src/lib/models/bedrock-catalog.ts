@@ -7,7 +7,12 @@
  * inference-profile ids when those exist. No invoke, no per-model probe.
  */
 
-import { isChatUsableModelId, type CatalogModel } from "./catalog-shared";
+import {
+  isChatUsableModelId,
+  isBedrockRestrictedAccessId,
+  BEDROCK_ENABLE_IN_CONSOLE_NOTE,
+  type CatalogModel,
+} from "./catalog-shared";
 
 export type BedrockFoundationSummary = {
   modelId?: string;
@@ -47,13 +52,27 @@ export function foundationModelIdFromArn(arn: string): string | null {
   return id || null;
 }
 
+/**
+ * Ready = this account can invoke it.
+ * Needs enablement = listed for the region, but Model catalog / agreement is off.
+ * Omit = retired, wrong region, or IAM-blocked — never show.
+ */
+export function classifyBedrockAccess(
+  a: BedrockAvailability | "unknown" | undefined,
+): "ready" | "needs_enablement" | "omit" {
+  if (!a || a === "unknown") return "ready";
+  if (a.regionAvailability === "NOT_AVAILABLE") return "omit";
+  if (a.authorizationStatus === "NOT_AUTHORIZED") return "omit";
+  if (a.agreementStatus === "PENDING" || a.agreementStatus === "NOT_AVAILABLE") {
+    return "needs_enablement";
+  }
+  if (a.entitlementAvailability === "NOT_AVAILABLE") return "needs_enablement";
+  return "ready";
+}
+
 /** True when Bedrock says this account can use the foundation model in-region. */
 export function isBedrockModelAvailable(a: BedrockAvailability): boolean {
-  if (a.regionAvailability === "NOT_AVAILABLE") return false;
-  if (a.entitlementAvailability === "NOT_AVAILABLE") return false;
-  if (a.authorizationStatus === "NOT_AUTHORIZED") return false;
-  if (a.agreementStatus === "NOT_AVAILABLE" || a.agreementStatus === "PENDING") return false;
-  return true;
+  return classifyBedrockAccess(a) === "ready";
 }
 
 export function applyBedrockAvailability(
@@ -64,12 +83,31 @@ export function applyBedrockAvailability(
   const seen = new Set<string>();
   for (const c of candidates) {
     if (seen.has(c.model.id)) continue;
+    if (
+      isBedrockRestrictedAccessId(c.model.id)
+      || isBedrockRestrictedAccessId(c.foundationModelId)
+    ) {
+      continue;
+    }
     const probed = availabilityByFoundationId.get(c.foundationModelId);
-    if (probed && probed !== "unknown" && !isBedrockModelAvailable(probed)) continue;
+    const kind = classifyBedrockAccess(probed);
+    if (kind === "omit") continue;
     seen.add(c.model.id);
-    models.push(c.model);
+    if (kind === "needs_enablement") {
+      models.push({
+        ...c.model,
+        access: "needs_enablement",
+        note: BEDROCK_ENABLE_IN_CONSOLE_NOTE,
+      });
+    } else {
+      models.push(c.model);
+    }
   }
   return models.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function uniqueFoundationModelIds(candidates: BedrockCatalogCandidate[]): string[] {
+  return [...new Set(candidates.map(c => c.foundationModelId).filter(Boolean))].sort();
 }
 
 /**

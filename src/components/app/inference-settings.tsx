@@ -7,6 +7,7 @@ import { SelectMenu } from "@/components/ui/select-menu";
 import {
   ModelPickerList,
   buildChatPickerModels,
+  buildSettingsCatalogModels,
   chatSelectableModels,
   useModelCatalog,
   useModelTester,
@@ -395,8 +396,7 @@ export function InferenceSettings(props: Props) {
   const selectedKey = keys.find(k => k.id === selectedKeyId) ?? null;
 
   const allModels = useMemo(() => {
-    const fromShared = buildChatPickerModels(sharedCatalog.catalog);
-    if (page === "models") return fromShared;
+    if (page === "models") return buildSettingsCatalogModels(sharedCatalog.catalog);
     return buildChatPickerModels({ groq, bedrock, ollama, openai, anthropic, google });
   }, [page, sharedCatalog.catalog, groq, bedrock, ollama, openai, anthropic, google]);
 

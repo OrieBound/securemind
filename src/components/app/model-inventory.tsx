@@ -36,6 +36,9 @@ export function providerCountsLine(models: CatalogModel[]): string {
 /** One-line orientation — not a quality ranking or a capability guarantee. */
 export function modelBlurb(model: CatalogModel): string {
   const note = model.note?.trim();
+  if (model.access === "needs_enablement") {
+    return "Listed for this region. Open Amazon Bedrock → Discover → Model catalog, open this model, and complete any Anthropic first-use form. Not Marketplace deployments. Chat cannot use it until that is done.";
+  }
   if (note && !note.startsWith("Add an API key")) {
     if (note === "Ollama · local") return "Runs on this machine via Ollama.";
     if (note === "Ollama · not for chat") return "Installed in Ollama — not used for chat.";
@@ -113,16 +116,31 @@ export function ModelInventory({
   blockedNotice?: string | null;
 }) {
   const counts = useMemo(() => providerCountsLine(models), [models]);
+  const needsEnablement = models.some(m => m.access === "needs_enablement");
 
   return (
     <div className="space-y-3">
       <p className="text-[0.62rem] text-foreground/38 leading-relaxed">
         Every chat-capable model this instance can reach — Groq, Google, OpenAI, Anthropic,
-        Bedrock, and Ollama. Embedding-only models are omitted. Assign what chat uses in{" "}
+        Bedrock, and Ollama. Embedding-only, retired, and Bedrock ids AWS does not open to
+        every account (for example Claude Opus 5) are omitted. Assign what chat uses in{" "}
         <span className="text-foreground/55">Complexity tiers</span>. Credentials live in{" "}
         <span className="text-foreground/55">Providers</span>.{" "}
         <span className="text-foreground/55">Test</span> sends a short reachability call.
       </p>
+
+      {needsEnablement && (
+        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-[0.65rem] text-amber-100/90 leading-relaxed">
+          Amazon Bedrock models marked <span className="font-semibold">Needs enablement</span> are
+          listed for this region but not turned on for this account yet. In the AWS console go to{" "}
+          <span className="font-semibold">Amazon Bedrock → Discover → Model catalog</span>, open the
+          model, and for Anthropic complete the first-time use-case form if asked. Do{" "}
+          <span className="font-semibold">not</span> use Tune → Marketplace model deployments — that
+          page is for third-party endpoint models, not Claude. They stay hidden from Chat until
+          enabled. Sales-gated ids such as Claude Opus 5 are omitted from Chat and this list —
+          Playground “not available for this account” means AWS Sales, not a console toggle.
+        </p>
+      )}
 
       {counts && models.length > 0 && (
         <p className="text-[0.65rem] text-foreground/50">{counts}</p>
