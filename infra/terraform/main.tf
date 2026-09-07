@@ -96,6 +96,36 @@ module "secrets" {
   groq_api_key         = var.groq_api_key
 }
 
+# Bootstrap GHA policy is not applied on push. The deploy role already has
+# iam:PutRolePolicy, so the app stack grants avatar-bucket S3 before CreateBucket.
+data "aws_iam_role" "gha" {
+  name = "securemind-gha-${var.env_name}"
+}
+
+data "aws_iam_policy_document" "gha_avatars" {
+  statement {
+    sid     = "AvatarBucket"
+    actions = ["s3:*"]
+    resources = [
+      "arn:aws:s3:::securemind-avatars-*",
+      "arn:aws:s3:::securemind-avatars-*/*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "gha_avatars" {
+  name   = "securemind-gha-avatars-${var.env_name}"
+  role   = data.aws_iam_role.gha.id
+  policy = data.aws_iam_policy_document.gha_avatars.json
+}
+
+resource "terraform_data" "gha_avatars_wait" {
+  input = aws_iam_role_policy.gha_avatars.id
+  provisioner "local-exec" {
+    command = "sleep 20"
+  }
+}
+
 module "api" {
   source                 = "./modules/api"
   env_name               = var.env_name
@@ -113,6 +143,7 @@ module "api" {
   cognito_region         = var.aws_region
   cognito_issuer         = module.auth_cognito.issuer
   embed_dimensions       = tostring(var.embed_dimensions)
+  depends_on             = [terraform_data.gha_avatars_wait]
 }
 
 module "amplify" {

@@ -176,6 +176,17 @@ data "aws_iam_policy_document" "gha_deploy" {
     ]
     resources = ["*"]
   }
+
+  # App stack creates securemind-avatars-<env>-<account>. Backend actions above
+  # do not include CreateBucket / bucket settings.
+  statement {
+    sid     = "AvatarBucket"
+    actions = ["s3:*"]
+    resources = [
+      "arn:aws:s3:::securemind-avatars-*",
+      "arn:aws:s3:::securemind-avatars-*/*",
+    ]
+  }
 }
 
 resource "aws_iam_role_policy" "gha_deploy" {
