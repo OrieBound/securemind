@@ -67,8 +67,7 @@ variable "vendor_keys_secret_arn" {
 }
 
 variable "avatar_s3_bucket_name" {
-  type    = string
-  default = ""
+  type = string
 }
 
 variable "branch_name" {
@@ -225,7 +224,6 @@ resource "aws_iam_role_policy" "amplify_vendor_keys" {
 }
 
 data "aws_iam_policy_document" "amplify_avatars" {
-  count = var.avatar_s3_bucket_name != "" ? 1 : 0
   statement {
     sid = "ProfilePhotos"
     actions = [
@@ -242,13 +240,10 @@ data "aws_iam_policy_document" "amplify_avatars" {
   }
 }
 
-# Count on the bucket name, not the computed ARN — a new bucket's ARN is
-# unknown until apply, which makes `count` illegal at plan time.
 resource "aws_iam_role_policy" "amplify_avatars" {
-  count  = var.avatar_s3_bucket_name != "" ? 1 : 0
   name   = "securemind-amplify-avatars-${var.env_name}"
   role   = aws_iam_role.amplify.id
-  policy = data.aws_iam_policy_document.amplify_avatars[0].json
+  policy = data.aws_iam_policy_document.amplify_avatars.json
 }
 
 resource "random_id" "instance_encryption" {

@@ -67,9 +67,12 @@ variable "auth_mode" {
 }
 
 locals {
-  chat_zip = "${path.module}/.build/lambda/chat.zip"
-  warm_zip = "${path.module}/.build/lambda/warm.zip"
+  chat_zip           = "${path.module}/.build/lambda/chat.zip"
+  warm_zip           = "${path.module}/.build/lambda/warm.zip"
+  avatar_bucket_name = "securemind-avatars-${var.env_name}-${data.aws_caller_identity.current.account_id}"
 }
+
+data "aws_caller_identity" "current" {}
 
 module "bedrock_lab" {
   source           = "./modules/bedrock_lab"
@@ -96,36 +99,6 @@ module "secrets" {
   groq_api_key         = var.groq_api_key
 }
 
-# Bootstrap GHA policy is not applied on push. The deploy role already has
-# iam:PutRolePolicy, so the app stack grants avatar-bucket S3 before CreateBucket.
-data "aws_iam_role" "gha" {
-  name = "securemind-gha-${var.env_name}"
-}
-
-data "aws_iam_policy_document" "gha_avatars" {
-  statement {
-    sid     = "AvatarBucket"
-    actions = ["s3:*"]
-    resources = [
-      "arn:aws:s3:::securemind-avatars-*",
-      "arn:aws:s3:::securemind-avatars-*/*",
-    ]
-  }
-}
-
-resource "aws_iam_role_policy" "gha_avatars" {
-  name   = "securemind-gha-avatars-${var.env_name}"
-  role   = data.aws_iam_role.gha.id
-  policy = data.aws_iam_policy_document.gha_avatars.json
-}
-
-resource "terraform_data" "gha_avatars_wait" {
-  input = aws_iam_role_policy.gha_avatars.id
-  provisioner "local-exec" {
-    command = "sleep 20"
-  }
-}
-
 module "api" {
   source                 = "./modules/api"
   env_name               = var.env_name
@@ -143,7 +116,7 @@ module "api" {
   cognito_region         = var.aws_region
   cognito_issuer         = module.auth_cognito.issuer
   embed_dimensions       = tostring(var.embed_dimensions)
-  depends_on             = [terraform_data.gha_avatars_wait]
+  avatar_bucket_name     = local.avatar_bucket_name
 }
 
 module "amplify" {
@@ -160,7 +133,7 @@ module "amplify" {
   fragments_table_name   = module.data_dynamodb.table_name
   fragments_table_arn    = module.data_dynamodb.table_arn
   vendor_keys_secret_arn = module.secrets.vendor_keys_secret_arn
-  avatar_s3_bucket_name  = module.api.avatar_bucket_name
+  avatar_s3_bucket_name  = local.avatar_bucket_name
 }
 
 output "api_base_url" {
