@@ -78,12 +78,47 @@ variable "embed_dimensions" {
   default = "1024"
 }
 
+variable "avatar_bucket_name" {
+  type = string
+}
+
 data "aws_region" "current" {}
 
 data "aws_caller_identity" "current" {}
 
+# Bootstrap GHA policy is not applied on push. This role already has
+# iam:PutRolePolicy, so grant CreateBucket before the bucket resource.
+data "aws_iam_role" "gha" {
+  name = "securemind-gha-${var.env_name}"
+}
+
+data "aws_iam_policy_document" "gha_avatars" {
+  statement {
+    sid     = "AvatarBucket"
+    actions = ["s3:*"]
+    resources = [
+      "arn:aws:s3:::${var.avatar_bucket_name}",
+      "arn:aws:s3:::${var.avatar_bucket_name}/*",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "gha_avatars" {
+  name   = "securemind-gha-avatars-${var.env_name}"
+  role   = data.aws_iam_role.gha.id
+  policy = data.aws_iam_policy_document.gha_avatars.json
+}
+
+resource "terraform_data" "gha_avatars_wait" {
+  input = aws_iam_role_policy.gha_avatars.id
+  provisioner "local-exec" {
+    command = "sleep 20"
+  }
+}
+
 resource "aws_s3_bucket" "avatars" {
-  bucket = "securemind-avatars-${var.env_name}-${data.aws_caller_identity.current.account_id}"
+  bucket     = var.avatar_bucket_name
+  depends_on = [terraform_data.gha_avatars_wait]
   tags = {
     Project = "SecureMind"
     Env     = var.env_name
@@ -426,7 +461,7 @@ output "warm_function_name" {
 }
 
 output "avatar_bucket_name" {
-  value = aws_s3_bucket.avatars.bucket
+  value = var.avatar_bucket_name
 }
 
 output "avatar_bucket_arn" {
