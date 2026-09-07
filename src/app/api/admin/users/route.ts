@@ -7,7 +7,8 @@ import {
   createDirectoryUser,
   listDirectoryUsers,
 } from "@/lib/cognito-admin";
-import { isMailConfigured, sendWelcomeAddedEmail } from "@/lib/mail";
+import { isMailConfigured, sendWelcomeAddedEmail, appSignInUrl } from "@/lib/mail";
+import { directoryPasswordPolicy } from "@/lib/auth-password";
 import {
   DEFAULT_MONTHLY_COST_CAP_USD,
   getDefaultMonthlyCostCapUsd,
@@ -35,6 +36,8 @@ export async function GET(req: NextRequest) {
         available: false,
         users: [],
         mailConfigured: isMailConfigured(),
+        signInUrl: appSignInUrl(),
+        passwordPolicy: directoryPasswordPolicy(),
         defaultMonthlyCostCapUsd: DEFAULT_MONTHLY_COST_CAP_USD,
         error:
           "Cognito is not configured. Set AUTH_MODE=cognito and run npm run floci:cognito for local user admin.",
@@ -56,14 +59,17 @@ export async function GET(req: NextRequest) {
     const enriched = await Promise.all(
       users.map(async u => {
         let monthlyCostCapUsd: number | null = null;
+        let profileStatus: string = "active";
         if (u.sub) {
           const profile = await ensureUserProfile({ userId: u.sub, email: u.email });
           monthlyCostCapUsd = profile.monthlyCostCapUsd;
+          profileStatus = profile.status;
         }
         return {
           ...u,
           monthlyCostCapUsd,
           monthSpendUsd: u.sub ? (spendByUser.get(u.sub) ?? 0) : 0,
+          profileStatus: profileStatus,
         };
       }),
     );
@@ -72,6 +78,8 @@ export async function GET(req: NextRequest) {
       available: true,
       users: enriched,
       mailConfigured: isMailConfigured(),
+      signInUrl: appSignInUrl(),
+      passwordPolicy: directoryPasswordPolicy(),
       defaultMonthlyCostCapUsd: defaultCap,
     });
   } catch (err) {
@@ -81,6 +89,8 @@ export async function GET(req: NextRequest) {
         available: false,
         users: [],
         mailConfigured: isMailConfigured(),
+        signInUrl: appSignInUrl(),
+        passwordPolicy: directoryPasswordPolicy(),
         defaultMonthlyCostCapUsd: DEFAULT_MONTHLY_COST_CAP_USD,
         error: msg,
       },
@@ -110,6 +120,7 @@ export async function POST(req: NextRequest) {
     password?: string;
     role?: string;
     monthlyCostCapUsd?: number | null;
+    sendInvite?: boolean;
   };
   try {
     body = await req.json();
@@ -145,9 +156,15 @@ export async function POST(req: NextRequest) {
       await ensureUserProfile({ userId: user.sub, email: user.email });
     }
     const emailTo = (user.email ?? body.email ?? "").trim().toLowerCase();
-    const welcome = emailTo
-      ? await sendWelcomeAddedEmail({ to: emailTo, role })
-      : { sent: false as const, reason: "not_configured" as const };
+    const sendInvite = body.sendInvite !== false;
+    let welcome: { sent: boolean; reason?: string };
+    if (!sendInvite) {
+      welcome = { sent: false, reason: "skipped" };
+    } else if (emailTo) {
+      welcome = await sendWelcomeAddedEmail({ to: emailTo, role });
+    } else {
+      welcome = { sent: false, reason: "not_configured" };
+    }
     return Response.json(
       {
         user: {
@@ -157,6 +174,8 @@ export async function POST(req: NextRequest) {
         },
         welcomeEmail: welcome,
         mailConfigured: isMailConfigured(),
+        signInUrl: appSignInUrl(),
+        passwordPolicy: directoryPasswordPolicy(),
       },
       { status: 201 },
     );

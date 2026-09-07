@@ -30,6 +30,10 @@ import {
   type WizardStorageChoice,
 } from "@/lib/wizard-storage";
 import { ensureUserProfile } from "@/lib/user-profile";
+import {
+  directoryPasswordPolicy,
+  validateDirectoryPassword,
+} from "@/lib/auth-password";
 
 export class SetupClaimError extends Error {
   status: number;
@@ -49,7 +53,7 @@ export function setupClaimSecretConfigured(): boolean {
 }
 
 export function minClaimPasswordLength(): number {
-  return claimRequiresSetupCode() ? 12 : 8;
+  return directoryPasswordPolicy().minLength;
 }
 
 /** Constant-time compare. Different lengths still return false without throwing. */
@@ -84,20 +88,12 @@ function assertEmailPair(email: string, emailConfirm: string): string {
 }
 
 function assertPassword(password: string, confirm: string): void {
-  const min = minClaimPasswordLength();
-  if (password.length < min) {
-    throw new SetupClaimError(`Password must be at least ${min} characters.`, 422);
+  const checked = validateDirectoryPassword(password);
+  if (!checked.ok) {
+    throw new SetupClaimError(checked.error, 422);
   }
   if (password !== confirm) {
     throw new SetupClaimError("Password confirmation does not match.", 422);
-  }
-  if (claimRequiresSetupCode()) {
-    if (!/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
-      throw new SetupClaimError(
-        "Password must include uppercase, lowercase, and a number.",
-        422,
-      );
-    }
   }
 }
 

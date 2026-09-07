@@ -5,6 +5,7 @@ import { getIdentity, identityErrorResponse } from "@/lib/identity";
 import { ensureUserProfile } from "@/lib/user-profile";
 import { cognitoConfigured } from "@/lib/cognito";
 import { readAccessTokenFromRequest } from "@/lib/auth-cookies";
+import { directoryPasswordPolicy } from "@/lib/auth-password";
 
 export async function GET(req: NextRequest) {
   try {
@@ -30,6 +31,7 @@ export async function GET(req: NextRequest) {
       lastSignInAt: profile.lastSignInAt,
       accountCreatedAt: profile.createdAt,
       passwordChangeAvailable: passwordManagedByCognito && hasAccessToken,
+      passwordPolicy: directoryPasswordPolicy(),
       passwordManagedExternally: false,
       mfaStatus: "unavailable" as const,
       sessions: "unavailable" as const,

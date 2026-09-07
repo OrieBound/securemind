@@ -4,6 +4,7 @@ import { parseAssignableRole, requireAdmin, type AppRole } from "@/lib/roles";
 import {
   CognitoAdminError,
   adminResetDirectoryUserPassword,
+  adminSetDirectoryUserPassword,
   cognitoAdminAvailable,
   findDirectoryUser,
   listDirectoryUsers,
@@ -12,6 +13,7 @@ import {
 } from "@/lib/cognito-admin";
 import { setProfileStatus, setUserMonthlyCostCap } from "@/lib/user-profile";
 import { getUserMonthSpendUsd, parseMonthlyCostCapInput } from "@/lib/cost-cap";
+import { isMailConfigured, sendAdminPasswordSetEmail } from "@/lib/mail";
 
 export const runtime = "nodejs";
 
@@ -44,6 +46,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     enabled?: boolean;
     status?: "active" | "suspended" | "deleted";
     sendPasswordReset?: boolean;
+    password?: string;
+    notifyPasswordEmail?: boolean;
     monthlyCostCapUsd?: number | null;
   };
   try {
@@ -75,6 +79,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
         || body.status === "suspended"
         || body.status === "active"
         || body.sendPasswordReset === true
+        || typeof body.password === "string"
         || "monthlyCostCapUsd" in body;
       if (mutatingProtected) {
         return Response.json(
@@ -96,12 +101,29 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
     let user = null;
 
+    if (typeof body.password === "string") {
+      const user = await adminSetDirectoryUserPassword(username, body.password, actorOpts);
+      let notifyEmail: { sent: boolean; reason?: string } | undefined;
+      if (body.notifyPasswordEmail !== false && user.email) {
+        notifyEmail = await sendAdminPasswordSetEmail({ to: user.email });
+      }
+      return Response.json({
+        ok: true,
+        user,
+        passwordSet: true,
+        notifyEmail,
+        mailConfigured: isMailConfigured(),
+        message:
+          "Password updated. Share it with the user separately — it is never emailed.",
+      });
+    }
+
     if (body.sendPasswordReset === true) {
       await adminResetDirectoryUserPassword(username, actorOpts);
       return Response.json({
         ok: true,
         message:
-          "Password reset initiated. The user will receive a code if the account exists and email delivery is configured.",
+          "Cognito reset-code email was requested. This only arrives if Cognito email delivery is configured. Prefer Set password if they cannot log in.",
       });
     }
 
@@ -153,7 +175,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
     if (!user) {
       return Response.json(
-        { error: "Provide role, enabled, status, monthlyCostCapUsd, and/or sendPasswordReset." },
+        { error: "Provide role, enabled, status, monthlyCostCapUsd, password, and/or sendPasswordReset." },
         { status: 422 },
       );
     }

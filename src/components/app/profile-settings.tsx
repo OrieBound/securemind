@@ -9,6 +9,7 @@ import type { UserProfilePublic } from "@/lib/user-profile";
 import { useAuthSession } from "@/components/app/auth-session";
 import { notifyAvatarChanged, UserAvatarFace } from "@/components/app/user-avatar";
 import { AvatarCropDialog } from "@/components/app/avatar-crop-dialog";
+import type { DirectoryPasswordPolicy } from "@/lib/auth-password";
 
 type WorkspaceBrief = { id: string; name: string; emoji: string; isDefault: boolean };
 
@@ -22,6 +23,7 @@ type SecurityInfo = {
   status: string;
   mfaStatus: string;
   sessions: string;
+  passwordPolicy?: DirectoryPasswordPolicy;
 };
 
 export function ProfileAvatarBadge({
@@ -564,7 +566,9 @@ export function ProfileSettings() {
         {security?.passwordChangeAvailable ? (
           <form onSubmit={changePassword} className="space-y-2.5 max-w-md">
             <p className="text-[0.65rem] text-foreground/35">
-              Cognito password policy: at least 12 characters. You will be signed out after a successful change.
+              {security.passwordPolicy?.summary
+                ?? "Cognito password policy applies."}{" "}
+              You will be signed out after a successful change.
             </p>
             <input
               type="password"
@@ -583,7 +587,7 @@ export function ProfileSettings() {
               onChange={e => setNewPassword(e.target.value)}
               className="w-full h-9 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-3 text-sm"
               required
-              minLength={12}
+              minLength={security.passwordPolicy?.minLength ?? 8}
             />
             <input
               type="password"
@@ -593,7 +597,7 @@ export function ProfileSettings() {
               onChange={e => setConfirmPassword(e.target.value)}
               className="w-full h-9 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-3 text-sm"
               required
-              minLength={12}
+              minLength={security.passwordPolicy?.minLength ?? 8}
             />
             <button
               type="submit"
@@ -623,8 +627,8 @@ export function ProfileSettings() {
       <section className="space-y-2 rounded-2xl border border-foreground/[0.07] px-4 py-4">
         <h3 className="text-section">Privacy & lifecycle</h3>
         <p className="text-[0.7rem] text-foreground/40 leading-relaxed">
-          Account deletion is performed by an Administrator (soft-disable; data retained until a
-          future purge). Contact an Admin if you need your account closed.
+          Account deletion is performed by an Administrator (they turn off sign-in; data
+          stays until a future purge). Contact an Admin if you need your account closed.
         </p>
         <ul className="text-[0.7rem] text-foreground/35 space-y-1 list-disc pl-4">
           <li>Privacy Policy (placeholder)</li>

@@ -26,6 +26,7 @@ import { roleFromGroups as mapGroupsToRole, type AppRole, type AssignableRole } 
 import { getInstanceConfig } from "@/lib/instance-config";
 import { isHostedRuntime } from "@/lib/runtime-env";
 import { db } from "@/lib/db";
+import { directoryPasswordPolicy, validateDirectoryPassword } from "@/lib/auth-password";
 
 export const GROUP_OWNER = "Owner";
 /** @deprecated Legacy group — treated as Admin. */
@@ -105,6 +106,17 @@ export class CognitoAdminError extends Error {
     this.name = "CognitoAdminError";
     this.status = status;
   }
+}
+
+function rethrowPasswordError(err: unknown): never {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/InvalidPasswordException|Password did not conform|password policy/i.test(msg)) {
+    throw new CognitoAdminError(
+      `Password does not meet the directory policy. ${directoryPasswordPolicy().summary}`,
+      422,
+    );
+  }
+  throw err;
 }
 
 export function cognitoAdminAvailable(): boolean {
@@ -331,8 +343,9 @@ export async function createDirectoryUser(input: {
   if (!email || !email.includes("@")) {
     throw new CognitoAdminError("A valid email is required.");
   }
-  if (password.length < 8) {
-    throw new CognitoAdminError("Password must be at least 8 characters.");
+  const checked = validateDirectoryPassword(password);
+  if (!checked.ok) {
+    throw new CognitoAdminError(checked.error, 422);
   }
   if (input.role !== "admin" && input.role !== "member") {
     throw new CognitoAdminError("Role must be Admin or Member.", 422);
@@ -359,14 +372,18 @@ export async function createDirectoryUser(input: {
     throw err;
   }
 
-  await cip().send(
-    new AdminSetUserPasswordCommand({
-      UserPoolId: pool,
-      Username: email,
-      Password: password,
-      Permanent: true,
-    }),
-  );
+  try {
+    await cip().send(
+      new AdminSetUserPasswordCommand({
+        UserPoolId: pool,
+        Username: email,
+        Password: password,
+        Permanent: true,
+      }),
+    );
+  } catch (err) {
+    rethrowPasswordError(err);
+  }
 
   const primaryGroup = input.role === "admin" ? GROUP_ADMIN : GROUP_MEMBER;
   try {
@@ -561,6 +578,43 @@ export async function adminResetDirectoryUserPassword(
       Username: target.username,
     }),
   );
+}
+
+/** Sets a known password the admin can share. Permanent so the user can sign in immediately. */
+export async function adminSetDirectoryUserPassword(
+  username: string,
+  password: string,
+  opts?: { actorRole?: AppRole; actorUserId?: string | null },
+): Promise<DirectoryUser> {
+  const checked = validateDirectoryPassword(password);
+  if (!checked.ok) {
+    throw new CognitoAdminError(checked.error, 422);
+  }
+
+  const pool = requirePoolId();
+  const users = await listDirectoryUsers();
+  const target = users.find(u => u.username === username || u.email === username);
+  if (!target) throw new CognitoAdminError("User not found.", 404);
+
+  assertCanMutateOwner(target, {
+    role: opts?.actorRole ?? "member",
+    userId: opts?.actorUserId,
+  });
+
+  try {
+    await cip().send(
+      new AdminSetUserPasswordCommand({
+        UserPoolId: pool,
+        Username: target.username,
+        Password: password,
+        Permanent: true,
+      }),
+    );
+  } catch (err) {
+    rethrowPasswordError(err);
+  }
+
+  return target;
 }
 
 export async function findDirectoryUser(

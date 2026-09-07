@@ -4,6 +4,7 @@ import { NextRequest } from "next/server";
 import { cognitoChangePassword, cognitoConfigured } from "@/lib/cognito";
 import { readAccessTokenFromRequest, clearAccessCookieHeader } from "@/lib/auth-cookies";
 import { getIdentity, identityErrorResponse } from "@/lib/identity";
+import { validateDirectoryPassword } from "@/lib/auth-password";
 
 export async function POST(req: NextRequest) {
   const mode = (process.env.AUTH_MODE ?? "local").toLowerCase();
@@ -44,8 +45,9 @@ export async function POST(req: NextRequest) {
   if (newPassword !== confirmPassword) {
     return Response.json({ error: "New password confirmation does not match." }, { status: 422 });
   }
-  if (newPassword.length < 12) {
-    return Response.json({ error: "New password must be at least 12 characters." }, { status: 422 });
+  const checked = validateDirectoryPassword(newPassword);
+  if (!checked.ok) {
+    return Response.json({ error: checked.error }, { status: 422 });
   }
 
   try {

@@ -13,6 +13,12 @@ import type { AnalyticsRange } from "@/lib/analytics/types";
 import type { InsightsSubjectRef } from "@/components/app/settings-hub";
 import { fmtUsdLabeled } from "@/lib/analytics/client";
 import { parseMonthlyCostCapInput } from "@/lib/cost-cap-shared";
+import {
+  checkPasswordAgainstPolicy,
+  passwordChecklist,
+  passwordRuleMet,
+  type DirectoryPasswordPolicy,
+} from "@/lib/auth-password";
 
 type PendingConfirm = {
   title: string;
@@ -22,6 +28,7 @@ type PendingConfirm = {
   impact: string;
   confirmLabel: string;
   destructive?: boolean;
+  backupUser?: DirectoryUser;
   run: () => void | Promise<void>;
 };
 
@@ -37,6 +44,7 @@ type DirectoryUser = {
   isOwner?: boolean;
   monthlyCostCapUsd?: number | null;
   monthSpendUsd?: number;
+  profileStatus?: "active" | "invited" | "suspended" | "deleted";
 };
 
 type Overview = {
@@ -79,10 +87,41 @@ const CAP_PRESETS: { label: string; value: number | null }[] = [
   { label: "Unlimited", value: null },
 ];
 
-function fmtUsd(n: number) {
-  if (!Number.isFinite(n) || n === 0) return "$0.00";
-  if (n < 0.01) return `$${n.toFixed(4)}`;
-  return `$${n.toFixed(2)}`;
+const FALLBACK_PASSWORD_POLICY: DirectoryPasswordPolicy = {
+  minLength: 8,
+  requireUppercase: false,
+  requireLowercase: false,
+  requireNumber: false,
+  requireSymbol: false,
+  summary: "At least 8 characters.",
+  rules: ["At least 8 characters"],
+};
+
+function directoryAccountLabel(u: DirectoryUser): string {
+  if (u.profileStatus === "deleted") return "Deleted";
+  if (!u.enabled || u.profileStatus === "suspended") return "Suspended";
+  return "Can sign in";
+}
+
+function downloadUserBackup(u: DirectoryUser) {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    email: u.email,
+    username: u.username,
+    role: u.role,
+    cognitoStatus: u.status,
+    enabled: u.enabled,
+    profileStatus: u.profileStatus ?? null,
+    createdAt: u.createdAt,
+    monthlyCostCapUsd: u.monthlyCostCapUsd ?? null,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `securemind-user-${(u.email ?? u.username).replace(/[^a-z0-9@._-]+/gi, "_")}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 function SpendMeter({
@@ -136,6 +175,20 @@ export function AdminConsole({
   const [users, setUsers] = useState<DirectoryUser[]>([]);
   const [cognitoAvailable, setCognitoAvailable] = useState(true);
   const [mailConfigured, setMailConfigured] = useState(false);
+  const [signInUrl, setSignInUrl] = useState("/");
+  const [passwordPolicy, setPasswordPolicy] = useState<DirectoryPasswordPolicy>(FALLBACK_PASSWORD_POLICY);
+  const [sendInvite, setSendInvite] = useState(true);
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [lastCreated, setLastCreated] = useState<{
+    email: string;
+    role: string;
+    signInUrl: string;
+    inviteSent: boolean;
+    inviteReason?: string;
+  } | null>(null);
+  const [passwordDialog, setPasswordDialog] = useState<{ username: string; email: string } | null>(null);
+  const [setPasswordValue, setSetPasswordValue] = useState("");
+  const [notifyPasswordEmail, setNotifyPasswordEmail] = useState(true);
   const [defaultCap, setDefaultCap] = useState(10);
   const [directoryError, setDirectoryError] = useState<string | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(true);
@@ -247,11 +300,15 @@ export function AdminConsole({
           available: boolean;
           users: DirectoryUser[];
           mailConfigured?: boolean;
+          signInUrl?: string;
+          passwordPolicy?: DirectoryPasswordPolicy;
           defaultMonthlyCostCapUsd?: number;
           error?: string;
         };
         setCognitoAvailable(body.available);
         setMailConfigured(Boolean(body.mailConfigured));
+        if (body.signInUrl) setSignInUrl(body.signInUrl);
+        if (body.passwordPolicy) setPasswordPolicy(body.passwordPolicy);
         setUsers(body.users ?? []);
         setDirectoryError(body.error ?? null);
         if (typeof body.defaultMonthlyCostCapUsd === "number") {
@@ -296,6 +353,12 @@ export function AdminConsole({
       return;
     }
     const capValue = capParsed.value ?? null;
+    const pwCheck = checkPasswordAgainstPolicy(password, passwordPolicy);
+    if (!pwCheck.ok) {
+      setError(pwCheck.error);
+      setBusy(false);
+      return;
+    }
     try {
       const res = await fetch("/api/admin/users", {
         method: "POST",
@@ -306,11 +369,13 @@ export function AdminConsole({
           password,
           role: newRole,
           monthlyCostCapUsd: capValue,
+          sendInvite,
         }),
       });
       const data = (await res.json()) as {
         error?: string;
         mailConfigured?: boolean;
+        signInUrl?: string;
         welcomeEmail?: { sent: boolean; reason?: string };
       };
       if (!res.ok) {
@@ -320,20 +385,32 @@ export function AdminConsole({
       if (typeof data.mailConfigured === "boolean") setMailConfigured(data.mailConfigured);
       const createdEmail = email;
       const createdRole = newRole;
+      const createdSignIn = data.signInUrl ?? signInUrl;
       setEmail("");
       setPassword("");
       setNewRole("member");
       setNewCap(defaultCap);
       setCustomCap("");
+      setLastCreated({
+        email: createdEmail,
+        role: createdRole,
+        signInUrl: createdSignIn,
+        inviteSent: Boolean(data.welcomeEmail?.sent),
+        inviteReason: data.welcomeEmail?.reason,
+      });
       if (data.welcomeEmail?.sent) {
-        setNote(`Created ${createdEmail} as ${createdRole}. Welcome email sent.`);
+        setNote(`Created ${createdEmail} as ${createdRole}. Invite email sent (sign-in page only — not a magic link, and never the password).`);
       } else if (data.welcomeEmail?.reason === "send_failed") {
         setNote(
-          `Created ${createdEmail} as ${createdRole}. Welcome email failed to send — share the sign-in details manually.`,
+          `Created ${createdEmail} as ${createdRole}. Invite email failed — share the sign-in page and the password you set.`,
+        );
+      } else if (data.welcomeEmail?.reason === "skipped") {
+        setNote(
+          `Created ${createdEmail} as ${createdRole}. Invite email skipped — share the sign-in page and the password you set.`,
         );
       } else {
         setNote(
-          `Created ${createdEmail} as ${createdRole}. Welcome email not sent (SMTP not configured) — share the sign-in details manually.`,
+          `Created ${createdEmail} as ${createdRole}. SMTP is not configured, so no invite email went out — share the sign-in page and the password you set.`,
         );
       }
       await refresh();
@@ -349,6 +426,8 @@ export function AdminConsole({
       enabled?: boolean;
       status?: "active" | "suspended" | "deleted";
       sendPasswordReset?: boolean;
+      password?: string;
+      notifyPasswordEmail?: boolean;
       monthlyCostCapUsd?: number | null;
     },
     okNote: string,
@@ -380,6 +459,13 @@ export function AdminConsole({
     return true;
   }
 
+  const visibleUsers = useMemo(() => {
+    if (showDeleted) return users;
+    return users.filter(u => u.profileStatus !== "deleted");
+  }, [users, showDeleted]);
+
+  const deletedCount = users.filter(u => u.profileStatus === "deleted").length;
+
   const refreshing = overviewLoading || usersLoading;
 
   if (overviewLoading && !labeledOverview && !error) {
@@ -394,7 +480,7 @@ export function AdminConsole({
   return (
     <div className="space-y-5">
       <p className="text-sm text-muted-foreground">
-        Directory, roles, and monthly cost caps. Super Admin protections stay enforced.
+        Add people, set how they sign in, and manage roles. Delete removes sign-in; their workspace data stays until a future purge.
       </p>
 
       {(error || note) && (
@@ -583,9 +669,21 @@ export function AdminConsole({
 
       {/* User directory */}
       <section className="rounded-xl border border-border bg-card p-4 space-y-3 shadow-[var(--shadow-sm)]">
-        <div className="flex items-center gap-2">
-          <Users className="size-4 text-[var(--primary-soft-foreground)]" aria-hidden />
-          <h3 className="text-sm font-semibold text-foreground">Users &amp; roles</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Users className="size-4 text-[var(--primary-soft-foreground)]" aria-hidden />
+            <h3 className="text-sm font-semibold text-foreground">Users &amp; roles</h3>
+          </div>
+          {deletedCount > 0 && (
+            <label className="flex items-center gap-1.5 text-[0.7rem] text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={showDeleted}
+                onChange={e => setShowDeleted(e.target.checked)}
+              />
+              Show deleted ({deletedCount})
+            </label>
+          )}
         </div>
 
         {!cognitoAvailable && (
@@ -599,7 +697,11 @@ export function AdminConsole({
           <form onSubmit={createUser} className="rounded-lg border border-dashed border-border bg-secondary/40 p-3 space-y-2.5">
             <p className="text-[0.65rem] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
               <UserPlus className="size-3.5" aria-hidden />
-              Create user
+              Add user
+            </p>
+            <p className="text-[0.72rem] text-[var(--text-secondary)] leading-relaxed">
+              They sign in at <span className="font-medium text-foreground break-all">{signInUrl}</span> with this email
+              and the password you set. There is no one-click invite link.
             </p>
             <div className="grid gap-2 sm:grid-cols-2">
               <label className="block text-xs text-muted-foreground">
@@ -611,21 +713,24 @@ export function AdminConsole({
                   onChange={e => setEmail(e.target.value)}
                   className="mt-1 w-full h-9 rounded-lg border border-border bg-card px-3 text-sm text-foreground"
                   placeholder="analyst@example.com"
+                  autoComplete="off"
                 />
               </label>
               <label className="block text-xs text-muted-foreground">
-                Temporary password
+                Sign-in password
                 <input
                   type="password"
                   required
-                  minLength={8}
+                  minLength={passwordPolicy.minLength}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   className="mt-1 w-full h-9 rounded-lg border border-border bg-card px-3 text-sm text-foreground"
-                  placeholder="At least 8 characters"
+                  placeholder={passwordPolicy.summary}
+                  autoComplete="new-password"
                 />
               </label>
             </div>
+            <PasswordRuleList password={password} policy={passwordPolicy} />
             <div className="flex flex-wrap items-end gap-3">
               <label className="block text-xs text-muted-foreground">
                 Role
@@ -679,13 +784,49 @@ export function AdminConsole({
                 Create account
               </button>
             </div>
+            <label className="flex items-start gap-2 text-[0.72rem] text-[var(--text-secondary)] leading-relaxed">
+              <input
+                type="checkbox"
+                checked={sendInvite}
+                onChange={e => setSendInvite(e.target.checked)}
+                className="mt-0.5"
+              />
+              <span>
+                {mailConfigured
+                  ? "Send an invite email with the sign-in page and their role. The password is never emailed — you share it with them."
+                  : "Send an invite email when SMTP is configured (SMTP_HOST and MAIL_FROM). Right now mail is off, so you must tell them the sign-in page and password yourself."}
+              </span>
+            </label>
             <p className="text-[0.65rem] text-[var(--text-subtle)] leading-relaxed">
-              Default cap is {fmtUsdLabeled(defaultCap)}.{" "}
-              {mailConfigured
-                ? "A welcome email is sent on create (sign-in link + role only — never the password)."
-                : "Welcome email is off until SMTP is set in .env.local (SMTP_HOST, MAIL_FROM). The password is never emailed."}
+              Default monthly cap is {fmtUsdLabeled(defaultCap)}. If they cannot log in: share {signInUrl}, their email,
+              and the password you set. They can also use Forgot password on that page if Cognito can deliver email.
             </p>
           </form>
+        )}
+
+        {lastCreated && (
+          <div className="rounded-lg border border-[var(--success-border)] bg-[var(--success-soft)] px-3 py-2.5 space-y-1.5">
+            <p className="text-xs font-semibold text-foreground">How {lastCreated.email} signs in</p>
+            <ol className="list-decimal pl-4 text-[0.72rem] text-[var(--text-secondary)] space-y-0.5 leading-relaxed">
+              <li>Open {lastCreated.signInUrl}</li>
+              <li>Email: {lastCreated.email}</li>
+              <li>Password: the one you just entered (it is not stored here and was not emailed)</li>
+            </ol>
+            <p className="text-[0.65rem] text-[var(--text-subtle)]">
+              {lastCreated.inviteSent
+                ? "Invite email sent with the sign-in page and role only — not a magic login link."
+                : lastCreated.inviteReason === "skipped"
+                  ? "Invite email skipped."
+                  : "No invite email went out. Tell them the page, email, and password."}
+            </p>
+            <button
+              type="button"
+              onClick={() => setLastCreated(null)}
+              className="text-[0.65rem] underline text-muted-foreground cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
         )}
 
         <div className="overflow-x-auto rounded-lg border border-border">
@@ -701,14 +842,18 @@ export function AdminConsole({
               </tr>
             </thead>
             <tbody>
-              {users.length === 0 ? (
+              {visibleUsers.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-3 py-4 text-muted-foreground">
-                    {cognitoAvailable ? "No users returned from the pool." : "Directory unavailable."}
+                    {cognitoAvailable
+                      ? users.length === 0
+                        ? "No users returned from the pool."
+                        : "Deleted accounts are hidden. Enable Show deleted to see them."
+                      : "Directory unavailable."}
                   </td>
                 </tr>
               ) : (
-                users.map(u => {
+                visibleUsers.map(u => {
                   const mutable = canMutateUser(u);
                   return (
                     <tr key={u.username} className="border-t border-border">
@@ -817,7 +962,7 @@ export function AdminConsole({
                         )}
                       </td>
                       <td className="px-3 py-2.5 text-[var(--text-secondary)]">
-                        {u.enabled ? "Enabled" : "Disabled"}
+                        {directoryAccountLabel(u)}
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="flex flex-wrap gap-1.5">
@@ -892,46 +1037,48 @@ export function AdminConsole({
                           >
                             {u.enabled ? "Suspend" : "Reactivate"}
                           </button>
-                          {u.enabled && (
+                          {u.profileStatus !== "deleted" && (
                             <button
                               type="button"
                               disabled={busy || !mutable}
                               onClick={() =>
                                 setConfirm({
-                                  title: "Soft-delete user?",
+                                  title: "Delete this user?",
                                   identity: u.email ?? u.username,
-                                  impact: `${u.email ?? u.username} will be disabled in Cognito. Workspace and audit data stay until a future purge.`,
-                                  confirmLabel: "Soft-delete",
+                                  currentRole: directoryAccountLabel(u),
+                                  newRole: "Deleted (cannot sign in)",
+                                  impact:
+                                    `${u.email ?? u.username} will not be able to sign in. Workspace, Knowledge, and audit data stay until a future purge — this is not a hard wipe. Download their directory details first if you want a copy (optional).`,
+                                  confirmLabel: "Delete",
                                   destructive: true,
+                                  backupUser: u,
                                   run: () =>
-                                    patchUser(u.username, { status: "deleted" }, `Marked ${u.email} deleted (soft)`),
+                                    patchUser(
+                                      u.username,
+                                      { status: "deleted" },
+                                      `Deleted ${u.email} — they cannot sign in. Data is retained.`,
+                                    ),
                                 })
                               }
                               className="rounded-md border border-[var(--destructive-border)] bg-[var(--destructive-soft)] px-2 py-1 text-[0.65rem] font-semibold text-destructive hover:brightness-95 cursor-pointer disabled:opacity-40"
                             >
-                              Soft-delete
+                              Delete
                             </button>
                           )}
                           <button
                             type="button"
                             disabled={busy || !mutable}
-                            onClick={() =>
-                              setConfirm({
-                                title: "Send password reset?",
-                                identity: u.email ?? u.username,
-                                impact: `A password reset will be sent for ${u.email ?? u.username}. Existing sessions may be invalidated.`,
-                                confirmLabel: "Send reset",
-                                run: () =>
-                                  patchUser(
-                                    u.username,
-                                    { sendPasswordReset: true },
-                                    `Password reset sent for ${u.email}`,
-                                  ),
-                              })
-                            }
+                            onClick={() => {
+                              setSetPasswordValue("");
+                              setNotifyPasswordEmail(mailConfigured);
+                              setPasswordDialog({
+                                username: u.username,
+                                email: u.email ?? u.username,
+                              });
+                            }}
                             className="rounded-md border border-border bg-card px-2 py-1 text-[0.65rem] font-medium hover:bg-[var(--surface-hover)] cursor-pointer disabled:opacity-40"
                           >
-                            Reset password
+                            Set password
                           </button>
                         </div>
                       </td>
@@ -943,7 +1090,9 @@ export function AdminConsole({
           </table>
         </div>
         <p className="text-[0.65rem] text-[var(--text-subtle)] leading-relaxed">
-          Soft-delete disables sign-in and marks the profile deleted. Data stays until a future purge.
+          Delete turns off sign-in and marks the profile deleted. It does not wipe Knowledge or history.
+          Set password is the reliable way to restore access — share the new password yourself.
+          Cognito “forgot password” email only works when that pool can send mail.
         </p>
       </section>
 
@@ -975,6 +1124,15 @@ export function AdminConsole({
               )}
             </dl>
             <p className="text-[0.75rem] text-muted-foreground leading-relaxed">{confirm.impact}</p>
+            {confirm.backupUser && (
+              <button
+                type="button"
+                onClick={() => downloadUserBackup(confirm.backupUser!)}
+                className="text-[0.72rem] underline text-muted-foreground cursor-pointer"
+              >
+                Download directory details (optional)
+              </button>
+            )}
             <div className="flex justify-end gap-2">
               <button
                 type="button"
@@ -1003,7 +1161,115 @@ export function AdminConsole({
           </div>
         </div>
       )}
+
+      {passwordDialog && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-set-password-title"
+        >
+          <div className="w-full max-w-md rounded-xl border border-border bg-card p-4 space-y-3 shadow-lg">
+            <h4 id="admin-set-password-title" className="text-sm font-semibold text-foreground">
+              Set password for {passwordDialog.email}
+            </h4>
+            <p className="text-[0.75rem] text-muted-foreground leading-relaxed">
+              They sign in at {signInUrl} with this email and the password you enter here.
+              Share it with them yourself. A Cognito reset-code email is not used — that path often
+              fails when the pool cannot send mail.
+            </p>
+            <label className="block text-xs text-muted-foreground">
+              New password
+              <input
+                type="password"
+                value={setPasswordValue}
+                onChange={e => setSetPasswordValue(e.target.value)}
+                className="mt-1 w-full h-9 rounded-lg border border-border bg-background px-3 text-sm text-foreground"
+                autoComplete="new-password"
+                minLength={passwordPolicy.minLength}
+              />
+            </label>
+            <PasswordRuleList password={setPasswordValue} policy={passwordPolicy} />
+            <label className="flex items-start gap-2 text-[0.72rem] text-[var(--text-secondary)]">
+              <input
+                type="checkbox"
+                checked={notifyPasswordEmail}
+                onChange={e => setNotifyPasswordEmail(e.target.checked)}
+                className="mt-0.5"
+                disabled={!mailConfigured}
+              />
+              <span>
+                {mailConfigured
+                  ? "Email them that a new password was set (still never includes the password)."
+                  : "SMTP is not configured, so no notice email can be sent."}
+              </span>
+            </label>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPasswordDialog(null);
+                  setSetPasswordValue("");
+                }}
+                className="h-8 rounded-lg border border-border px-3 text-xs font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={busy || !checkPasswordAgainstPolicy(setPasswordValue, passwordPolicy).ok}
+                onClick={() => {
+                  const target = passwordDialog;
+                  const next = setPasswordValue;
+                  const notify = notifyPasswordEmail;
+                  setPasswordDialog(null);
+                  setSetPasswordValue("");
+                  void patchUser(
+                    target.username,
+                    { password: next, notifyPasswordEmail: notify },
+                    `Password set for ${target.email}. Share it with them — it is not stored in this console.`,
+                  );
+                }}
+                className="h-8 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground disabled:opacity-50"
+              >
+                Set password
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function PasswordRuleList({
+  password,
+  policy,
+}: {
+  password: string;
+  policy: DirectoryPasswordPolicy;
+}) {
+  const items = passwordChecklist(policy);
+  return (
+    <ul className="text-[0.65rem] leading-relaxed space-y-0.5">
+      {items.map(item => {
+        const met = passwordRuleMet(password, policy, item.id);
+        return (
+          <li
+            key={item.id}
+            className={
+              met
+                ? "text-success"
+                : item.required
+                  ? "text-muted-foreground"
+                  : "text-[var(--text-subtle)]"
+            }
+          >
+            {met ? "✓" : "·"} {item.label}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
