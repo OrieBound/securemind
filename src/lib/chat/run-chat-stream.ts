@@ -11,6 +11,7 @@ import {
   VENDOR_RISK_REQUIRED_CODE,
 } from "@/lib/models/groq";
 import { formatGroqChatError } from "@/lib/models/groq-connectivity";
+import { diagnoseModelTestError } from "@/lib/models/test-diagnose";
 import { resolveRuntimeSecrets } from "@/lib/instance-config";
 import {
   routeModel,
@@ -558,7 +559,19 @@ export async function* iterateChatSseFrames(
         raw.startsWith("40") ||
         raw.startsWith("50") ||
         /groq|gsk_|api\.groq/i.test(raw);
-      const clean = groqish ? formatGroqChatError(raw) : raw;
+      let clean = groqish ? formatGroqChatError(raw) : raw;
+      if (actualProvider === "bedrock") {
+        const d = diagnoseModelTestError(err, "bedrock", actualModel);
+        if (d.code === "not_entitled") {
+          const { rememberBedrockNotEntitled } = await import("@/lib/models/bedrock-denylist");
+          const { invalidateModelCatalogCache } = await import("@/lib/models/catalog");
+          rememberBedrockNotEntitled(actualModel);
+          invalidateModelCatalogCache();
+        }
+        if (d.remediation && (d.code === "not_entitled" || d.code === "access_denied")) {
+          clean = `${raw}\n\n${d.remediation}`;
+        }
+      }
       yield sseDataFrame({ error: clean });
     }
   } finally {

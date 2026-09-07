@@ -11,8 +11,9 @@ describe("diagnoseModelTestError", () => {
     );
     const d = diagnoseModelTestError(err, "bedrock", "us.anthropic.claude-sonnet-5");
     expect(d.code).toBe("not_entitled");
-    expect(d.remediation).not.toMatch(/Amplify/i);
-    expect(d.remediation).toMatch(/same role/i);
+    expect(d.remediation).toMatch(/Model catalog/i);
+    expect(d.remediation).not.toMatch(/Marketplace model deployments/i);
+    expect(d.remediation).toMatch(/same role|IAM role problem/i);
   });
 
   it("keeps IAM copy for a genuine access-denied invoke", () => {

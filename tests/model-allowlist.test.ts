@@ -90,6 +90,44 @@ describe("resolveAllowedModel", () => {
     expect(await resolveAllowedModel("canopylabs/orpheus-v1-english")).toBeNull();
   });
 
+  it("denies a Sales-gated Bedrock id even if the catalog listed it as ready", async () => {
+    getModelCatalogCached.mockResolvedValue({
+      groq: [],
+      bedrock: [
+        {
+          id: "us.anthropic.claude-opus-5",
+          name: "Claude Opus 5",
+          provider: "bedrock",
+          modality: "text",
+        },
+      ],
+      ollama: [],
+      errors: [],
+    });
+    const { resolveAllowedModel } = await import("@/lib/models/allowlist");
+    expect(await resolveAllowedModel("us.anthropic.claude-opus-5")).toBeNull();
+    expect(await resolveAllowedModel("anthropic.claude-opus-5")).toBeNull();
+  });
+
+  it("denies a Bedrock model that still needs console Model access", async () => {
+    getModelCatalogCached.mockResolvedValue({
+      groq: [],
+      bedrock: [
+        {
+          id: "anthropic.claude-opus-4-6",
+          name: "Claude Opus 4.6",
+          provider: "bedrock",
+          modality: "text",
+          access: "needs_enablement",
+        },
+      ],
+      ollama: [],
+      errors: [],
+    });
+    const { resolveAllowedModel } = await import("@/lib/models/allowlist");
+    expect(await resolveAllowedModel("anthropic.claude-opus-4-6")).toBeNull();
+  });
+
   it("allows the hosted Nova fallback even when the live catalog fails", async () => {
     getModelCatalogCached.mockRejectedValue(new Error("network down"));
     const { resolveAllowedModel } = await import("@/lib/models/allowlist");

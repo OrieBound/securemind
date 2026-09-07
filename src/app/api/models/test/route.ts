@@ -124,6 +124,12 @@ export async function POST(req: NextRequest) {
       });
     } catch (err) {
       const d = diagnoseModelTestError(err, allowed.provider, allowed.model);
+      if (allowed.provider === "bedrock" && d.code === "not_entitled") {
+        const { rememberBedrockNotEntitled } = await import("@/lib/models/bedrock-denylist");
+        const { invalidateModelCatalogCache } = await import("@/lib/models/catalog");
+        rememberBedrockNotEntitled(allowed.model);
+        invalidateModelCatalogCache();
+      }
       return Response.json({
         ok: false,
         modelId: allowed.model,

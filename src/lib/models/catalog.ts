@@ -16,7 +16,8 @@ import { listOpenAIModels } from "./openai";
 import { listAnthropicModels } from "./anthropic";
 import { listGoogleModels } from "./google";
 import { runtimeEdition } from "@/lib/runtime-env";
-import { selectInvocableBedrockModels } from "./bedrock-catalog";
+import { selectInvocableBedrockModels, applyBedrockAvailability, uniqueFoundationModelIds, type BedrockAvailability } from "./bedrock-catalog";
+import { isBedrockIdDenied } from "./bedrock-denylist";
 import {
   BEDROCK_TEXT_MODELS,
   formatBedrockCatalogError,
@@ -36,8 +37,8 @@ export { BEDROCK_TEXT_MODELS } from "./catalog-shared";
  *  - inference-profile ids when AWS publishes one (`us.*` / `global.*`)
  *
  * Never InvokeModel / Converse here. Bedrock bills tokens on inference, not
- * on ListFoundationModels / ListInferenceProfiles. A per-model availability
- * GET or a Test invoke would be a different, opt-in path.
+ * on ListFoundationModels / ListInferenceProfiles / GetFoundationModelAvailability.
+ * A Test invoke remains an opt-in Admin path.
  *
  * Models that are PROVISIONED-only are dropped — invoking one needs a
  * provisioned throughput ARN this app does not manage.
@@ -60,12 +61,55 @@ async function listAllInferenceProfiles(
   return summaries;
 }
 
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]!);
+    }
+  }
+  const n = Math.max(1, Math.min(limit, items.length));
+  await Promise.all(Array.from({ length: n }, () => worker()));
+  return out;
+}
+
+async function probeFoundationAvailability(
+  client: InstanceType<typeof import("@aws-sdk/client-bedrock").BedrockClient>,
+  GetFoundationModelAvailabilityCommand: typeof import("@aws-sdk/client-bedrock").GetFoundationModelAvailabilityCommand,
+  foundationIds: string[],
+): Promise<Map<string, BedrockAvailability | "unknown">> {
+  const map = new Map<string, BedrockAvailability | "unknown">();
+  if (foundationIds.length === 0) return map;
+
+  await mapWithConcurrency(foundationIds, 6, async id => {
+    try {
+      const out = await client.send(new GetFoundationModelAvailabilityCommand({ modelId: id }));
+      map.set(id, {
+        authorizationStatus: out.authorizationStatus,
+        entitlementAvailability: out.entitlementAvailability,
+        regionAvailability: out.regionAvailability,
+        agreementStatus: out.agreementAvailability?.status,
+      });
+    } catch {
+      map.set(id, "unknown");
+    }
+  });
+  return map;
+}
+
 async function listBedrockModels(region: string, profile: string | null): Promise<CatalogModel[]> {
   return withRealAwsEndpoints(async () => {
     const {
       BedrockClient,
       ListFoundationModelsCommand,
       ListInferenceProfilesCommand,
+      GetFoundationModelAvailabilityCommand,
     } = await import("@aws-sdk/client-bedrock");
     const { fromNodeProviderChain } = await import("@aws-sdk/credential-providers");
 
@@ -84,9 +128,22 @@ async function listBedrockModels(region: string, profile: string | null): Promis
       // Without profiles we still offer the on-demand ACTIVE subset.
     }
 
-    return selectInvocableBedrockModels(summaries, profiles)
-      .map(c => c.model)
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const candidates = selectInvocableBedrockModels(summaries, profiles);
+    let availability = new Map<string, BedrockAvailability | "unknown">();
+    try {
+      availability = await probeFoundationAvailability(
+        client,
+        GetFoundationModelAvailabilityCommand,
+        uniqueFoundationModelIds(candidates),
+      );
+    } catch {
+      // Keep the listed set if the availability API is denied for the whole call.
+    }
+
+    return applyBedrockAvailability(candidates, availability).filter(m => {
+      const foundation = candidates.find(c => c.model.id === m.id)?.foundationModelId;
+      return !isBedrockIdDenied(m.id, foundation);
+    });
   });
 }
 

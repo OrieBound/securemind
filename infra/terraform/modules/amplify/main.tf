@@ -71,11 +71,6 @@ variable "avatar_s3_bucket_name" {
   default = ""
 }
 
-variable "avatar_s3_bucket_arn" {
-  type    = string
-  default = ""
-}
-
 variable "branch_name" {
   type    = string
   default = "main"
@@ -146,8 +141,8 @@ data "aws_iam_policy_document" "amplify_cognito_admin" {
   }
   # ListUsers is sometimes denied when scoped only to the pool ARN.
   statement {
-    sid     = "FirstAdminListUsers"
-    actions = ["cognito-idp:ListUsers"]
+    sid       = "FirstAdminListUsers"
+    actions   = ["cognito-idp:ListUsers"]
     resources = ["*"]
   }
 }
@@ -197,6 +192,7 @@ data "aws_iam_policy_document" "amplify_bedrock" {
       "bedrock:InvokeModelWithResponseStream",
       "bedrock:ListFoundationModels",
       "bedrock:GetFoundationModel",
+      "bedrock:GetFoundationModelAvailability",
       "bedrock:ListInferenceProfiles",
       "transcribe:StartStreamTranscription",
     ]
@@ -229,6 +225,7 @@ resource "aws_iam_role_policy" "amplify_vendor_keys" {
 }
 
 data "aws_iam_policy_document" "amplify_avatars" {
+  count = var.avatar_s3_bucket_name != "" ? 1 : 0
   statement {
     sid = "ProfilePhotos"
     actions = [
@@ -236,20 +233,22 @@ data "aws_iam_policy_document" "amplify_avatars" {
       "s3:PutObject",
       "s3:DeleteObject",
     ]
-    resources = ["${var.avatar_s3_bucket_arn}/*"]
+    resources = ["arn:aws:s3:::${var.avatar_s3_bucket_name}/*"]
   }
   statement {
     sid       = "ProfilePhotosList"
     actions   = ["s3:ListBucket"]
-    resources = [var.avatar_s3_bucket_arn]
+    resources = ["arn:aws:s3:::${var.avatar_s3_bucket_name}"]
   }
 }
 
+# Count on the bucket name, not the computed ARN — a new bucket's ARN is
+# unknown until apply, which makes `count` illegal at plan time.
 resource "aws_iam_role_policy" "amplify_avatars" {
-  count  = var.avatar_s3_bucket_arn != "" ? 1 : 0
+  count  = var.avatar_s3_bucket_name != "" ? 1 : 0
   name   = "securemind-amplify-avatars-${var.env_name}"
   role   = aws_iam_role.amplify.id
-  policy = data.aws_iam_policy_document.amplify_avatars.json
+  policy = data.aws_iam_policy_document.amplify_avatars[0].json
 }
 
 resource "random_id" "instance_encryption" {
@@ -268,7 +267,7 @@ resource "aws_amplify_app" "this" {
   platform             = "WEB_COMPUTE"
   iam_service_role_arn = aws_iam_role.amplify.arn
   # Distinct from the service role: injected into Next.js compute so AdminCreateUser works.
-  compute_role_arn     = aws_iam_role.amplify.arn
+  compute_role_arn = aws_iam_role.amplify.arn
 
   build_spec = <<-EOT
     version: 1

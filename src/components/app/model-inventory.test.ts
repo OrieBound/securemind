@@ -26,5 +26,15 @@ describe("model inventory copy", () => {
     expect(
       modelBlurb(model({ id: "llama3.2:3b", name: "llama3.2:3b", provider: "ollama", note: "Ollama · local" })),
     ).toMatch(/this machine/);
+    expect(
+      modelBlurb(
+        model({
+          id: "us.anthropic.claude-opus-4-6",
+          name: "Claude Opus 4.6",
+          provider: "bedrock",
+          access: "needs_enablement",
+        }),
+      ),
+    ).toMatch(/Model catalog/);
   });
 });

@@ -16,20 +16,14 @@ import {
   flattenLiveCatalog,
   type ReferenceCatalogSlice,
 } from "@/lib/models/reference-catalog";
-import { isChatUsableModelId } from "@/lib/models/catalog-shared";
+import { isChatUsableModelId, type CatalogModel } from "@/lib/models/catalog-shared";
 import {
   compareModelsForQuery,
   matchesModelQuery,
   modelPickerHint,
 } from "@/lib/models/model-search";
 
-export type CatalogModel = {
-  id: string;
-  name: string;
-  provider: "groq" | "bedrock" | "ollama" | "openai" | "anthropic" | "google";
-  modality: "text" | "vision" | "other";
-  note?: string;
-};
+export type { CatalogModel };
 
 export type ModelCatalog = {
   groq: CatalogModel[];
@@ -118,13 +112,22 @@ export function useModelCatalog(): CatalogState {
 
 export type ModelProviderId = CatalogModel["provider"];
 
-/** Models that may be used for chat / complexity-tier routing. Excludes embed, TTS, image, guard. */
-export function isChatSelectableModel(m: Pick<CatalogModel, "id" | "modality">): boolean {
+/** Listed as chat-capable (Settings directory). May still need Bedrock Model access. */
+export function isListedChatModel(m: Pick<CatalogModel, "id" | "modality">): boolean {
   return m.modality !== "other" && isChatUsableModelId(m.id);
+}
+
+/** Models that may be used for chat / complexity-tier routing. Excludes embed, TTS, image, guard, Sales-gated Bedrock ids, and Bedrock ids that still need console enablement. */
+export function isChatSelectableModel(m: Pick<CatalogModel, "id" | "modality" | "access">): boolean {
+  return isListedChatModel(m) && m.access !== "needs_enablement";
 }
 
 export function chatSelectableModels(models: CatalogModel[]): CatalogModel[] {
   return models.filter(isChatSelectableModel);
+}
+
+export function settingsCatalogModels(models: CatalogModel[]): CatalogModel[] {
+  return models.filter(isListedChatModel);
 }
 
 /** Live catalog only — unconfigured vendors do not appear in operational pickers. */
@@ -134,6 +137,11 @@ export function buildPickerModels(catalog: ReferenceCatalogSlice): CatalogModel[
 
 export function buildChatPickerModels(catalog: ReferenceCatalogSlice): CatalogModel[] {
   return chatSelectableModels(buildPickerModels(catalog));
+}
+
+/** Settings → Models: includes Bedrock rows that still need console enablement. */
+export function buildSettingsCatalogModels(catalog: ReferenceCatalogSlice): CatalogModel[] {
+  return settingsCatalogModels(buildPickerModels(catalog));
 }
 
 const PROVIDER_STYLES: Record<ModelProviderId, { label: string; className: string }> = {
@@ -439,6 +447,11 @@ export function ModelPickerList({
                       {m.name}
                     </span>
                     <ProviderBadge provider={m.provider} className="opacity-90" />
+                    {browse && m.access === "needs_enablement" && (
+                      <span className="inline-flex items-center shrink-0 rounded-md border border-amber-400/35 bg-amber-500/15 px-1.5 py-0.5 text-[0.5rem] font-semibold uppercase tracking-wider text-amber-100/90">
+                        Needs enablement
+                      </span>
+                    )}
                     {selected && (
                       <span className="inline-flex items-center gap-0.5 shrink-0 rounded-md bg-indigo-500/25 border border-indigo-400/35 px-1.5 py-0.5 text-[0.5rem] font-semibold uppercase tracking-wider text-indigo-200">
                         <Check className="size-2.5" aria-hidden />
