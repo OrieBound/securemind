@@ -9,7 +9,7 @@
  * recursive symlinks on a read-only FS and the origin returns HTTP 500.
  */
 
-import { existsSync, readdirSync, rmSync, statSync, unlinkSync } from "node:fs";
+import { existsSync, readdirSync, rmSync, statSync, unlinkSync, copyFileSync } from "node:fs";
 import path from "node:path";
 
 const ROOT = process.cwd();
@@ -87,6 +87,11 @@ if (existsSync(STANDALONE)) {
     if (STANDALONE_KEEP.has(name)) continue;
     rm(path.join(".next/standalone", name));
     console.log(`amplify-prune-compute: dropped leaked standalone/${name}`);
+  }
+  const envSrc = path.join(ROOT, ".env.production");
+  if (existsSync(envSrc)) {
+    copyFileSync(envSrc, path.join(STANDALONE, ".env.production"));
+    console.log("amplify-prune-compute: copied .env.production into standalone");
   }
 }
 
