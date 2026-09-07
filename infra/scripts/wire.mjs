@@ -16,6 +16,7 @@ import {
   loadDeployEnv,
   resolveDeployEnvPath,
   stackOutputs,
+  terraformOutputsMapped,
 } from "./lib.mjs";
 
 function uniq(list) {
@@ -165,7 +166,7 @@ function updateApiGatewayChatCors(apiBaseUrl, allowedOrigin) {
   console.log(`API Gateway /chat OPTIONS Allow-Origin=${allowedOrigin}`);
 }
 
-function updateAmplifyEnv({ appId, branch, apiBaseUrl, authOut, region }) {
+function updateAmplifyEnv({ appId, branch, apiBaseUrl, authOut, region, avatarBucket }) {
   if (!appId) return;
 
   const existing = awsJson(["amplify", "get-app", "--app-id", appId]);
@@ -180,6 +181,7 @@ function updateAmplifyEnv({ appId, branch, apiBaseUrl, authOut, region }) {
     COGNITO_CLIENT_ID: authOut.ClientId || current.COGNITO_CLIENT_ID || "",
     COGNITO_REGION: process.env.COGNITO_REGION || region || current.COGNITO_REGION || "",
     COGNITO_ISSUER: authOut.Issuer || current.COGNITO_ISSUER || "",
+    ...(avatarBucket ? { AVATAR_S3_BUCKET: avatarBucket } : {}),
   };
 
   const map = Object.entries(envVars)
@@ -281,6 +283,7 @@ API: ${apiOut.ApiBaseUrl}
     apiBaseUrl: apiOut.ApiBaseUrl,
     authOut,
     region: args.region,
+    avatarBucket: terraformOutputsMapped().avatar_bucket_name || process.env.AVATAR_S3_BUCKET || "",
   });
 
   console.log(`

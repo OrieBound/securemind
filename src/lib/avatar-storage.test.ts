@@ -20,6 +20,7 @@ describe("avatar disk store", () => {
   afterEach(() => {
     rmSync(dir, { recursive: true, force: true });
     delete process.env.AVATAR_STORAGE_PATH;
+    delete process.env.SECUREMIND_EDITION;
   });
 
   it("round-trips bytes for the identity user only", async () => {
@@ -32,5 +33,13 @@ describe("avatar disk store", () => {
     expect(await readAvatar("user-b")).toBeNull();
     await removeAvatar("user-a");
     expect(await readAvatar("user-a")).toBeNull();
+  });
+
+  it("refuses disk writes on a hosted install without a bucket", async () => {
+    process.env.SECUREMIND_EDITION = "cloud";
+    const { writeAvatar } = await import("@/lib/avatar-storage");
+    await expect(writeAvatar("user-a", PNG, "image/png")).rejects.toThrow(
+      /object store is not configured/i,
+    );
   });
 });
