@@ -13,8 +13,10 @@ const setDirectoryUserRole = vi.fn();
 const setDirectoryUserEnabled = vi.fn();
 const findDirectoryUser = vi.fn();
 const adminResetDirectoryUserPassword = vi.fn();
+const adminSetDirectoryUserPassword = vi.fn();
 const cognitoAdminAvailable = vi.fn();
 const sendWelcomeAddedEmail = vi.fn();
+const sendAdminPasswordSetEmail = vi.fn();
 const isMailConfigured = vi.fn();
 const getDefaultMonthlyCostCapUsd = vi.fn();
 const getUserMonthSpendUsd = vi.fn();
@@ -50,11 +52,15 @@ vi.mock("@/lib/cognito-admin", () => ({
   setDirectoryUserEnabled: (...args: unknown[]) => setDirectoryUserEnabled(...args),
   findDirectoryUser: (...args: unknown[]) => findDirectoryUser(...args),
   adminResetDirectoryUserPassword: (...args: unknown[]) => adminResetDirectoryUserPassword(...args),
+  adminSetDirectoryUserPassword: (...args: unknown[]) => adminSetDirectoryUserPassword(...args),
 }));
 
 vi.mock("@/lib/mail", () => ({
   isMailConfigured: (...args: unknown[]) => isMailConfigured(...args),
   sendWelcomeAddedEmail: (...args: unknown[]) => sendWelcomeAddedEmail(...args),
+  sendAdminPasswordSetEmail: (...args: unknown[]) => sendAdminPasswordSetEmail(...args),
+  appSignInUrl: () => "http://localhost:3000/",
+  appPublicUrl: () => "http://localhost:3000",
 }));
 
 vi.mock("@/lib/cost-cap", async () => {
@@ -78,10 +84,11 @@ beforeEach(() => {
   cognitoAdminAvailable.mockReturnValue(true);
   isMailConfigured.mockReturnValue(false);
   sendWelcomeAddedEmail.mockResolvedValue({ sent: false, reason: "not_configured" });
+  sendAdminPasswordSetEmail.mockResolvedValue({ sent: false, reason: "not_configured" });
   getDefaultMonthlyCostCapUsd.mockResolvedValue(10);
   getUserMonthSpendUsd.mockResolvedValue(0);
   getUsersMonthSpendUsd.mockResolvedValue(new Map());
-  ensureUserProfile.mockResolvedValue({ monthlyCostCapUsd: null });
+  ensureUserProfile.mockResolvedValue({ monthlyCostCapUsd: null, status: "active" });
   setUserMonthlyCostCap.mockResolvedValue({ monthlyCostCapUsd: 10 });
   getOrgOverview.mockResolvedValue({
     range: "30d",
@@ -181,6 +188,10 @@ describe("GET /api/admin/users", () => {
     const body = await res.json();
     expect(body.available).toBe(true);
     expect(body.users).toHaveLength(1);
+    expect(body.users[0].profileStatus).toBe("active");
+    expect(body.signInUrl).toBe("http://localhost:3000/");
+    expect(body.passwordPolicy.minLength).toBeGreaterThanOrEqual(8);
+    expect(Array.isArray(body.passwordPolicy.rules)).toBe(true);
   });
 });
 
@@ -249,6 +260,43 @@ describe("POST /api/admin/users", () => {
     });
     const body = await res.json();
     expect(body.welcomeEmail).toEqual({ sent: false, reason: "not_configured" });
+    expect(body.signInUrl).toBe("http://localhost:3000/");
+  });
+
+  it("skips invite email when sendInvite is false", async () => {
+    getIdentity.mockResolvedValue({
+      userId: "operator-1",
+      authenticated: true,
+      role: "admin",
+      groups: ["Operator"],
+    });
+    createDirectoryUser.mockResolvedValue({
+      username: "new@example.com",
+      email: "new@example.com",
+      role: "member",
+      enabled: true,
+      status: "CONFIRMED",
+      groups: ["Member"],
+      sub: "sub-new",
+      createdAt: null,
+    });
+    const { POST } = await import("@/app/api/admin/users/route");
+    const res = await POST(
+      new NextRequest("http://localhost/api/admin/users", {
+        method: "POST",
+        body: JSON.stringify({
+          email: "new@example.com",
+          password: "Password1!",
+          role: "member",
+          sendInvite: false,
+        }),
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(sendWelcomeAddedEmail).not.toHaveBeenCalled();
+    const body = await res.json();
+    expect(body.welcomeEmail).toEqual({ sent: false, reason: "skipped" });
   });
 });
 
@@ -354,5 +402,45 @@ describe("PATCH /api/admin/users/[username]", () => {
     expect(res.status).toBe(422);
     const body = await res.json();
     expect(body.error).toMatch(/last admin/i);
+  });
+
+  it("sets a directory password without emailing the secret", async () => {
+    getIdentity.mockResolvedValue({
+      userId: "operator-1",
+      authenticated: true,
+      email: "operator@securemind.local",
+      role: "admin",
+      groups: ["Operator"],
+    });
+    adminSetDirectoryUserPassword.mockResolvedValue({
+      username: "member@x.com",
+      email: "member@x.com",
+      role: "member",
+      enabled: true,
+      status: "CONFIRMED",
+      groups: ["Member"],
+      sub: "s",
+      createdAt: null,
+      isOwner: false,
+    });
+    const { PATCH } = await import("@/app/api/admin/users/[username]/route");
+    const res = await PATCH(
+      new NextRequest("http://localhost/api/admin/users/member%40x.com", {
+        method: "PATCH",
+        body: JSON.stringify({ password: "Password1!", notifyPasswordEmail: true }),
+        headers: { "Content-Type": "application/json" },
+      }),
+      { params: Promise.resolve({ username: "member@x.com" }) },
+    );
+    expect(res.status).toBe(200);
+    expect(adminSetDirectoryUserPassword).toHaveBeenCalledWith("member@x.com", "Password1!", {
+      actorUsername: "operator@securemind.local",
+      actorRole: "admin",
+      actorUserId: "operator-1",
+    });
+    expect(sendAdminPasswordSetEmail).toHaveBeenCalledWith({ to: "member@x.com" });
+    const body = await res.json();
+    expect(body.passwordSet).toBe(true);
+    expect(body.message).toMatch(/never emailed/i);
   });
 });

@@ -22,12 +22,16 @@ export function isMailConfigured(): boolean {
   return smtpConfigured();
 }
 
-function appPublicUrl(): string {
+export function appPublicUrl(): string {
   const raw =
     process.env.APP_PUBLIC_URL?.trim() ||
     process.env.NEXTAUTH_URL?.trim() ||
     "http://localhost:3000";
   return raw.replace(/\/$/, "");
+}
+
+export function appSignInUrl(): string {
+  return `${appPublicUrl()}/`;
 }
 
 function transport() {
@@ -71,36 +75,71 @@ export async function sendMail(opts: {
   }
 }
 
-/** Welcome notice when an Admin creates a Cognito directory user. */
+function roleLabel(role: AppRole): string {
+  return role === "super_admin" ? "Super Admin" : role === "admin" ? "Admin" : "Member";
+}
+
+/**
+ * Invite notice when an Admin creates a directory user.
+ * This is not a one-click magic link — it points at the public sign-in page.
+ * Never include the password.
+ */
 export async function sendWelcomeAddedEmail(opts: {
   to: string;
   role: AppRole;
 }): Promise<MailSendResult> {
-  const signInUrl = `${appPublicUrl()}/`;
-  const roleLabel =
-    opts.role === "super_admin" ? "Super Admin" : opts.role === "admin" ? "Admin" : "Member";
-  const subject = "You've been added to SecureMind";
+  const signInUrl = appSignInUrl();
+  const label = roleLabel(opts.role);
+  const subject = "You're invited to SecureMind";
   const text = [
     "Hello,",
     "",
-    `An administrator has added you to SecureMind as a ${roleLabel}.`,
+    `An administrator has invited you to SecureMind as a ${label}.`,
     "",
-    `Sign in: ${signInUrl}`,
+    "This is not a one-click login link. Open the sign-in page and use the email this message was sent to.",
+    `Sign-in page: ${signInUrl}`,
     "",
-    "Your sign-in password was set by the administrator who created your account.",
-    "If you do not have those credentials, contact them directly — this email does not include a password.",
+    "Your administrator set a password for this account and will share it separately.",
+    "This email never includes a password. If you do not have it, contact the person who invited you.",
     "",
     "— SecureMind",
   ].join("\n");
 
   const html = `
     <p>Hello,</p>
-    <p>An administrator has added you to <strong>SecureMind</strong> as a <strong>${roleLabel}</strong>.</p>
-    <p><a href="${signInUrl}">Sign in to SecureMind</a></p>
-    <p>Your sign-in password was set by the administrator who created your account.
-    If you do not have those credentials, contact them directly — this email does not include a password.</p>
+    <p>An administrator has invited you to <strong>SecureMind</strong> as a <strong>${label}</strong>.</p>
+    <p>This is not a one-click login link. Open the sign-in page and use the email this message was sent to.</p>
+    <p>Sign-in page: <a href="${signInUrl}">${signInUrl}</a></p>
+    <p>Your administrator set a password for this account and will share it separately.
+    This email never includes a password. If you do not have it, contact the person who invited you.</p>
     <p>— SecureMind</p>
   `.trim();
 
+  return sendMail({ to: opts.to, subject, text, html });
+}
+
+/** Notice after an admin sets a new password. Never includes the password. */
+export async function sendAdminPasswordSetEmail(opts: {
+  to: string;
+}): Promise<MailSendResult> {
+  const signInUrl = appSignInUrl();
+  const subject = "Your SecureMind password was updated";
+  const text = [
+    "Hello,",
+    "",
+    "An administrator set a new sign-in password for your SecureMind account.",
+    "They will share that password with you separately — this email does not include it.",
+    "",
+    `Sign-in page: ${signInUrl}`,
+    "",
+    "— SecureMind",
+  ].join("\n");
+  const html = `
+    <p>Hello,</p>
+    <p>An administrator set a new sign-in password for your SecureMind account.
+    They will share that password with you separately — this email does not include it.</p>
+    <p>Sign-in page: <a href="${signInUrl}">${signInUrl}</a></p>
+    <p>— SecureMind</p>
+  `.trim();
   return sendMail({ to: opts.to, subject, text, html });
 }
