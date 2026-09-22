@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { AuthSessionProvider } from "@/components/app/auth-session";
 import { InstanceSetupWizard } from "@/components/app/instance-setup-wizard";
+import { ProductMark } from "@/components/app/product-mark";
 import { PRODUCT_NAME, PRODUCT_POSITIONING } from "@/lib/branding";
 import { cn } from "@/lib/utils";
 import { storeClientAccessToken } from "@/lib/client/api-base";
@@ -254,7 +255,6 @@ export function AuthGate({ children }: Props) {
     return (
       <InstanceSetupWizard
         edition={setup.edition}
-        preferredStorage={setup.preferredStorage}
         onDone={() => {
           void refreshSetup();
         }}
@@ -281,12 +281,17 @@ export function AuthGate({ children }: Props) {
   return (
     <div className="flex h-dvh items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm rounded-2xl border border-foreground/10 bg-popover p-6 shadow-2xl space-y-5">
-        <div>
-          <p className="text-meta uppercase tracking-[0.2em] text-[var(--primary-soft-foreground)] font-medium">
-            {PRODUCT_NAME}
-          </p>
-          <h1 className="text-title mt-1.5">{title}</h1>
-          <p className="text-ui text-[var(--text-muted)] mt-2 leading-[var(--leading-body)]">
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <ProductMark size={40} className="size-10 shrink-0" />
+            <div>
+              <p className="text-meta uppercase tracking-[0.2em] text-[var(--primary-soft-foreground)] font-medium">
+                {PRODUCT_NAME}
+              </p>
+              <h1 className="text-title mt-1.5">{title}</h1>
+            </div>
+          </div>
+          <p className="text-ui text-[var(--text-muted)] leading-[var(--leading-body)]">
             {mode === "forgot" || mode === "reset"
               ? "We will never confirm whether an email is registered."
               : mode === "claim"

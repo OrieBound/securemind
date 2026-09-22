@@ -4,7 +4,6 @@ import {
   BarChart2,
   ChevronDown,
   ChevronRight,
-  Cloud,
   Cpu,
   LayoutGrid,
   LogOut,
@@ -58,10 +57,10 @@ export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
   profile:            "My Profile",
   appearance:         "Appearance",
   workspace:          "Workspace",
-  /** Complexity tiers + catalog. Keep this id: Insights and localStorage already use it. */
+  /** Connections, catalog, and complexity tiers. Keep this id: Insights and localStorage already use it. */
   inference:          "Models",
-  /** Vendor keys, Bedrock, Ollama — how models are reached. */
-  providers:          "Providers",
+  /** Older deep links. Renders the Models page; Connections opens at the top. */
+  providers:          "Models",
   admin:              "Admin console",
 };
 
@@ -479,22 +478,12 @@ export function SettingsSidebarNav({
         compact
       />
 
-      {/* AI first — Models (what runs) then Providers (how it is reached) */}
       <NavGroup id="ai" label="AI" forceOpen={section === "inference" || section === "providers"}>
         <NavItem
-          active={section === "inference"}
+          active={section === "inference" || section === "providers"}
           onClick={() => onSectionChange("inference")}
           icon={Cpu}
           label="Models"
-          indent
-          compact
-          emphasize
-        />
-        <NavItem
-          active={section === "providers"}
-          onClick={() => onSectionChange("providers")}
-          icon={Cloud}
-          label="Providers"
           indent
           compact
           emphasize
@@ -703,7 +692,7 @@ export function SettingsHub({
   }, [section, isAdmin, onSectionChange]);
 
   const mobileSections = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsSection[]).filter(
-    id => id !== "admin" || isAdmin,
+    id => id !== "providers" && (id !== "admin" || isAdmin),
   );
 
   return (
@@ -711,7 +700,7 @@ export function SettingsHub({
       {/* Mobile section picker — sidebar nav is hidden below md */}
       <div className="md:hidden shrink-0 border-b border-foreground/[0.06] px-4 py-2">
         <select
-          value={section === "admin" && !isAdmin ? "overview" : section}
+          value={section === "providers" ? "inference" : section === "admin" && !isAdmin ? "overview" : section}
           onChange={e => {
             const next = e.target.value as SettingsSection;
             if (next === "insights-context") onOpenInsightsDashboard("usage");
@@ -731,21 +720,16 @@ export function SettingsHub({
         <div className="max-w-7xl mx-auto flex flex-col gap-5 w-full">
           <div>
             <h2 className="text-title">
-              {SETTINGS_SECTION_LABELS[section]}
+              {section === "providers" ? "Models" : SETTINGS_SECTION_LABELS[section]}
             </h2>
             {section === "overview" && (
               <p className="text-ui text-[var(--text-muted)] mt-1.5 leading-[var(--leading-body)]">
                 Models, knowledge, memory, cost, and sensitive-data risk — visibility and control, not a security guarantee.
               </p>
             )}
-            {section === "inference" && (
+            {(section === "inference" || section === "providers") && (
               <p className="text-ui text-[var(--text-muted)] mt-1.5 leading-[var(--leading-body)]">
-                Complexity tiers pick what chat uses. Available models is the catalog of every chat model your credentials can reach.
-              </p>
-            )}
-            {section === "providers" && (
-              <p className="text-ui text-[var(--text-muted)] mt-1.5 leading-[var(--leading-body)]">
-                Connect the services that run those models — vendor APIs, Amazon Bedrock, or Ollama on this machine.
+                Connect a model source, then review the models it can run and how chat routes them.
               </p>
             )}
             {section === "admin" && (
@@ -762,15 +746,9 @@ export function SettingsHub({
               </p>
               <OverviewCard
                 title="Models"
-                description="Complexity tiers and the catalog of chat-capable models."
+                description="Connections, the catalog of chat models, and complexity tiers."
                 accent="indigo"
                 onClick={() => onSectionChange("inference")}
-              />
-              <OverviewCard
-                title="Providers"
-                description="Vendor API keys, Amazon Bedrock, and local Ollama."
-                accent="indigo"
-                onClick={() => onSectionChange("providers")}
               />
               <p className="text-[0.58rem] uppercase tracking-wider text-foreground/30 font-semibold pt-3">
                 Insights
@@ -936,19 +914,9 @@ export function SettingsHub({
             </div>
           )}
 
-          {section === "inference" && (
+          {(section === "inference" || section === "providers") && (
             <InferenceSettings
-              page="models"
               complexityTiers={complexityTiers}
-              onOpenProviders={() => onSectionChange("providers")}
-              onProvidersChanged={onProvidersChanged}
-            />
-          )}
-
-          {section === "providers" && (
-            <InferenceSettings
-              page="providers"
-              onOpenModels={() => onSectionChange("inference")}
               onProvidersChanged={onProvidersChanged}
             />
           )}

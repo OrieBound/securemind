@@ -10,14 +10,17 @@ import {
 import { withRealAwsEndpoints } from "@/lib/aws-credentials";
 import { formatGroqConnectivityError } from "./groq-connectivity";
 import { selectGroqApiKey } from "./groq";
-import { probeOllama } from "./ollama";
+import { probeOllama, ollamaModelCapabilities } from "./ollama";
 import { resolveVendorApiKey } from "./vendor-secrets";
 import { listOpenAIModels } from "./openai";
 import { listAnthropicModels } from "./anthropic";
 import { listGoogleModels } from "./google";
+import { listXaiModels } from "./xai";
 import { runtimeEdition } from "@/lib/runtime-env";
 import { selectInvocableBedrockModels, applyBedrockAvailability, uniqueFoundationModelIds, type BedrockAvailability } from "./bedrock-catalog";
 import { isBedrockIdDenied } from "./bedrock-denylist";
+import { getModelAvailability, modelCredentialScope } from "./model-availability-store";
+import { modelKey, withModelAvailability } from "./model-availability";
 import {
   BEDROCK_TEXT_MODELS,
   formatBedrockCatalogError,
@@ -175,12 +178,14 @@ async function listGroqModels(apiKey: string): Promise<CatalogModel[]> {
 
 async function listOllamaModels(): Promise<CatalogModel[]> {
   const { tags } = await probeOllama(2500);
-  return tags.map(name => ({
-    id: name,
-    name,
-    provider: "ollama" as const,
-    modality: modalityForListedModel(name),
-    note: modalityForListedModel(name) === "other" ? "Ollama · not for chat" : "Ollama · local",
+  return Promise.all(tags.map(async (name): Promise<CatalogModel> => {
+    const capabilities = await ollamaModelCapabilities(name);
+    const modality = capabilities && !capabilities.includes("completion") ? "other" : modalityForListedModel(name);
+    return {
+      id: name, name, provider: "ollama", modality,
+      verification: capabilities?.includes("completion") && modality !== "other" ? "installed" : "unverified",
+      note: modality === "other" ? "Ollama · not for chat" : "Ollama · local",
+    };
   }));
 }
 
@@ -191,10 +196,13 @@ export type ModelCatalog = ModelCatalogBuckets & {
 const CATALOG_TTL_MS = 60_000;
 let catalogCache: { at: number; value: ModelCatalog } | null = null;
 let catalogInflight: Promise<ModelCatalog> | null = null;
+let catalogGeneration = 0;
 
 /** Call after provider keys change so allowlist/catalog paths see fresh Groq models. */
 export function invalidateModelCatalogCache(): void {
   catalogCache = null;
+  catalogInflight = null;
+  catalogGeneration++;
 }
 
 /**
@@ -209,10 +217,11 @@ export async function getModelCatalogCached(opts?: { fresh?: boolean }): Promise
     return catalogCache.value;
   }
   if (!opts?.fresh && catalogInflight) return catalogInflight;
-  if (opts?.fresh) catalogCache = null;
+  if (opts?.fresh) invalidateModelCatalogCache();
+  const generation = catalogGeneration;
 
   const pending = getModelCatalog().then(value => {
-    catalogCache = { at: Date.now(), value };
+    if (generation === catalogGeneration) catalogCache = { at: Date.now(), value };
     return value;
   }).finally(() => {
     if (catalogInflight === pending) catalogInflight = null;
@@ -226,14 +235,14 @@ export async function getModelCatalog(): Promise<ModelCatalog> {
   const errors: string[] = [];
   let groq: CatalogModel[] = [];
   const groqKey = selectGroqApiKey(secrets);
-  if (groqKey) {
+  if (groqKey && secrets.externalRiskAcknowledged) {
     try {
       groq = await listGroqModels(groqKey);
     } catch (err) {
       errors.push(formatGroqConnectivityError(err));
     }
   }
-  const ollama = await listOllamaModels();
+  const ollama = runtimeEdition() === "local" || process.env.OLLAMA_BASE_URL ? await listOllamaModels() : [];
 
   let bedrock: CatalogModel[] = [];
   if (await instanceCanUseBedrock()) {
@@ -249,6 +258,7 @@ export async function getModelCatalog(): Promise<ModelCatalog> {
   let openai: CatalogModel[] = [];
   let anthropic: CatalogModel[] = [];
   let google: CatalogModel[] = [];
+  let xai: CatalogModel[] = [];
 
   const openaiKey = await resolveVendorApiKey("openai");
   if (openaiKey) {
@@ -277,5 +287,21 @@ export async function getModelCatalog(): Promise<ModelCatalog> {
     }
   }
 
-  return { groq, bedrock, ollama, openai, anthropic, google, errors };
+  const xaiKey = await resolveVendorApiKey("xai");
+  if (xaiKey) {
+    try {
+      xai = await listXaiModels(xaiKey);
+    } catch (err) {
+      errors.push(err instanceof Error ? err.message : "Grok catalog failed");
+    }
+  }
+
+  const buckets = { groq, bedrock, ollama, openai, anthropic, google, xai };
+  const records = await getModelAvailability();
+  await Promise.all((Object.keys(buckets) as Array<keyof typeof buckets>).map(async provider => {
+    if (!buckets[provider].length) return;
+    const scope = await modelCredentialScope(provider);
+    buckets[provider] = buckets[provider].map(model => withModelAvailability(model, records[modelKey(model)], scope));
+  }));
+  return { ...buckets, errors };
 }

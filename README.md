@@ -127,7 +127,7 @@ These are **risk-reduction** controls, not a security or compliance guarantee. D
 
 ## Discoveries and roadblocks (dated)
 
-**Last stamped: 2026-08-30.** First AWS sandbox apply (account `your-aws-profile` / `123456789012`). Full symptom → cause → fix notes: [`docs/deploy/hosted-sandbox-roadblocks.md`](docs/deploy/hosted-sandbox-roadblocks.md).
+**Last stamped: 2026-09-21.** First AWS sandbox apply (account `your-aws-profile` / `123456789012`). Full symptom → cause → fix notes: [`docs/deploy/hosted-sandbox-roadblocks.md`](docs/deploy/hosted-sandbox-roadblocks.md).
 
 **Not live until GitHub Actions finishes.** First-run Owner claim was pushed to `main` on 2026-08-29 so CI can `terraform apply` (environment `aws-sandbox`) and `amplify start-job`. Until that workflow is green, the live Amplify URL is still the job-12 Sign in build against an **empty** Cognito pool. After a green apply: `terraform output -raw setup_claim_secret` (Actions logs will not print it; use the CLI or the Terraform state output). Local try: empty Floci pool (`docker compose down -v` if old demo users exist) → `npm run dev`.
 
@@ -148,6 +148,7 @@ These are **risk-reduction** controls, not a security or compliance guarantee. D
 | 2026-08-30 | Image Knowledge seemed to need Groq | Groq is optional BYOK. Hosted image extract uses Bedrock (Nova Lite). Original files are not stored on the hosted install — only extracted, scanned text. |
 | 2026-08-30 | “Cloud is Dynamo” applied to keys and (wrongly) to passwords | Dynamo = app data only. Vendor API keys → Secrets Manager. Login passwords stay in Cognito (hashed), not SM or Dynamo. AWS access stays on the IAM role. |
 | 2026-08-30 | Terraform apply failed on Amplify vendor-keys IAM `count` | New Secrets Manager ARN is unknown at plan. Always attach the policy. |
+| 2026-09-21 | Groq tiers shown, “Hello” waited on Ollama, Whisper still worked | A saved Groq key is not a live model list. This install’s primary was Ollama. Groq’s edge refused chat (`403` / check network settings) while Whisper uses a different endpoint. **Check key** now probes the model list. Tiers show Groq only after that list succeeds. A refused Groq call is not swapped for Ollama. Local Docker image rebuilt; not on Amplify until deploy. |
 
 Production is a **second stack** in `your-aws-profile`, not a retarget of sandbox.
 
@@ -158,5 +159,5 @@ Production is a **second stack** in `your-aws-profile`, not a retarget of sandbo
 - [`docs/adr/0002-storage-choice.md`](docs/adr/0002-storage-choice.md) — local Postgres + pgvector; hosted AWS superseded by ADR 0007 (DynamoDB)
 - [`docs/adr/0003-local-aws-scaffolding.md`](docs/adr/0003-local-aws-scaffolding.md) — Floci + Compose
 - [`docs/adr/0004-amplify-lambda-hosting.md`](docs/adr/0004-amplify-lambda-hosting.md) — Amplify UI + API Gateway + Lambda
-- [`docs/deploy/hosted-sandbox-roadblocks.md`](docs/deploy/hosted-sandbox-roadblocks.md) — dated sandbox timeline: OIDC, Amplify 220 MB, HTTP 500, empty Cognito pool, hosted Dynamo mapping, secrets vs data (2026-08-30)
+- [`docs/deploy/hosted-sandbox-roadblocks.md`](docs/deploy/hosted-sandbox-roadblocks.md) — dated timeline: OIDC, Amplify 220 MB, HTTP 500, empty Cognito pool, hosted Dynamo mapping, secrets vs data, Groq tiers vs Ollama chat (2026-09-21)
 - [`AGENTS.md`](AGENTS.md) — rules for agents working in this repo

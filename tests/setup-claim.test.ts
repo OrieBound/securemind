@@ -229,6 +229,21 @@ describe("POST /api/auth/signup", () => {
 });
 
 describe("POST /api/setup/complete", () => {
+  it("normalizes a stale DynamoDB preference to Postgres on local installs", async () => {
+    process.env.SECUREMIND_EDITION = "local";
+    getIdentity.mockResolvedValue({ userId: "sub-owner", authenticated: true, role: "super_admin", groups: ["Owner"] });
+    const { POST } = await import("@/app/api/setup/complete/route");
+    const res = await POST(jsonReq("http://localhost/api/setup/complete", { storageBackend: "dynamodb", riskAck: true }));
+    expect(res.status).toBe(200);
+    expect(completeInstanceSetup).toHaveBeenCalledWith({ storageBackend: "postgres", userId: "sub-owner" });
+  });
+
+  it("reports Postgres locally even when a DynamoDB preference was saved previously", async () => {
+    process.env.SECUREMIND_EDITION = "local";
+    getInstanceSetupPersist.mockResolvedValue({ setupCompletedAt: null, setupClaimUsedAt: null, storageBackend: "dynamodb" });
+    const { getSetupStatus } = await import("@/lib/setup-claim");
+    expect((await getSetupStatus()).preferredStorage).toBe("postgres");
+  });
   it("requires an authenticated identity, not a body userId", async () => {
     getIdentity.mockResolvedValue({
       userId: "sub-owner",

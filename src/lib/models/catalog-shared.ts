@@ -6,9 +6,13 @@
 export type CatalogModel = {
   id: string;
   name: string;
-  provider: "groq" | "bedrock" | "ollama" | "openai" | "anthropic" | "google";
+  provider: "groq" | "bedrock" | "ollama" | "openai" | "anthropic" | "google" | "xai";
   modality: "text" | "vision" | "other";
   note?: string;
+  hidden?: boolean;
+  verification?: "unverified" | "installed" | "verified" | "failed";
+  checkedAt?: string;
+  verificationCode?: string;
   /**
    * Bedrock only. `needs_enablement` = this region lists the model, but the AWS
    * account still has to turn it on. Chat pickers omit these; Settings still
@@ -57,6 +61,7 @@ export type ModelCatalogBuckets = {
   openai: CatalogModel[];
   anthropic: CatalogModel[];
   google: CatalogModel[];
+  xai: CatalogModel[];
 };
 
 /**

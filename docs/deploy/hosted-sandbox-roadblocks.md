@@ -1,6 +1,6 @@
 # Hosted sandbox: roadblocks we hit
 
-**Last stamped: 2026-08-31.** First real AWS apply of SecureMind (account `your-aws-profile` / `123456789012`, August 2026). Sandbox stays the automatic `main` pipeline. Production is a **second stack** in `your-aws-profile`, not a retarget of this one.
+**Last stamped: 2026-09-21.** First real AWS apply of SecureMind (account `your-aws-profile` / `123456789012`, August 2026). Sandbox stays the automatic `main` pipeline. Production is a **second stack** in `your-aws-profile`, not a retarget of this one.
 
 Use this as an operator log and as interview notes: each item is **symptom → cause → what we did**. Dated chronology is in [Timeline](#timeline) below; README carries a short copy of the same stamp.
 
@@ -10,7 +10,7 @@ IaC and IAM layers: [infra/README.md](../../infra/README.md). Hosting decision: 
 
 ## Timeline
 
-Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first returned the error. Items 1–7 were the August 2026 apply campaign (jobs 1–7 failed). Items 8–10 are 2026-08-29. Items 11–13 are 2026-08-30 (hosted Dynamo mapping). Item 14 is secrets vs Dynamo. Item 15 is Terraform `count` on a new Secrets Manager ARN. Items 16–18 are 2026-08-31 (Knowledge cookie vs chat Bearer, and retrieval never running).
+Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first returned the error. Items 1–7 were the August 2026 apply campaign (jobs 1–7 failed). Items 8–10 are 2026-08-29. Items 11–13 are 2026-08-30 (hosted Dynamo mapping). Item 14 is secrets vs Dynamo. Item 15 is Terraform `count` on a new Secrets Manager ARN. Items 16–18 are 2026-08-31 (Knowledge cookie vs chat Bearer, and retrieval never running). Item 19 is 2026-09-21 (Groq key saved, chat still on Ollama, Whisper still working). The 2026-09-21 fix is in the working tree and the local Docker image. It is **not** on the live Amplify site until that build is deployed.
 
 | Date | # | Hurdle | Outcome |
 |------|---|--------|---------|
@@ -32,8 +32,11 @@ Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first r
 | 2026-08-31 | 16 | Knowledge “Authentication required” while chat still answered | Chat sends Bearer to API Gateway; Knowledge only sent the Amplify cookie. Cookie missing → 401. |
 | 2026-08-31 | 17 | Uploaded lease, model said it has no RAG / cannot see files | Turn-policy regex skipped retrieval. The model never “calls” Knowledge. |
 | 2026-08-31 | 18 | Security detections on an upload, still no citations | Detections prove extract + scrub, not embeddings. Empty embed → `EMBED_FAILED`. |
+| 2026-09-21 | 19 | Groq tiers shown, chat waited on Ollama, Whisper still worked | Saved key ≠ a live model list. Instance primary was Ollama. Groq’s edge refused chat from this server. Check key is now a real probe. |
 
 **As of 2026-08-31:** `b68400f` is on `main` (silent Knowledge search + Knowledge Bearer). Live UI is the previous Amplify job until this is pushed and that workflow is green.
+
+**As of 2026-09-21:** Item 19 is local-only until the next Amplify deploy. Same code path on localhost and cloud. Refresh the Docker app after `docker compose up -d --build --no-deps app`.
 
 ---
 
@@ -219,6 +222,25 @@ Pushed on `main` (`dc18b17`). Live site still writes keys to Dynamo until Terraf
 **Cause:** Ingest records scrub events when patterns fire. Embeddings are a later step (hosted: Bedrock Titan). If `embedded === 0`, the document can look “processed” without any vector the chat path can retrieve.
 
 **Fix:** Hosted ingest sets `processingError: "EMBED_FAILED"` when no chunks were embedded. Check Knowledge chunk count before assuming RAG is broken. After (17), a miss at 0.5 similarity still stays general with no Sources — that is a miss, not a 401.
+
+### 19. Groq models on the tier list, chat on Ollama, Whisper still working (2026-09-21)
+
+**Symptom:** Settings → Models showed a saved Groq key (`gsk_…`) as **Unreachable**, with a chip that said **Check key** and a banner “Groq key saved, but no models loaded.” Complexity tiers in Insights still showed GROQ models (Llama 3.3 70B, GPT OSS 120B, and the other built-in defaults). Saying “Hello there” showed **Waiting on your machine**, provider Ollama, model `llama3.2:3b`. The voice chip said **Groq Whisper**, and transcription with that same key worked. The xAI Grok row stayed **Not configured** — this was the Groq key, not xAI.
+
+**Cause:** Three separate facts lined up.
+
+1. A saved Groq key plus vendor-risk consent was treated as “Groq will run.” Insights therefore displayed the built-in Groq tier defaults even when the live model list was empty. Those labels were preferences, not a health check.
+2. This install’s instance primary is **Ollama**. With no runnable Groq assignment sent, chat resolves to the installed local model (`llama3.2:3b`). From inside the app container, Groq’s edge also answered the model list and chat completions with `403` and “Access denied. Please check your network settings.” (Cloudflare). The old local chat path then substituted Ollama after that failure, so a Groq attempt could still look like a local reply.
+3. Voice calls Groq Whisper (`whisper-large-v3-turbo`), a different endpoint from the model list and from chat. A working transcription does not mean chat models loaded. **Check key** was a status label for “key saved, zero models,” not a button that probed Groq.
+
+**Fix:** Same behavior on localhost and cloud.
+
+- **Check key** reloads the Groq model list and shows the refusal or the model count. The zero-model chip now says **No models**.
+- Complexity tiers show a Groq model only after that list actually returns it. Until then they show the local model chat will use.
+- An assigned Groq model that listed successfully stays on Groq even when the instance primary is Ollama.
+- A refused Groq chat call is shown to the user. It is not replaced with Ollama.
+
+Allow `api.groq.com` from this server (VPN or firewall), then use Check key. When the list loads, the next message uses those Groq models. The app cannot clear a Groq edge refusal by itself. Tests: Groq connectivity, tier assignment, runtime decision, and `streamChat` (refusal does not call Ollama; a successful Groq stream stays on Groq).
 
 ---
 

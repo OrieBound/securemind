@@ -13,9 +13,13 @@ describe("wizard storage choices", () => {
     expect(isValidWizardStorage("aurora", "cloud")).toBe(false);
   });
 
-  it("keeps Postgres as the local default", () => {
+  it("uses Postgres exclusively for local setup, ignoring stale preferences and lab fallbacks", () => {
     expect(parseWizardStorage(null, "local", "postgres")).toBe("postgres");
     expect(isValidWizardStorage("postgres", "local")).toBe(true);
     expect(isValidWizardStorage("neon", "local")).toBe(false);
+    expect(isValidWizardStorage("dynamodb", "local")).toBe(false);
+    expect(parseWizardStorage("dynamodb", "local", "postgres")).toBe("postgres");
+    expect(parseWizardStorage("dynamodb", "local", "dynamodb")).toBe("postgres");
+    expect(parseWizardStorage(null, "local", "dynamodb")).toBe("postgres");
   });
 });

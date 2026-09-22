@@ -60,6 +60,42 @@ describe("effectiveTierOverrides", () => {
     })).toEqual(DEFAULT_TIER_MODELS);
   });
 
+  it("does not post Groq assignments that cannot run", () => {
+    const canRun = (id: string) => id === "llama3.2:3b";
+    expect(effectiveTierOverrides({
+      selectionMode: "auto",
+      fixedModelId: "openai/gpt-oss-120b",
+      overrides: { Standard: "openai/gpt-oss-120b", Micro: "llama3.2:3b" },
+      cloudDefaultsWillRun: false,
+      canRun,
+    })).toEqual({ Micro: "llama3.2:3b" });
+    expect(displayModelForTier({
+      tier: "Standard",
+      overrides: { Standard: "openai/gpt-oss-120b" },
+      cloudDefaultsWillRun: false,
+      localFallbackModel: "llama3.2:3b",
+      canRun,
+    })).toBe("llama3.2:3b");
+  });
+
+  it("posts Groq assignments once those models can run", () => {
+    const canRun = (id: string) => id === "llama-3.3-70b-versatile" || id === "llama-3.1-8b-instant";
+    expect(effectiveTierOverrides({
+      selectionMode: "auto",
+      fixedModelId: "",
+      overrides: { Max: "llama-3.3-70b-versatile" },
+      cloudDefaultsWillRun: true,
+      canRun,
+    }).Max).toBe("llama-3.3-70b-versatile");
+    expect(effectiveTierOverrides({
+      selectionMode: "auto",
+      fixedModelId: "",
+      overrides: {},
+      cloudDefaultsWillRun: true,
+      canRun,
+    }).Micro).toBe("llama-3.1-8b-instant");
+  });
+
   it("does not post Groq defaults when chat will use local Ollama instead", () => {
     expect(effectiveTierOverrides({
       selectionMode: "auto",

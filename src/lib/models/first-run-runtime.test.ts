@@ -154,6 +154,36 @@ describe("decideChatRuntime", () => {
     }
   });
 
+  it("uses Ollama when that is the instance primary and no Groq model was assigned", () => {
+    const d = decideChatRuntime(baseInput({
+      groqOk: true,
+      groqBlock: null,
+      primaryProvider: "ollama",
+      ollamaChatModels: ["llama3.2:3b"],
+    }));
+    expect(d.ok).toBe(true);
+    if (d.ok) {
+      expect(d.provider).toBe("ollama");
+      expect(d.model).toBe("llama3.2:3b");
+    }
+  });
+
+  it("keeps an explicit Groq tier when the instance primary is Ollama", () => {
+    const d = decideChatRuntime(baseInput({
+      groqOk: true,
+      groqBlock: null,
+      primaryProvider: "ollama",
+      ollamaChatModels: ["llama3.2:3b"],
+      override: { provider: "groq", model: "llama-3.3-70b-versatile" },
+    }));
+    expect(d.ok).toBe(true);
+    if (d.ok) {
+      expect(d.provider).toBe("groq");
+      expect(d.model).toBe("llama-3.3-70b-versatile");
+      expect(d.source).toBe("override");
+    }
+  });
+
   it("uses an explicit Groq override when Groq is configured", () => {
     const d = decideChatRuntime(baseInput({
       groqOk: true,

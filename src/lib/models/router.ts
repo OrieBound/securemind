@@ -123,6 +123,7 @@ export function isGroqMode(tier: string): boolean {
 export function getCostTier(provider: string, model: string): "free" | "$" | "$$" | "$$$" {
   if (provider === "ollama") return "free";
   if (provider === "bedrock") return "$$$";
+  if (provider === "xai" && (model.includes("mini") || model.includes("fast"))) return "$";
   if (model.includes("8b") || model.includes("instant") ||
       model.includes("20b") || model.includes("scout")) return "$";  // Light/Fast/Micro
   if (model.includes("120b") || model.includes("gpt-oss-120")) return "$$"; // Standard

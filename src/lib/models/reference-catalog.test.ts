@@ -14,6 +14,7 @@ describe("reference-catalog", () => {
       openai: [],
       anthropic: [],
       google: [],
+      xai: [],
     });
     expect(merged.some(m => m.provider === "openai")).toBe(true);
     expect(merged.some(m => m.provider === "anthropic")).toBe(true);
@@ -42,6 +43,7 @@ describe("reference-catalog", () => {
       openai: [],
       anthropic: [],
       google: [],
+      xai: [],
     });
     expect(merged.some(m => m.id === "amazon.nova-micro-v1:0")).toBe(false);
     expect(merged.some(m => m.id === "us.anthropic.claude-sonnet-4-5-20250929-v1:0")).toBe(true);

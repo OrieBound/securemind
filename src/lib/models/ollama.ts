@@ -48,6 +48,23 @@ export function ollamaBaseUrl(): string {
   return OLLAMA_BASE;
 }
 
+/** Inspect installed weights without generating text or downloading a model. */
+export async function ollamaModelCapabilities(model: string): Promise<string[] | null> {
+  try {
+    const response = await fetch(`${OLLAMA_BASE}/api/show`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model }),
+      signal: AbortSignal.timeout(2500),
+    });
+    if (!response.ok) return null;
+    const body = await response.json() as { capabilities?: unknown };
+    return Array.isArray(body.capabilities) ? body.capabilities.filter((c): c is string => typeof c === "string") : null;
+  } catch {
+    return null;
+  }
+}
+
 export type OllamaProbe = {
   reachable: boolean;
   tags: string[];
@@ -110,11 +127,13 @@ type OllamaChatLine = {
 export async function* streamOllamaChat(
   messages: ChatMessage[],
   model: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<string> {
   let resp: Response;
 
   try {
     resp = await fetch(`${OLLAMA_BASE}/api/chat`, {
+      signal,
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

@@ -5,7 +5,7 @@
 import { runtimeEdition, type RuntimeEdition } from "@/lib/runtime-env";
 
 export const GETTING_STARTED_PATH = "/getting-started";
-export const PROVIDERS_DEEP_LINK = "/?settings=providers&highlight=bedrock";
+export const PROVIDERS_DEEP_LINK = "/?settings=inference&highlight=bedrock";
 export const HIGHLIGHT_BEDROCK_KEY = "sm_highlight_bedrock";
 
 export const LEGACY_DEFAULT_HELLO_MARKERS = [
@@ -28,7 +28,7 @@ export function defaultWorkspaceHello(
       `(your AWS account, pay-per-use). You can add a vendor key such as Groq on the same screen if you prefer.\n\n` +
       `**Do this next:**\n` +
       `1. Open the **[Getting started](${GETTING_STARTED_PATH})** guide (pictures of each click).\n` +
-      `2. Or jump straight to **[Settings → Providers](${PROVIDERS_DEEP_LINK})** and check the Bedrock billing acknowledgement.\n\n` +
+      `2. Or jump straight to **[Settings → Models](${PROVIDERS_DEEP_LINK})** and check the Bedrock billing acknowledgement.\n\n` +
       `Detection still runs in this browser without a model. When chat is connected, ask me how Knowledge, workspaces, or settings work.`
     );
   }
@@ -38,7 +38,7 @@ export function defaultWorkspaceHello(
     `or connect Amazon Bedrock / a vendor key in Settings.\n\n` +
     `**Do this next:**\n` +
     `1. Open the **[Getting started](${GETTING_STARTED_PATH})** guide.\n` +
-    `2. Or open **[Settings → Providers](${PROVIDERS_DEEP_LINK})**.\n\n` +
+    `2. Or open **[Settings → Models](${PROVIDERS_DEEP_LINK})**.\n\n` +
     `When a model is connected, ask me how Knowledge, workspaces, or settings work.`
   );
 }
@@ -48,17 +48,17 @@ export function noModelAssistantReply(edition: RuntimeEdition): string {
     return (
       `Chat is not connected yet — your message is fine. This hosted install has no model until an Admin enables one.\n\n` +
       `**Amazon Bedrock (recommended here)**\n` +
-      `1. Open **[Settings → Providers](${PROVIDERS_DEEP_LINK})**.\n` +
+      `1. Open **[Settings → Models](${PROVIDERS_DEEP_LINK})**.\n` +
       `2. Under **Amazon Bedrock**, check **I understand that enabling Bedrock permits SecureMind to make billable model requests in my AWS account.**\n` +
       `3. In the AWS console, allow Bedrock **model access** for this account and region (Amazon Nova, for example). That is not an IAM role — Terraform already created the roles. The app cannot turn model access on for you.\n\n` +
       `Pictures of each step: **[Getting started](${GETTING_STARTED_PATH})**.\n\n` +
-      `**Or** add a vendor API key (Groq, OpenAI, Anthropic, Google) on the same Providers page. Do not paste AWS access keys — those are never stored in the app.`
+      `**Or** add a vendor API key (Groq, Gemini, Grok, OpenAI, or Anthropic) under Connections on that same page. Do not paste AWS access keys — those are never stored in the app.`
     );
   }
   return (
     `Chat is not connected yet — your message is fine.\n\n` +
     `On this machine, start with **Ollama** (local models), or enable **Amazon Bedrock** / a vendor key.\n\n` +
-    `**[Settings → Providers](${PROVIDERS_DEEP_LINK})** · **[Getting started](${GETTING_STARTED_PATH})**`
+    `**[Settings → Models](${PROVIDERS_DEEP_LINK})** · **[Getting started](${GETTING_STARTED_PATH})**`
   );
 }
 
@@ -68,7 +68,7 @@ export function chatUnreachableMessage(edition: RuntimeEdition): string {
   }
   return (
     "Could not reach the chat service. If no model is connected yet, open Getting started " +
-    "or Settings → Providers and enable the Bedrock billing acknowledgement. " +
+    "or Settings → Models and enable the Bedrock billing acknowledgement. " +
     "If a model is already enabled, wait a few seconds and try again."
   );
 }

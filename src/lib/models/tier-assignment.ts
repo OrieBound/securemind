@@ -31,9 +31,20 @@ export function sanitizeTierOverrides(raw: Record<string, string>): Record<strin
   return next;
 }
 
+function acceptedModel(
+  id: string | undefined,
+  canRun?: (modelId: string) => boolean,
+): string | null {
+  const trimmed = id?.trim() ?? "";
+  if (!trimmed || !isChatUsableModelId(trimmed)) return null;
+  if (canRun && !canRun(trimmed)) return null;
+  return trimmed;
+}
+
 /**
  * The map posted as `modelOverrides` — every key is a model the matching
  * Insights row is showing, so the server honors the same assignment.
+ * `canRun` drops ids chat cannot run, including a saved Groq key whose model list failed.
  */
 export function effectiveTierOverrides(opts: {
   selectionMode: "auto" | "fixed";
@@ -41,22 +52,25 @@ export function effectiveTierOverrides(opts: {
   overrides: Record<string, string>;
   /** Groq (or equivalent cloud default) can actually run this session. */
   cloudDefaultsWillRun: boolean;
+  canRun?: (modelId: string) => boolean;
 }): Record<string, string> {
   if (opts.selectionMode === "fixed") {
-    const id = opts.fixedModelId.trim();
-    if (!id || !isChatUsableModelId(id)) return {};
+    const id = acceptedModel(opts.fixedModelId, opts.canRun);
+    if (!id) return {};
     return Object.fromEntries(COMPLEXITY_TIER_NAMES.map(t => [t, id]));
   }
 
   const cleaned = sanitizeTierOverrides(opts.overrides);
   const out: Record<string, string> = {};
   for (const tier of COMPLEXITY_TIER_NAMES) {
-    if (cleaned[tier]) {
-      out[tier] = cleaned[tier];
+    const explicit = acceptedModel(cleaned[tier], opts.canRun);
+    if (explicit) {
+      out[tier] = explicit;
       continue;
     }
     if (opts.cloudDefaultsWillRun) {
-      out[tier] = DEFAULT_TIER_MODELS[tier];
+      const fallback = acceptedModel(DEFAULT_TIER_MODELS[tier], opts.canRun);
+      if (fallback) out[tier] = fallback;
     }
   }
   return out;
@@ -68,11 +82,16 @@ export function displayModelForTier(opts: {
   overrides: Record<string, string>;
   cloudDefaultsWillRun: boolean;
   localFallbackModel: string | null;
+  canRun?: (modelId: string) => boolean;
 }): string {
   const cleaned = sanitizeTierOverrides(opts.overrides);
-  if (isComplexityTierName(opts.tier) && cleaned[opts.tier]) return cleaned[opts.tier];
+  const explicit = isComplexityTierName(opts.tier)
+    ? acceptedModel(cleaned[opts.tier], opts.canRun)
+    : null;
+  if (explicit) return explicit;
   if (opts.cloudDefaultsWillRun && isComplexityTierName(opts.tier)) {
-    return DEFAULT_TIER_MODELS[opts.tier];
+    const fallback = acceptedModel(DEFAULT_TIER_MODELS[opts.tier], opts.canRun);
+    if (fallback) return fallback;
   }
   if (opts.localFallbackModel) return opts.localFallbackModel;
   return "";

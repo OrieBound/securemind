@@ -44,7 +44,7 @@ export function transcribeUnavailableMessage(opts: {
   }
   if (opts.choice === "transcribe" && !opts.awsOk) {
     return (
-      "Amazon Transcribe is selected. Enable billable AWS in Settings → Providers " +
+      "Amazon Transcribe is selected. Enable billable AWS in Settings → Models " +
       "(same account as Bedrock). Transcribe is billed on that account."
     );
   }

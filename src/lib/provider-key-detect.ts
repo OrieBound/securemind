@@ -9,6 +9,7 @@ export type DetectedKeyKind =
   | "google"
   | "openai"
   | "anthropic"
+  | "xai"
   | "azure"
   | "unknown";
 
@@ -30,7 +31,7 @@ export function isRejectedKeyKind(kind: DetectedKeyKind): boolean {
 const KIND_META: Record<DetectedKeyKind, Omit<KeyDetection, "kind">> = {
   groq: {
     label: "Groq",
-    description: "Groq Cloud API key — lists and runs Groq text models.",
+    description: "Groq chat models.",
     needsAwsPair: false,
     wired: true,
   },
@@ -43,23 +44,30 @@ const KIND_META: Record<DetectedKeyKind, Omit<KeyDetection, "kind">> = {
     wired: false,
   },
   google: {
-    label: "Google / Gemini",
+    label: "Gemini",
     description:
-      "Google AI Studio Gemini API key — lists models and runs chat when selected in Available models.",
+      "Gemini chat models.",
     needsAwsPair: false,
     wired: true,
   },
   openai: {
     label: "OpenAI",
     description:
-      "OpenAI Platform API key — lists GPT models and runs chat when selected in Available models.",
+      "OpenAI chat models.",
     needsAwsPair: false,
     wired: true,
   },
   anthropic: {
     label: "Anthropic",
     description:
-      "Anthropic Console API key — lists Claude models and runs chat when selected. For Claude via AWS, use Bedrock.",
+      "Claude chat models. Claude on Bedrock is separate.",
+    needsAwsPair: false,
+    wired: true,
+  },
+  xai: {
+    label: "Grok",
+    description:
+      "Grok chat models.",
     needsAwsPair: false,
     wired: true,
   },
@@ -98,6 +106,10 @@ export function detectProviderKey(raw: string): KeyDetection {
   // Google AI Studio — legacy AIza… keys and newer AQ. auth keys (2026+)
   else if (/^AIza[0-9A-Za-z_-]{20,}$/.test(value) || /^AQ\.[A-Za-z0-9._-]{20,}$/.test(value)) {
     kind = "google";
+  }
+  // xAI Grok — xai-… (not Groq's gsk_ keys)
+  else if (/^xai-[A-Za-z0-9_-]{8,}$/i.test(value)) {
+    kind = "xai";
   }
   // Anthropic
   else if (/^sk-ant-/i.test(value)) {

@@ -12,13 +12,15 @@ export type RuntimeProviderId =
   | "ollama"
   | "openai"
   | "anthropic"
-  | "google";
+  | "google"
+  | "xai";
 
 export type VendorThemeId =
   | RuntimeProviderId
   | "google"
   | "openai"
   | "anthropic"
+  | "xai"
   | "azure"
   | "unknown";
 
@@ -66,7 +68,7 @@ export const PROVIDER_THEME: Record<VendorThemeId, ProviderTheme> = {
     surface: "border-emerald-500/35 bg-emerald-500/15",
   },
   google: {
-    label: "Google",
+    label: "Gemini",
     badge: "text-blue-300/90 bg-blue-500/15 border-blue-400/30",
     icon: "text-blue-300/90",
     borderOpen: "border-blue-500/50",
@@ -88,6 +90,14 @@ export const PROVIDER_THEME: Record<VendorThemeId, ProviderTheme> = {
     borderOpen: "border-orange-500/50",
     bgOpen: "bg-orange-500/[0.05]",
     surface: "border-orange-500/35 bg-orange-500/15",
+  },
+  xai: {
+    label: "Grok",
+    badge: "text-zinc-100 bg-zinc-400/15 border-zinc-300/40",
+    icon: "text-zinc-200",
+    borderOpen: "border-zinc-300/45",
+    bgOpen: "bg-zinc-400/[0.06]",
+    surface: "border-zinc-300/35 bg-zinc-400/15",
   },
   azure: {
     label: "Azure",

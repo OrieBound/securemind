@@ -13,7 +13,7 @@
 
 export type ModelTask = "chat" | "summarize" | "extract" | "embed";
 
-export type ModelProvider = "ollama" | "groq" | "bedrock" | "openai" | "anthropic" | "google";
+export type ModelProvider = "ollama" | "groq" | "bedrock" | "openai" | "anthropic" | "google" | "xai";
 
 export type ModelConfig = {
   provider: ModelProvider;

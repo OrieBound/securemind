@@ -20,7 +20,8 @@ export const VENDOR_SEARCH_ALIASES: Record<RuntimeProviderId, string[]> = {
   ollama: ["ollama", "olama", "local", "on-prem", "onprem"],
   openai: ["openai"],
   anthropic: ["anthropic"],
-  google: ["google"],
+  google: ["google", "gemini"],
+  xai: ["xai", "x.ai"],
 };
 
 function tokensOf(raw: string): string[] {

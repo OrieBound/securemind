@@ -43,6 +43,7 @@ type Stored = {
   voiceSttChoice: string | null;
   voiceSttAudioAckAt: string | null;
   pricingRateOverrides?: unknown;
+  modelAvailability?: unknown;
   updatedAt: string;
   updatedByUserId: string | null;
 };
@@ -115,6 +116,7 @@ function toStored(row: InstanceConfigRow): Stored {
     voiceSttChoice: row.voiceSttChoice,
     voiceSttAudioAckAt: iso(row.voiceSttAudioAckAt),
     pricingRateOverrides: row.pricingRateOverrides ?? null,
+    modelAvailability: row.modelAvailability ?? null,
     updatedAt: iso(row.updatedAt) ?? new Date().toISOString(),
     updatedByUserId: row.updatedByUserId,
   };
@@ -147,6 +149,7 @@ function fromStored(raw: Stored): InstanceConfigRow {
     voiceSttChoice: parseVoiceSttChoice(raw.voiceSttChoice),
     voiceSttAudioAckAt: asDate(raw.voiceSttAudioAckAt),
     pricingRateOverrides: raw.pricingRateOverrides ?? null,
+    modelAvailability: raw.modelAvailability ?? null,
     updatedAt: asDate(raw.updatedAt) ?? new Date(),
     updatedByUserId: raw.updatedByUserId,
   };

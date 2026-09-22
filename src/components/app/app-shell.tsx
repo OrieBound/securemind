@@ -102,6 +102,7 @@ import {
 import { ComplexityTiersEditor, type ComplexityTiersBind } from "@/components/app/complexity-tiers-editor";
 import { SessionAvatar } from "@/components/app/user-avatar";
 import { isReferenceOnlyModel } from "@/lib/models/reference-catalog";
+import { catalogSelectionStatus } from "@/lib/models/model-availability";
 import {
   DEFAULT_TIER_MODELS,
   displayModelForTier,
@@ -183,6 +184,7 @@ import {
   warmChatConnection,
 } from "@/lib/client/api-base";
 import { PRODUCT_CHROME_TAGLINE, PRODUCT_POSITIONING } from "@/lib/branding";
+import { ProductMark } from "@/components/app/product-mark";
 import { themeForRuntime } from "@/lib/provider-theme";
 import { cn } from "@/lib/utils";
 import {
@@ -1339,10 +1341,10 @@ function ThinkingIndicator({
           {onOpenSettings && (
             <button
               type="button"
-              onClick={() => onOpenSettings("providers")}
+              onClick={() => onOpenSettings("inference")}
               className="text-[0.68rem] font-medium text-indigo-200 underline underline-offset-2 hover:text-indigo-100 cursor-pointer"
             >
-              Open Settings → Providers
+              Open Settings → Models
             </button>
           )}
         </div>
@@ -2757,19 +2759,21 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   }, [isAnalytics]);
 
   // Live vendor lists load when the user opens a picker — not on every page load.
-  const { catalog, byId: catalogById, ensureLoaded } = useModelCatalog();
+  const { catalog, byId: catalogById, ensureLoaded, loaded: catalogLoaded } = useModelCatalog();
   const chatCatalogModels = useMemo(() => buildChatPickerModels(catalog), [catalog]);
   const pickerById = useCallback(
     (id: string) => chatCatalogModels.find(m => m.id === id) ?? catalogById(id),
     [chatCatalogModels, catalogById],
   );
-  const groqCatalogReady = catalog.groq.length > 0 || vendorHasGroq;
-  const ollamaCatalogReady = catalog.ollama.length > 0;
+  const groqListed = catalog.groq.length > 0;
+  const groqCatalogReady = groqListed;
+  const ollamaCatalogReady = chatCatalogModels.some(m => m.provider === "ollama");
   const bedrockCatalogReady = catalog.bedrock.length > 0;
   const openaiCatalogReady = catalog.openai.length > 0;
   const anthropicCatalogReady = catalog.anthropic.length > 0;
   const googleCatalogReady = catalog.google.length > 0;
-  const cloudDefaultsWillRun = vendorHasGroq && !vendorRiskBlocked;
+  const xaiCatalogReady = (catalog.xai ?? []).length > 0;
+  const cloudDefaultsWillRun = groqListed && !vendorRiskBlocked;
   const localFallbackModel =
     runtimeStatus?.model.provider === "ollama" ? runtimeStatus.model.model : null;
   const labelFor = useCallback(
@@ -2788,12 +2792,13 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     (provider: ReturnType<typeof providerFor>, modelId: string) => {
       if (!provider) return false;
       const hit = pickerById(modelId);
-      if (hit && isReferenceOnlyModel(hit)) return false;
+      if (hit) return !isReferenceOnlyModel(hit) && catalogSelectionStatus(hit).ready;
       if (provider === "groq") return groqCatalogReady;
       if (provider === "ollama") return ollamaCatalogReady;
       if (provider === "openai") return openaiCatalogReady;
       if (provider === "anthropic") return anthropicCatalogReady;
       if (provider === "google") return googleCatalogReady;
+      if (provider === "xai") return xaiCatalogReady;
       return catalog.bedrock.length > 0;
     },
     [
@@ -2801,11 +2806,36 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       catalog.bedrock.length,
       googleCatalogReady,
       groqCatalogReady,
+      xaiCatalogReady,
       ollamaCatalogReady,
       openaiCatalogReady,
       pickerById,
     ],
   );
+
+  const canRunAssignedModel = useCallback((modelId: string) => {
+    const provider = guessProvider(modelId);
+    if (!catalogLoaded) return provider !== "groq";
+    const hit = pickerById(modelId);
+    if (hit?.provider === "groq") return hit.modality !== "other";
+    if (hit) return !isReferenceOnlyModel(hit) && isChatSelectableModel(hit);
+    if (provider === "ollama") return ollamaCatalogReady;
+    if (provider === "openai") return openaiCatalogReady;
+    if (provider === "anthropic") return anthropicCatalogReady;
+    if (provider === "google") return googleCatalogReady;
+    if (provider === "xai") return xaiCatalogReady;
+    if (provider === "bedrock") return bedrockCatalogReady;
+    return false;
+  }, [
+    anthropicCatalogReady,
+    bedrockCatalogReady,
+    catalogLoaded,
+    googleCatalogReady,
+    ollamaCatalogReady,
+    openaiCatalogReady,
+    pickerById,
+    xaiCatalogReady,
+  ]);
 
   const [modeModelOverrides, setModeModelOverrides] = useState<Record<string, string>>({});
   const [modelSelectionMode, setModelSelectionMode] = useState<"auto" | "fixed">("auto");
@@ -2850,10 +2880,10 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   }, []);
 
   useEffect(() => {
-    if (modelSelectionMode === "fixed" || Object.keys(modeModelOverrides).length > 0) {
+    if (vendorHasGroq || localFallbackModel || modelSelectionMode === "fixed" || Object.keys(modeModelOverrides).length > 0) {
       void ensureLoaded();
     }
-  }, [modelSelectionMode, modeModelOverrides, ensureLoaded]);
+  }, [vendorHasGroq, localFallbackModel, modelSelectionMode, modeModelOverrides, ensureLoaded]);
 
   useEffect(() => {
     if (!tierPrefsReady) return;
@@ -2884,8 +2914,9 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
         fixedModelId,
         overrides: modeModelOverrides,
         cloudDefaultsWillRun,
+        canRun: canRunAssignedModel,
       }),
-    [cloudDefaultsWillRun, fixedModelId, modeModelOverrides, modelSelectionMode],
+    [canRunAssignedModel, cloudDefaultsWillRun, fixedModelId, modeModelOverrides, modelSelectionMode],
   );
   const displayModelIdForTier = useCallback(
     (tier: string) =>
@@ -2894,15 +2925,16 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
         overrides: modeModelOverrides,
         cloudDefaultsWillRun,
         localFallbackModel,
+        canRun: canRunAssignedModel,
       }),
-    [cloudDefaultsWillRun, localFallbackModel, modeModelOverrides],
+    [canRunAssignedModel, cloudDefaultsWillRun, localFallbackModel, modeModelOverrides],
   );
 
   const tierModelStatus = useCallback(
     (modelId: string) => {
       const catalog = pickerById(modelId);
-      const notForChat = !isChatUsableModelId(modelId)
-        || (catalog ? !isChatSelectableModel(catalog) : /embed/i.test(modelId));
+      if (catalog && isChatUsableModelId(modelId)) return catalogSelectionStatus(catalog);
+      const notForChat = !isChatUsableModelId(modelId);
       const provider = providerFor(modelId);
       return {
         notForChat,
@@ -4403,7 +4435,9 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     if (!raw && attachments.length === 0) return;
     if (sendInFlightRef.current || isStreaming) return;
     if (sessionLoading || !sessionIdRef.current) {
-      setSessionSaveError("Still loading your conversation — wait a moment and try again.");
+      setSessionSaveError(previous => sessionLoading
+        ? "Still loading your conversation — wait a moment and try again."
+        : previous ?? "Your conversation could not be loaded. Refresh the page to reconnect.");
       return;
     }
 
@@ -5300,11 +5334,13 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       overrides: modeModelOverrides,
       cloudDefaultsWillRun,
       localFallbackModel,
+      canRun: canRunAssignedModel,
     }),
   }));
   const totalRouteCalls = filteredRouteHits.length;
 
   const complexityTiersBind: ComplexityTiersBind = {
+    deployment: runtimeStatus?.deployment,
     modelSelectionMode,
     onModelSelectionModeChange: setModelSelectionMode,
     modeModelOverrides,
@@ -6069,11 +6105,10 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                        transition-colors hover:bg-foreground/[0.04]
                        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl
-                            bg-gradient-to-br from-indigo-500 to-violet-600
-                            shadow-[0_4px_20px_rgba(99,102,241,0.45)]">
-              <span className="text-sm font-extrabold tracking-tight text-white">SM</span>
-            </div>
+            <ProductMark
+              size={40}
+              className="size-10 shrink-0 shadow-[0_4px_20px_rgba(99,102,241,0.45)]"
+            />
             <div className="min-w-0">
               <p className="text-[length:var(--font-size-body)] font-semibold text-foreground leading-none tracking-[var(--tracking-ui)]">SecureMind</p>
               <p className="text-meta mt-1 text-[var(--primary-soft-foreground)]">{PRODUCT_CHROME_TAGLINE}</p>
@@ -6345,12 +6380,12 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
             </div>
           )}
 
-          <div className="px-3 pb-4 pt-2 space-y-1.5">
+          <div className="px-2.5 pb-3 pt-2.5 space-y-1.5">
             {(!runtimeStatus || !runtimeStatus.chatReady) && (
               <Link
                 href={GETTING_STARTED_PATH}
                 className={cn(
-                  "w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left",
+                  "w-full flex items-center gap-2.5 rounded-xl px-3.5 py-3 text-left",
                   "text-indigo-200 hover:bg-indigo-500/10 hover:text-indigo-100",
                 )}
               >
@@ -6364,26 +6399,26 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
               title={settingsNavExpanded ? "Close settings" : "Open settings"}
               aria-expanded={settingsNavExpanded}
               className={cn(
-                "w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left cursor-pointer",
+                "w-full min-h-12 flex items-center gap-3 rounded-xl px-4 py-3.5 text-left cursor-pointer",
                 viewTransition,
                 (activeNav === "settings" && !onAnalytics) || settingsNavExpanded
-                  ? "bg-[var(--surface-selected)] text-[var(--primary-soft-foreground)] shadow-[inset_0_0_0_1px_var(--primary-border)] dark:bg-foreground/8 dark:text-foreground/80 dark:shadow-none"
-                  : "text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-foreground dark:text-foreground/45 dark:hover:bg-foreground/5",
+                  ? "bg-[var(--surface-selected)] text-[var(--primary-soft-foreground)] shadow-[inset_0_0_0_1px_var(--primary-border)] dark:bg-foreground/10 dark:text-foreground/90 dark:shadow-none"
+                  : "text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-foreground dark:text-foreground/70 dark:hover:bg-foreground/10 dark:hover:text-foreground",
               )}
             >
               <Settings className={cn(
-                "size-4 shrink-0",
+                "size-5 shrink-0",
                 viewTransition,
                 (activeNav === "settings" && !onAnalytics) || settingsNavExpanded
-                  ? "text-[var(--primary)] dark:text-foreground/80"
-                  : "text-foreground/55 dark:text-foreground/45",
+                  ? "text-[var(--primary)] dark:text-foreground/90"
+                  : "text-foreground/60 dark:text-foreground/60",
               )} aria-hidden />
               <span className={cn(
-                "text-sm font-medium flex-1",
+                "text-[0.95rem] font-medium flex-1",
                 viewTransition,
               )}>Settings</span>
               <ChevronDown className={cn(
-                "size-3.5 shrink-0 ease-in-out",
+                "size-4 shrink-0 ease-in-out",
                 viewTransition,
                 settingsNavExpanded ? "rotate-180" : "rotate-0",
               )} aria-hidden />
@@ -7186,10 +7221,10 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                     </div>
                     <button
                       type="button"
-                      onClick={() => openSettings("providers")}
+                      onClick={() => openSettings("inference")}
                       className="shrink-0 rounded-lg border border-amber-400/35 bg-amber-500/15 px-2.5 py-1.5 text-[0.7rem] font-medium text-amber-50 hover:bg-amber-500/25 cursor-pointer"
                     >
-                      Open Providers
+                      Open Models
                     </button>
                   </div>
                 )}

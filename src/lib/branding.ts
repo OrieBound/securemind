@@ -15,3 +15,6 @@ export const PRODUCT_DESCRIPTION = `${PRODUCT_NAME} — ${PRODUCT_POSITIONING}`;
 
 /** Short chrome line under the wordmark. */
 export const PRODUCT_CHROME_TAGLINE = "Privacy-aware workspace";
+
+/** Served from `public/brand/` (Next.js static files). */
+export const PRODUCT_LOGO_SRC = "/brand/securemind-logo.png";

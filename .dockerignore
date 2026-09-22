@@ -18,6 +18,8 @@ scripts/.floci-cognito.env
 .vscode
 
 # Logs & local artifacts
+.data
+backups
 *.log
 dev-server.*.log
 

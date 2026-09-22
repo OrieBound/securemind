@@ -6,14 +6,13 @@ import { cn } from "@/lib/utils";
 import { SelectMenu } from "@/components/ui/select-menu";
 import {
   ModelPickerList,
-  buildChatPickerModels,
   buildSettingsCatalogModels,
   chatSelectableModels,
   useModelCatalog,
   useModelTester,
   type CatalogModel,
 } from "@/components/app/model-catalog";
-import { ModelInventory, providerCountsLine } from "@/components/app/model-inventory";
+import { ModelInventory, providerCountsLine, vendorMenuPhrase } from "@/components/app/model-inventory";
 import { ComplexityTiersEditor, type ComplexityTiersBind } from "@/components/app/complexity-tiers-editor";
 import {
   formatGroqConnectivityError,
@@ -36,6 +35,7 @@ import {
 import {
   WIRED_VENDOR_APIS,
   STORE_ONLY_VENDOR_APIS,
+  vendorApiSpec,
   type WiredVendorKind,
 } from "@/lib/vendor-providers";
 import {
@@ -54,7 +54,7 @@ type KeyInventoryItem = {
   source: "instance" | "env" | "local" | "aws-chain";
   status: "ready" | "incomplete" | "stored" | "local";
   region?: string | null;
-  catalog: "groq" | "bedrock" | "ollama" | "google" | "openai" | "anthropic" | "none";
+  catalog: "groq" | "bedrock" | "ollama" | "google" | "openai" | "anthropic" | "xai" | "none";
   managedByEnvironment?: boolean;
 };
 
@@ -93,20 +93,12 @@ type ProviderStatus = {
   keys: KeyInventoryItem[];
 };
 
-type Props =
-  | {
-      page: "models";
-      complexityTiers: ComplexityTiersBind;
-      onOpenProviders?: () => void;
-      onProvidersChanged?: () => void;
-    }
-  | {
-      page: "providers";
-      onOpenModels?: () => void;
-      onProvidersChanged?: () => void;
-    };
+type Props = {
+  complexityTiers: ComplexityTiersBind;
+  onProvidersChanged?: () => void;
+};
 
-type VendorCatalogKind = "groq" | "google" | "openai" | "anthropic" | "none";
+type VendorCatalogKind = "groq" | "google" | "openai" | "anthropic" | "xai" | "none";
 
 function isVendorCatalog(catalog: KeyInventoryItem["catalog"]): catalog is VendorCatalogKind {
   return (
@@ -114,17 +106,24 @@ function isVendorCatalog(catalog: KeyInventoryItem["catalog"]): catalog is Vendo
     catalog === "google" ||
     catalog === "openai" ||
     catalog === "anthropic" ||
+    catalog === "xai" ||
     catalog === "none"
   );
 }
 
+const CONNECTIONS_THEME = {
+  label: "Connections",
+  badge: "text-foreground/70 bg-foreground/[0.06] border-foreground/15",
+  icon: "text-foreground/70",
+  borderOpen: "border-foreground/25",
+  bgOpen: "bg-foreground/[0.03]",
+  surface: "border-foreground/15 bg-foreground/[0.06]",
+} as const;
+
 type SettingsModuleId = "tiers" | "vendor" | "bedrock" | "local" | "models" | "voice";
 
 export function InferenceSettings(props: Props) {
-  const page = props.page;
-  const complexityTiers = props.page === "models" ? props.complexityTiers : null;
-  const onOpenProviders = props.page === "models" ? props.onOpenProviders : undefined;
-  const onOpenModels = props.page === "providers" ? props.onOpenModels : undefined;
+  const complexityTiers = props.complexityTiers;
   const onProvidersChanged = props.onProvidersChanged;
   const [status, setStatus] = useState<ProviderStatus | null>(null);
   const [groq, setGroq] = useState<CatalogModel[]>([]);
@@ -133,6 +132,7 @@ export function InferenceSettings(props: Props) {
   const [openai, setOpenai] = useState<CatalogModel[]>([]);
   const [anthropic, setAnthropic] = useState<CatalogModel[]>([]);
   const [google, setGoogle] = useState<CatalogModel[]>([]);
+  const [xai, setXai] = useState<CatalogModel[]>([]);
   const [errors, setErrors] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [providersReady, setProvidersReady] = useState(false);
@@ -142,12 +142,11 @@ export function InferenceSettings(props: Props) {
   const [riskAck, setRiskAck] = useState(false);
   const [selectedKeyId, setSelectedKeyId] = useState<string | null>(null);
   const [modelFilter, setModelFilter] = useState<
-    "all" | "groq" | "bedrock" | "ollama" | "openai" | "anthropic" | "google"
+    "all" | "groq" | "bedrock" | "ollama" | "openai" | "anthropic" | "google" | "xai"
   >("all");
-  /** One open module at a time. Click again to collapse. Models starts closed so you choose. */
-  const [openModule, setOpenModule] = useState<SettingsModuleId | null>(
-    page === "providers" ? "bedrock" : null,
-  );
+  /** Connections stays open on arrival. Vendor APIs start expanded inside it. */
+  const [connectionsOpen, setConnectionsOpen] = useState(true);
+  const [openModule, setOpenModule] = useState<SettingsModuleId | null>("vendor");
   const pickedProviderDefault = useRef(false);
   const { results, test } = useModelTester();
   const sharedCatalog = useModelCatalog();
@@ -196,6 +195,7 @@ export function InferenceSettings(props: Props) {
     openai: CatalogModel[];
     anthropic: CatalogModel[];
     google: CatalogModel[];
+    xai?: CatalogModel[];
     errors: string[];
   }) => {
     setGroq(c.groq);
@@ -204,6 +204,7 @@ export function InferenceSettings(props: Props) {
     setOpenai(c.openai ?? []);
     setAnthropic(c.anthropic ?? []);
     setGoogle(c.google ?? []);
+    setXai(c.xai ?? []);
     setErrors(c.errors ?? []);
   }, []);
 
@@ -253,6 +254,7 @@ export function InferenceSettings(props: Props) {
               openai: CatalogModel[];
               anthropic: CatalogModel[];
               google: CatalogModel[];
+              xai: CatalogModel[];
               errors: string[];
             },
           );
@@ -306,24 +308,21 @@ export function InferenceSettings(props: Props) {
   }, [refresh]);
 
   useEffect(() => {
-    if (page !== "providers" || pickedProviderDefault.current) return;
+    if (pickedProviderDefault.current) return;
     try {
       if (sessionStorage.getItem(HIGHLIGHT_BEDROCK_KEY) === "1") {
         pickedProviderDefault.current = true;
+        setConnectionsOpen(true);
         setOpenModule("bedrock");
-        return;
       }
     } catch {
       /* private browsing */
     }
-    if (!status?.edition) return;
-    pickedProviderDefault.current = true;
-    setOpenModule(status.edition === "cloud" ? "bedrock" : "local");
-  }, [page, status?.edition]);
+  }, []);
 
   useEffect(() => {
-    if (page === "models") void sharedCatalog.ensureLoaded();
-  }, [page, sharedCatalog.ensureLoaded]);
+    void sharedCatalog.ensureLoaded();
+  }, [sharedCatalog.ensureLoaded]);
 
   async function save(body: Record<string, unknown>, okMsg: string) {
     setBusy(true);
@@ -395,16 +394,16 @@ export function InferenceSettings(props: Props) {
   const localAwsKeys = keys.filter(k => k.catalog === "bedrock" || k.catalog === "ollama");
   const selectedKey = keys.find(k => k.id === selectedKeyId) ?? null;
 
-  const allModels = useMemo(() => {
-    if (page === "models") return buildSettingsCatalogModels(sharedCatalog.catalog);
-    return buildChatPickerModels({ groq, bedrock, ollama, openai, anthropic, google });
-  }, [page, sharedCatalog.catalog, groq, bedrock, ollama, openai, anthropic, google]);
+  const allModels = useMemo(
+    () => buildSettingsCatalogModels(sharedCatalog.catalog),
+    [sharedCatalog.catalog],
+  );
 
   const blockedVendorNotice = useMemo(() => {
     if (riskAck) return null;
     const labels: string[] = [];
     const check = (
-      catalog: "google" | "openai" | "anthropic",
+      catalog: "google" | "openai" | "anthropic" | "xai",
       label: string,
       count: number,
     ) => {
@@ -416,10 +415,11 @@ export function InferenceSettings(props: Props) {
     check("google", "Google", sharedCatalog.catalog.google.length);
     check("openai", "OpenAI", sharedCatalog.catalog.openai.length);
     check("anthropic", "Anthropic", sharedCatalog.catalog.anthropic.length);
+    check("xai", "Grok", sharedCatalog.catalog.xai?.length ?? 0);
     if (labels.length === 0) return null;
     const verb = labels.length === 1 ? "is" : "are";
-    return `${labels.join(", ")} ${verb} configured in Providers, but Vendor APIs are not allowed, so those models are not listed yet. Allow Vendor APIs there to include them.`;
-  }, [riskAck, keys, sharedCatalog.catalog.google.length, sharedCatalog.catalog.openai.length, sharedCatalog.catalog.anthropic.length]);
+    return `${labels.join(", ")} ${verb} configured in Connections, but Vendor APIs are not allowed, so those models are not listed yet. Allow Vendor APIs above to include them.`;
+  }, [riskAck, keys, sharedCatalog.catalog.google.length, sharedCatalog.catalog.openai.length, sharedCatalog.catalog.anthropic.length, sharedCatalog.catalog.xai]);
 
   const ollamaChatModels = useMemo(
     () => chatSelectableModels(ollama),
@@ -441,15 +441,51 @@ export function InferenceSettings(props: Props) {
             ? openai.length
             : p === "anthropic"
               ? anthropic.length
-              : google.length;
+              : p === "xai"
+                ? xai.length
+                : google.length;
 
-  /** Selecting a credential scopes the model filter chips. */
+  const inMenuCount = (p: WiredVendorKind) =>
+    chatSelectableModels(allModels.filter(m => m.provider === p)).length;
+
+  const inMenuModels = useMemo(() => chatSelectableModels(allModels), [allModels]);
+
+  function openAvailableModels(provider: "groq" | "google" | "openai" | "anthropic" | "xai") {
+    setModelFilter(provider);
+    setOpenModule("models");
+    void sharedCatalog.ensureLoaded();
+    window.setTimeout(() => {
+      document.getElementById("inference-module-models")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 50);
+  }
+
+  /** Selecting a credential opens the models that key can list. */
   function selectKey(key: KeyInventoryItem) {
     setSelectedKeyId(key.id);
-    if (key.catalog !== "none") setModelFilter(key.catalog);
-    if (key.catalog === "bedrock") setOpenModule("bedrock");
-    if (isVendorCatalog(key.catalog)) setOpenModule("vendor");
-    if (key.catalog === "ollama") setOpenModule("local");
+    if (key.catalog === "bedrock") {
+      setModelFilter("bedrock");
+      setConnectionsOpen(true);
+      setOpenModule("bedrock");
+      return;
+    }
+    if (key.catalog === "ollama") {
+      setModelFilter("ollama");
+      setConnectionsOpen(true);
+      setOpenModule("local");
+      return;
+    }
+    if (
+      key.catalog === "groq" ||
+      key.catalog === "google" ||
+      key.catalog === "openai" ||
+      key.catalog === "anthropic" ||
+      key.catalog === "xai"
+    ) {
+      openAvailableModels(key.catalog);
+    }
   }
 
   const aws = status?.aws ?? null;
@@ -464,14 +500,16 @@ export function InferenceSettings(props: Props) {
   const ollamaChatCount = ollamaChatModels.length;
   const ollamaEmbedCount = ollamaEmbedModels.length;
   const ollamaReady = ollamaChatCount > 0 || ollamaEmbedCount > 0;
-  const totalModels = allModels.length;
 
   function toggleModule(id: SettingsModuleId) {
+    const inConnections = id === "vendor" || id === "bedrock" || id === "local" || id === "voice";
+    if (inConnections) setConnectionsOpen(true);
+    else setConnectionsOpen(false);
     setOpenModule(prev => (prev === id ? null : id));
   }
 
   if (!providersReady) {
-    return <InferenceSettingsSkeleton page={page} />;
+    return <InferenceSettingsSkeleton />;
   }
 
   if (!status) {
@@ -490,18 +528,16 @@ export function InferenceSettings(props: Props) {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-col gap-3">
       {status.role !== "super_admin" && status.role !== "admin" && (
         <p className="text-[0.72rem] text-foreground/45 px-0.5">
-          {page === "providers"
-            ? "View configured providers. An Admin must add credentials."
-            : "View model assignments. An Admin must add credentials in Providers."}
+          View connections and model assignments. An Admin must add credentials.
         </p>
       )}
 
-      {page === "models" && (
       <SettingsModule
         id="models"
+        className="order-2"
         open={openModule === "models"}
         onToggle={() => {
           toggleModule("models");
@@ -512,15 +548,21 @@ export function InferenceSettings(props: Props) {
         icon={<LayoutList className={cn("size-4", CATALOG_THEME.icon)} aria-hidden />}
         title="Available models"
         subtitle={
-          totalModels > 0
-            ? providerCountsLine(allModels)
-            : "Chat models from every configured credential"
+          inMenuModels.length > 0
+            ? allModels.length > inMenuModels.length
+              ? `${providerCountsLine(inMenuModels)} in menus · ${allModels.length - inMenuModels.length} not in menus`
+              : providerCountsLine(inMenuModels)
+            : allModels.length > 0
+              ? `${allModels.length} listed · test one to add it to chat`
+              : "Chat models from every configured credential"
         }
         badge={
-          <ModuleBadge tone={totalModels > 0 ? "ok" : "neutral"}>
+          <ModuleBadge tone={inMenuModels.length > 0 ? "ok" : "neutral"}>
             {sharedCatalog.loading || loading || refreshingModule === "models"
               ? "…"
-              : `${totalModels} model${totalModels === 1 ? "" : "s"}`}
+              : inMenuModels.length > 0
+                ? `${inMenuModels.length} in menus`
+                : `${allModels.length} listed`}
           </ModuleBadge>
         }
         theme={CATALOG_THEME}
@@ -531,16 +573,27 @@ export function InferenceSettings(props: Props) {
           errors={[...new Set([...errors, ...sharedCatalog.catalog.errors])]}
           complexityTiers={complexityTiers}
           onTest={canEdit ? m => void test(m) : undefined}
+          onToggleVisibility={canEdit ? async m => {
+            const res = await fetch("/api/models/catalog", {
+              method: "PATCH",
+              credentials: "same-origin",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ modelId: m.id, provider: m.provider, hidden: !m.hidden }),
+            });
+            if (!res.ok) throw new Error("Could not save model visibility");
+            await sharedCatalog.refresh();
+          } : undefined}
           results={results}
           blockedNotice={blockedVendorNotice}
-          emptyLabel="No chat models yet. Connect a vendor key, Ollama, or Bedrock in Providers."
+          emptyLabel="No chat models yet. Connect a vendor key, Ollama, or Bedrock in Connections above."
+          providerFilter={modelFilter === "bedrock" || modelFilter === "ollama" ? "all" : modelFilter}
+          onProviderFilterChange={setModelFilter}
         />
       </SettingsModule>
-      )}
 
-      {page === "models" && complexityTiers && (
       <SettingsModule
         id="tiers"
+        className="order-3"
         open={openModule === "tiers"}
         onToggle={() => toggleModule("tiers")}
         onRefresh={() => void refreshModule("tiers")}
@@ -561,13 +614,26 @@ export function InferenceSettings(props: Props) {
       >
         <ComplexityTiersEditor variant="page" {...complexityTiers} />
       </SettingsModule>
-      )}
 
-      {page === "providers" && (
+      <SettingsModule
+        id="connections"
+        className="order-1"
+        open={connectionsOpen}
+        onToggle={() => setConnectionsOpen(open => !open)}
+        icon={<Cloud className={cn("size-4", CONNECTIONS_THEME.icon)} aria-hidden />}
+        title="Connections"
+        subtitle={
+          hosted
+            ? "Vendor APIs and Amazon Bedrock."
+            : "Vendor APIs, Amazon Bedrock, and Ollama on this machine."
+        }
+        badge={<ModuleBadge tone="neutral">Model sources</ModuleBadge>}
+        theme={CONNECTIONS_THEME}
+      >
       <div className="flex flex-col gap-3">
       <SettingsModule
         id="vendor"
-        className={hosted ? "order-2" : "order-1"}
+        className="order-1"
         open={openModule === "vendor"}
         onToggle={() => toggleModule("vendor")}
         onRefresh={() => void refreshModule("vendor")}
@@ -584,16 +650,12 @@ export function InferenceSettings(props: Props) {
       >
         <div className="space-y-3">
           <p className="text-[0.75rem] text-foreground/60 leading-relaxed">
-            Before text is sent to these vendors, SecureMind replaces detected personal data and
-            secrets. That scan reduces risk; it does not guarantee complete removal. Review anything
-            sensitive first. You remain responsible for what you send.
+            Detected personal data is replaced before text goes to these vendors. That reduces risk. Review what you send.
           </p>
           <details className="text-[0.68rem] text-foreground/40">
             <summary className="cursor-pointer text-foreground/55">Learn more</summary>
             <p className="mt-2 leading-relaxed">
-              Matches become placeholders such as [email redacted] and cannot be restored. Vendors
-              may still keep that redacted text. Uncheck anytime to disable vendor APIs. Local
-              Ollama and Amazon Bedrock are configured separately.
+              Matches become placeholders and cannot be restored. Uncheck to turn vendor APIs off. Bedrock and Ollama are separate.
             </p>
           </details>
           <label
@@ -630,9 +692,7 @@ export function InferenceSettings(props: Props) {
               }}
             />
             <span className="text-[0.78rem] text-foreground leading-snug">
-              I understand SecureMind replaces detected PII and secrets before sending text to these
-              vendors. That is risk reduction, not a guarantee — the scan can miss values, and I
-              remain responsible for reviewing content.
+              I understand detected personal data is replaced before vendor calls. The scan can miss things, and I still review what I send.
             </span>
           </label>
 
@@ -645,9 +705,18 @@ export function InferenceSettings(props: Props) {
                   openai: openai.length,
                   anthropic: anthropic.length,
                   google: google.length,
+                  xai: xai.length,
                 }}
                 catalogErrors={errors}
                 riskAck={riskAck}
+                inMenuCounts={{
+                  groq: inMenuCount("groq"),
+                  openai: inMenuCount("openai"),
+                  anthropic: inMenuCount("anthropic"),
+                  google: inMenuCount("google"),
+                  xai: inMenuCount("xai"),
+                }}
+                onOpenModels={openAvailableModels}
               />
               <p className="text-[0.72rem] text-muted-foreground">
                 Paste a vendor API key. The issuer is detected automatically. A Groq key saved from
@@ -662,6 +731,7 @@ export function InferenceSettings(props: Props) {
                   </li>
                 )}
                 {vendorKeys.map(k => {
+                  const spec = vendorApiSpec(k.kind);
                   const removable =
                     canEdit &&
                     k.source === "instance" &&
@@ -681,7 +751,7 @@ export function InferenceSettings(props: Props) {
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                            <p className="text-[0.75rem] font-medium text-foreground/85">{k.label}</p>
+                            <p className="text-[0.75rem] font-medium text-foreground/85">{spec?.productName ?? k.label}</p>
                             {k.hint && (
                               <span
                                 className="inline-flex items-center rounded border border-border bg-muted/80 px-1.5 py-0.5 text-[0.58rem] font-mono text-foreground/60"
@@ -692,7 +762,7 @@ export function InferenceSettings(props: Props) {
                             )}
                           </div>
                           <p className="text-[0.6rem] text-foreground/40 mt-0.5 leading-snug">
-                            {k.description}
+                            {spec?.blurb ?? k.description}
                           </p>
                         </div>
                         <StatusChip
@@ -705,6 +775,15 @@ export function InferenceSettings(props: Props) {
                             k.catalog === "ollama"
                               ? 0
                               : modelCount(k.catalog)
+                          }
+                          inMenus={
+                            k.catalog === "groq" ||
+                            k.catalog === "google" ||
+                            k.catalog === "openai" ||
+                            k.catalog === "anthropic" ||
+                            k.catalog === "xai"
+                              ? inMenuCount(k.catalog)
+                              : undefined
                           }
                         />
                       </div>
@@ -734,18 +813,32 @@ export function InferenceSettings(props: Props) {
               </ul>
 
               {vendorKeys.some(k => k.catalog === "groq") && groq.length === 0 && (
-                <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2.5 space-y-1">
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2.5 space-y-2">
                   <p className="text-[0.68rem] font-medium text-amber-200">
                     Groq key saved, but no models loaded
                   </p>
-                  <p className="text-[0.62rem] text-foreground/50 leading-relaxed">
-                    The key is stored, but this server could not load models from Groq. Common causes:
-                    VPN or firewall blocking <code className="font-mono">api.groq.com</code>, an invalid
-                    key, or a network timeout. Try disconnecting the VPN, then use Refresh on this module
-                    or open Available models for the exact error.
+                  <p className="text-[0.62rem] text-foreground/55 leading-relaxed">
+                    Chat will not use Groq until this server can list models. Voice uses Groq Whisper, a different endpoint, so transcription can still work.
                   </p>
                   {errors.length > 0 && (
                     <p className="text-[0.62rem] text-amber-200/80 font-mono">{errors.join(" · ")}</p>
+                  )}
+                  {canEdit && (
+                    <button
+                      type="button"
+                      disabled={busy || refreshingModule === "vendor"}
+                      onClick={() => void (async () => {
+                        await refresh({ module: "vendor", providers: false, catalog: true });
+                        await sharedCatalog.refresh();
+                      })()}
+                      className={cn(
+                        "inline-flex items-center rounded-md border border-amber-500/40 bg-amber-500/15",
+                        "px-2.5 py-1 text-[0.68rem] font-semibold text-amber-100",
+                        "hover:bg-amber-500/25 disabled:opacity-50 cursor-pointer",
+                      )}
+                    >
+                      {refreshingModule === "vendor" ? "Checking…" : "Check key"}
+                    </button>
                   )}
                 </div>
               )}
@@ -759,7 +852,7 @@ export function InferenceSettings(props: Props) {
                     type="password"
                     value={keyDraft}
                     onChange={e => setKeyDraft(e.target.value)}
-                    placeholder="Paste a vendor API key (Groq, Google, OpenAI…)"
+                    placeholder="Paste a vendor API key (Groq, Gemini, Grok, OpenAI…)"
                     autoComplete="off"
                     disabled={busy}
                     className="w-full h-10 rounded-lg border border-[var(--border-strong)] bg-elevated px-3 text-sm font-mono text-foreground placeholder:text-[var(--text-subtle)] focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
@@ -837,7 +930,7 @@ export function InferenceSettings(props: Props) {
 
       <SettingsModule
         id="bedrock"
-        className={hosted ? "order-1" : "order-2"}
+        className="order-2"
         open={openModule === "bedrock"}
         onToggle={() => toggleModule("bedrock")}
         onRefresh={() => void refreshModule("bedrock")}
@@ -868,7 +961,7 @@ export function InferenceSettings(props: Props) {
 
       <SettingsModule
         id="voice"
-        className="order-3"
+        className="order-4"
         open={openModule === "voice"}
         onToggle={() => toggleModule("voice")}
         onRefresh={() => void refreshModule("voice")}
@@ -939,12 +1032,7 @@ export function InferenceSettings(props: Props) {
       >
         <div className="space-y-3">
           <p className="text-[0.72rem] text-muted-foreground">
-            Local models stay on this host. Performance and answer quality depend on your hardware
-            and the selected model — a small local model will not match premium hosted models.
-            Long waits before the first word are Ollama on this machine, not a SecureMind outage.
-            For faster replies, connect Amazon Bedrock or a vendor API above.
-            Use chat models for conversation and nomic-embed-text for Knowledge. You can change
-            provider later without reinstalling.
+            These stay on this machine. Use a chat model for conversation and nomic-embed-text for Knowledge.
           </p>
           <details className="text-[0.68rem] text-foreground/45">
             <summary className="cursor-pointer text-foreground/55">Details</summary>
@@ -1052,14 +1140,18 @@ export function InferenceSettings(props: Props) {
               </ul>
               <button
                 type="button"
-                onClick={() => onOpenModels?.()}
+                onClick={() => {
+                  setConnectionsOpen(false);
+                  setOpenModule("models");
+                  void sharedCatalog.ensureLoaded();
+                }}
                 className={cn(
                   "mt-1 text-[0.7rem] font-medium underline underline-offset-2 cursor-pointer",
                   PROVIDER_THEME.ollama.icon,
                   "hover:opacity-90",
                 )}
               >
-                Browse Ollama models in Models →
+                Browse Ollama models in Available models
               </button>
             </div>
           )}
@@ -1067,29 +1159,11 @@ export function InferenceSettings(props: Props) {
       </SettingsModule>
       )}
       </div>
-      )}
+      </SettingsModule>
 
-      {page === "models" && onOpenProviders && (
-        <button
-          type="button"
-          onClick={onOpenProviders}
-          className="text-[0.72rem] font-medium text-indigo-300/80 hover:text-indigo-200 underline underline-offset-2 cursor-pointer px-0.5"
-        >
-          Connect APIs{hosted ? " or Bedrock" : ", Bedrock, or Ollama"} in Providers →
-        </button>
-      )}
-      {page === "providers" && onOpenModels && (
-        <button
-          type="button"
-          onClick={onOpenModels}
-          className="text-[0.72rem] font-medium text-indigo-300/80 hover:text-indigo-200 underline underline-offset-2 cursor-pointer px-0.5"
-        >
-          Assign complexity tiers in Models →
-        </button>
-      )}
+      {note && <p className="order-4 text-[0.68rem] text-indigo-200/80 px-0.5">{note}</p>}
 
-      {note && <p className="text-[0.68rem] text-indigo-200/80 px-0.5">{note}</p>}
-
+      <div className="order-5">
       <VoiceSttSetupDialog
         open={voiceSetupOpen}
         onClose={() => setVoiceSetupOpen(false)}
@@ -1099,6 +1173,7 @@ export function InferenceSettings(props: Props) {
           onProvidersChanged?.();
         }}
       />
+      </div>
     </div>
   );
 }
@@ -1553,27 +1628,35 @@ function StatusChip({
   catalog,
   vendorKind,
   count,
+  inMenus,
 }: {
   status: KeyInventoryItem["status"];
   catalog: KeyInventoryItem["catalog"];
   vendorKind?: string;
   count: number;
+  inMenus?: number;
 }) {
   const wiredVendorCatalog =
     catalog === "groq" ||
     catalog === "google" ||
     catalog === "openai" ||
-    catalog === "anthropic";
+    catalog === "anthropic" ||
+    catalog === "xai";
+  const menuPhrase = wiredVendorCatalog && status === "ready" && count > 0 && inMenus !== undefined
+    ? vendorMenuPhrase(count, inMenus)
+    : null;
   const label =
     status === "ready" && wiredVendorCatalog && count === 0
-      ? "Check key"
-      : status === "ready"
-        ? `${count} models`
-        : status === "local"
+      ? "No models"
+      : menuPhrase
+        ? menuPhrase
+        : status === "ready"
           ? `${count} models`
-          : status === "incomplete"
-            ? "Incomplete"
-            : "Stored";
+          : status === "local"
+            ? `${count} models`
+            : status === "incomplete"
+              ? "Incomplete"
+              : "Stored";
   const kind =
     vendorKind ??
     (catalog === "groq" ||
@@ -1607,13 +1690,17 @@ function StatusChip({
 function SupportedVendorsPanel({
   keys,
   modelCounts,
+  inMenuCounts,
   catalogErrors,
   riskAck,
+  onOpenModels,
 }: {
   keys: KeyInventoryItem[];
   modelCounts: Record<WiredVendorKind, number>;
+  inMenuCounts: Record<WiredVendorKind, number>;
   catalogErrors: string[];
   riskAck: boolean;
+  onOpenModels: (kind: WiredVendorKind) => void;
 }) {
   const [openKind, setOpenKind] = useState<WiredVendorKind | null>(null);
   const keyed = (kind: WiredVendorKind) =>
@@ -1625,6 +1712,7 @@ function SupportedVendorsPanel({
         const stored = keys.find(k => k.kind === v.kind && (k.status === "ready" || k.status === "stored"));
         const configured = Boolean(stored) || keyed(v.kind);
         const models = modelCounts[v.kind];
+        const menuPhrase = vendorMenuPhrase(models, inMenuCounts[v.kind]);
         const open = openKind === v.kind;
         const status = v.kind === "groq"
           ? groqVendorStatusLabel({
@@ -1643,11 +1731,27 @@ function SupportedVendorsPanel({
           <li key={v.kind}>
             <button
               type="button"
-              onClick={() => setOpenKind(open ? null : v.kind)}
+              onClick={() => {
+                if (models > 0) {
+                  onOpenModels(v.kind);
+                  return;
+                }
+                setOpenKind(open ? null : v.kind);
+              }}
               className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-muted/60"
             >
               <span className="min-w-0 flex items-baseline gap-2">
                 <span className="text-[0.8rem] font-medium text-foreground/85">{v.productName}</span>
+                {v.mark && (
+                  <span
+                    className={cn(
+                      "inline-flex items-center rounded border px-1 py-0.5 text-[0.5rem] font-semibold uppercase tracking-wide",
+                      themeForVendor(v.kind).badge,
+                    )}
+                  >
+                    {v.mark}
+                  </span>
+                )}
                 {stored?.hint && (
                   <span
                     className="font-mono text-[0.58rem] text-foreground/45"
@@ -1662,7 +1766,7 @@ function SupportedVendorsPanel({
                 warn ? "text-amber-200/80" : "text-foreground/45",
               )}>
                 {status}
-                {v.kind !== "groq" && configured && models > 0 ? ` · ${models} models` : ""}
+                {v.kind !== "groq" && configured && menuPhrase ? ` · ${menuPhrase}` : ""}
               </span>
             </button>
             {open && (
@@ -1735,13 +1839,13 @@ function InferenceSettingsModuleSkeleton({ expanded = false }: { expanded?: bool
   );
 }
 
-function InferenceSettingsSkeleton({ page }: { page: "models" | "providers" }) {
+function InferenceSettingsSkeleton() {
   return (
     <div
       className="space-y-3"
       aria-busy="true"
       aria-live="polite"
-      aria-label={page === "providers" ? "Loading providers" : "Loading models"}
+      aria-label="Loading models"
     >
       <div className="rounded-xl border border-indigo-500/25 bg-indigo-500/[0.06] px-4 py-3.5 space-y-2.5">
         <SkeletonBar className="h-2.5 w-16" />
@@ -1749,12 +1853,12 @@ function InferenceSettingsSkeleton({ page }: { page: "models" | "providers" }) {
         <SkeletonBar className="h-2.5 w-full max-w-lg" />
       </div>
 
-      <InferenceSettingsModuleSkeleton expanded={page === "providers"} />
+      <InferenceSettingsModuleSkeleton expanded />
       <InferenceSettingsModuleSkeleton />
-      {page === "providers" && <InferenceSettingsModuleSkeleton />}
+      <InferenceSettingsModuleSkeleton />
 
       <p className="text-[0.62rem] text-foreground/35 px-0.5 animate-pulse">
-        {page === "providers" ? "Loading providers…" : "Loading models…"}
+        Loading models…
       </p>
     </div>
   );

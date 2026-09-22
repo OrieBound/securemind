@@ -106,7 +106,7 @@ function cloudSetup(input: ChatRuntimeInput, extra: string): ChatSetupGuidance {
     ollama: null,
     cloud: {
       recommended: "bedrock",
-      byok: ["Groq", "OpenAI", "Anthropic", "Google"],
+      byok: ["Groq", "Gemini", "Grok", "OpenAI", "Anthropic"],
     },
   };
 }
@@ -150,7 +150,7 @@ function groqUnavailableMessage(input: ChatRuntimeInput): { code: string; messag
     return {
       code: "VENDOR_RISK_REQUIRED",
       message:
-        "Vendor APIs are blocked until you acknowledge the risk in Settings → Providers. " +
+        "Vendor APIs are blocked until you acknowledge the risk in Settings → Models. " +
         (input.edition === "local"
           ? "You can also use an installed Ollama chat model."
           : "On this deployment, enable Amazon Bedrock (IAM) or add a bring-your-own provider key."),
@@ -161,7 +161,7 @@ function groqUnavailableMessage(input: ChatRuntimeInput): { code: string; messag
       code: MODEL_PROVIDER_REQUIRED_CODE,
       message:
         "No model provider is configured. Enable Amazon Bedrock with this deployment's IAM role, " +
-        "or add a bring-your-own provider key in Settings → Providers. " +
+        "or add a bring-your-own provider key in Settings → Models. " +
         "SecureMind does not use a product-operated third-party model by default.",
     };
   }

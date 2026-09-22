@@ -16,15 +16,14 @@ import {
   type GroqUsage,
 } from "./groq";
 import { formatGroqChatError } from "./groq-connectivity";
-import { streamOllamaChat, checkOllamaModel, resolveOllamaChatModel, probeOllama, isOllamaEmbedModel } from "./ollama";
+import { streamOllamaChat, checkOllamaModel, resolveOllamaChatModel } from "./ollama";
 import { streamBedrockChat, isBedrockConfigured, bedrockBlockReason } from "./bedrock";
 import { streamOpenAIChat, hasOpenAIRuntime } from "./openai";
 import { streamAnthropicChat, hasAnthropicRuntime } from "./anthropic";
 import { streamGoogleChat, hasGoogleRuntime } from "./google";
+import { streamXaiChat, hasXaiRuntime } from "./xai";
 import { ollamaFallbackForMode } from "./router";
 import { resolveRuntimeSecrets } from "@/lib/instance-config";
-import { isHostedRuntime } from "@/lib/runtime-env";
-import { pickInstalledChatModel, probeHardware } from "./local-recommendations";
 import type { ChatMessage, ModelProvider } from "./types";
 
 export type StreamChatOpts = {
@@ -45,14 +44,12 @@ export type StreamChatOpts = {
 
 /**
  * Stream assistant tokens from the requested provider.
- * Hosted installs do not silently fall back to Ollama. Local installs may use an
- * already-installed Ollama chat model when Groq is configured but the live call fails —
- * unless `lockProvider` is set (user-picked model).
+ * A failed Groq call is reported to the user on every edition. It is not replaced
+ * with Ollama. Ollama runs only when it is the selected provider.
  */
 export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> {
   const { messages, model, onUsage, tier = "Standard" } = opts;
   let provider = opts.provider;
-  let ollamaForcedModel: string | null = null;
   const lockProvider = Boolean(opts.lockProvider);
 
   const secrets = await resolveRuntimeSecrets();
@@ -132,37 +129,13 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
       }
       return;
     } catch (err) {
-      const formatted = formatGroqChatError(err);
-      if (lockProvider) {
-        throw new Error(formatted);
-      }
-      if (ollamaPrimary) {
-        console.warn(`[provider] Groq failed (${formatted.slice(0, 80)}). Falling back to Ollama.`);
-        provider = "ollama";
-      } else if (!isHostedRuntime()) {
-        const probe = await probeOllama(2000);
-        const installed = pickInstalledChatModel(
-          probe.tags.filter(t => !isOllamaEmbedModel(t)),
-          probeHardware(),
-        );
-        if (probe.reachable && installed) {
-          console.warn(
-            `[provider] Groq failed (${formatted.slice(0, 80)}). Using installed Ollama ${installed}.`,
-          );
-          provider = "ollama";
-          ollamaForcedModel = installed;
-        } else {
-          throw new Error(formatted);
-        }
-      } else {
-        throw new Error(formatted);
-      }
+      throw new Error(formatGroqChatError(err));
     }
   }
 
   if (provider === "openai") {
     if (!(await hasOpenAIRuntime())) {
-      throw new Error("OpenAI is not configured. Add an API key in Settings → Providers.");
+      throw new Error("OpenAI is not configured. Add an API key in Settings → Models.");
     }
     for await (const delta of streamOpenAIChat(messages, model)) {
       yield delta;
@@ -172,7 +145,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
 
   if (provider === "anthropic") {
     if (!(await hasAnthropicRuntime())) {
-      throw new Error("Anthropic is not configured. Add an API key in Settings → Providers.");
+      throw new Error("Anthropic is not configured. Add an API key in Settings → Models.");
     }
     for await (const delta of streamAnthropicChat(messages, model)) {
       yield delta;
@@ -182,9 +155,19 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
 
   if (provider === "google") {
     if (!(await hasGoogleRuntime())) {
-      throw new Error("Google Gemini is not configured. Add an API key in Settings → Providers.");
+      throw new Error("Gemini is not configured. Add an API key in Settings → Models.");
     }
     for await (const delta of streamGoogleChat(messages, model)) {
+      yield delta;
+    }
+    return;
+  }
+
+  if (provider === "xai") {
+    if (!(await hasXaiRuntime())) {
+      throw new Error("Grok is not configured. Add an API key in Settings → Models.");
+    }
+    for await (const delta of streamXaiChat(messages, model)) {
       yield delta;
     }
     return;
@@ -194,7 +177,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
     throw new Error(GROQ_NOT_CONFIGURED_MESSAGE);
   }
 
-  const fallbackModel = ollamaForcedModel ?? resolveOllamaChatModel(
+  const fallbackModel = resolveOllamaChatModel(
     provider === "ollama" ? model : ollamaFallbackForMode(tier),
     tier,
   );

@@ -17,6 +17,7 @@ import {
   type ReferenceCatalogSlice,
 } from "@/lib/models/reference-catalog";
 import { isChatUsableModelId, type CatalogModel } from "@/lib/models/catalog-shared";
+import { modelKey } from "@/lib/models/model-availability";
 import {
   compareModelsForQuery,
   matchesModelQuery,
@@ -32,6 +33,7 @@ export type ModelCatalog = {
   openai: CatalogModel[];
   anthropic: CatalogModel[];
   google: CatalogModel[];
+  xai: CatalogModel[];
   errors: string[];
 };
 
@@ -42,6 +44,7 @@ const EMPTY: ModelCatalog = {
   openai: [],
   anthropic: [],
   google: [],
+  xai: [],
   errors: [],
 };
 
@@ -52,6 +55,8 @@ type CatalogState = {
   refresh: () => Promise<void>;
   /** Fetch once when a picker actually opens — not on every page load. */
   ensureLoaded: () => Promise<void>;
+  /** True after the first catalog response, including a failed list. */
+  loaded: boolean;
   byId: (id: string) => CatalogModel | null;
 };
 
@@ -66,22 +71,32 @@ export function ModelCatalogProvider({ children }: { children: React.ReactNode }
 function useLoadCatalog(enabled = true): CatalogState {
   const [catalog, setCatalog] = useState<ModelCatalog>(EMPTY);
   const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const loadedRef = useRef(false);
+  const requestIdRef = useRef(0);
 
   const load = useCallback(async (fresh: boolean) => {
     if (!enabled) return;
+    const requestId = ++requestIdRef.current;
     setLoading(true);
     try {
       const res = await fetch(
         fresh ? "/api/models/catalog?fresh=1" : "/api/models/catalog",
         { credentials: "same-origin" },
       );
-      if (res.ok) setCatalog((await res.json()) as ModelCatalog);
+      const data = res.ok ? (await res.json()) as ModelCatalog : null;
+      if (requestId !== requestIdRef.current) return;
+      if (data) setCatalog(data);
+      else setCatalog({ ...EMPTY, errors: ["Could not load model availability. Refresh to retry."] });
       loadedRef.current = true;
+      setLoaded(true);
     } catch {
-      // Leave the previous catalog in place; the picker stays usable.
+      if (requestId !== requestIdRef.current) return;
+      setCatalog({ ...EMPTY, errors: ["Could not load model availability. Refresh to retry."] });
+      loadedRef.current = true;
+      setLoaded(true);
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) setLoading(false);
     }
   }, [enabled]);
 
@@ -100,7 +115,7 @@ function useLoadCatalog(enabled = true): CatalogState {
 
   const byId = useCallback((id: string) => all.find(m => m.id === id) ?? null, [all]);
 
-  return { catalog, all, loading, refresh, ensureLoaded, byId };
+  return { catalog, all, loading, refresh, ensureLoaded, loaded, byId };
 }
 
 /** Catalog from context when available, otherwise a local fetch. */
@@ -112,14 +127,26 @@ export function useModelCatalog(): CatalogState {
 
 export type ModelProviderId = CatalogModel["provider"];
 
-/** Listed as chat-capable (Settings directory). May still need Bedrock Model access. */
+/** Listed as chat-capable; Settings retains hidden, failed, and unverified entries. */
 export function isListedChatModel(m: Pick<CatalogModel, "id" | "modality">): boolean {
   return m.modality !== "other" && isChatUsableModelId(m.id);
 }
 
-/** Models that may be used for chat / complexity-tier routing. Excludes embed, TTS, image, guard, Sales-gated Bedrock ids, and Bedrock ids that still need console enablement. */
-export function isChatSelectableModel(m: Pick<CatalogModel, "id" | "modality" | "access">): boolean {
-  return isListedChatModel(m) && m.access !== "needs_enablement";
+/** Menus only include models chat can run: a passed test, or an installed local chat model. */
+export function isChatSelectableModel(m: CatalogModel): boolean {
+  if (!isListedChatModel(m) || m.hidden || m.access === "needs_enablement") return false;
+  return m.verification === "verified" || (m.provider === "ollama" && m.verification === "installed");
+}
+
+export function menuStatusLabel(m: CatalogModel): string {
+  if (m.hidden) return "Not in menus · hidden";
+  if (m.access === "needs_enablement") return "Not in menus · enable in AWS";
+  if (m.verification === "failed") {
+    const code = m.verificationCode ? ` · ${m.verificationCode.replaceAll("_", " ")}` : "";
+    return `Not in menus · check failed${code}`;
+  }
+  if (m.verification === "verified" || m.verification === "installed") return "In menus";
+  return "Not in menus · test to add";
 }
 
 export function chatSelectableModels(models: CatalogModel[]): CatalogModel[] {
@@ -139,7 +166,7 @@ export function buildChatPickerModels(catalog: ReferenceCatalogSlice): CatalogMo
   return chatSelectableModels(buildPickerModels(catalog));
 }
 
-/** Settings → Models: includes Bedrock rows that still need console enablement. */
+/** Settings keeps all listed chat candidates available to test and show again. */
 export function buildSettingsCatalogModels(catalog: ReferenceCatalogSlice): CatalogModel[] {
   return settingsCatalogModels(buildPickerModels(catalog));
 }
@@ -168,6 +195,10 @@ const PROVIDER_STYLES: Record<ModelProviderId, { label: string; className: strin
   google: {
     label: themeForRuntime("google").label,
     className: themeForRuntime("google").badge,
+  },
+  xai: {
+    label: themeForRuntime("xai").label,
+    className: themeForRuntime("xai").badge,
   },
 };
 
@@ -199,6 +230,7 @@ export function guessProvider(modelId: string): ModelProviderId | null {
     return "openai";
   }
   if (id.startsWith("claude") || id.includes("anthropic")) return "anthropic";
+  if (id.startsWith("grok")) return "xai";
   if (id.startsWith("gemini") || id.startsWith("models/gemini")) return "google";
   if (id.includes(":") && !id.includes("/")) return "ollama";
   if (
@@ -241,7 +273,8 @@ export function providerOrigin(provider: ModelProviderId): string {
   if (provider === "bedrock") return "Runs on AWS Bedrock using the selected profile's credentials.";
   if (provider === "openai") return "Runs on OpenAI using the saved API key.";
   if (provider === "anthropic") return "Runs on Anthropic using the saved API key.";
-  if (provider === "google") return "Runs on Google Gemini using the saved API key.";
+  if (provider === "google") return "Runs on Gemini using the saved API key.";
+  if (provider === "xai") return "Runs on xAI Grok using the saved API key.";
   return "Ollama (local) — runs on this machine only. Nothing leaves the host.";
 }
 
@@ -265,6 +298,7 @@ const PROVIDER_ORDER: CatalogModel["provider"][] = [
   "openai",
   "anthropic",
   "google",
+  "xai",
   "bedrock",
   "ollama",
 ];
@@ -282,6 +316,7 @@ export function ModelPickerList({
   selectedId,
   onSelect,
   onTest,
+  onToggleVisibility,
   results,
   emptyLabel = "No models available.",
   maxHeightClass = "max-h-72",
@@ -289,6 +324,8 @@ export function ModelPickerList({
   showProviderFilter = true,
   alwaysShowProviderFilters = false,
   initialProviderFilter = "all",
+  providerFilter: controlledProviderFilter,
+  onProviderFilterChange,
   selectedBadgeLabel = "Selected",
   browse = false,
   blurbFor,
@@ -298,6 +335,7 @@ export function ModelPickerList({
   selectedId?: string | null;
   onSelect?: (model: CatalogModel) => void;
   onTest?: (model: CatalogModel) => void;
+  onToggleVisibility?: (model: CatalogModel) => Promise<void>;
   results?: Record<string, ModelTestResult>;
   emptyLabel?: string;
   maxHeightClass?: string;
@@ -308,6 +346,9 @@ export function ModelPickerList({
   alwaysShowProviderFilters?: boolean;
   /** Prefill the vendor chip (e.g. after selecting a Bedrock credential). */
   initialProviderFilter?: ProviderFilter;
+  /** When set, the vendor chips follow this value. */
+  providerFilter?: ProviderFilter;
+  onProviderFilterChange?: (next: ProviderFilter) => void;
   /** Label shown on the active row (e.g. "In use" for fixed-model mode). */
   selectedBadgeLabel?: string;
   /** Review-only directory — rows do not assign a model. */
@@ -316,7 +357,14 @@ export function ModelPickerList({
   assignedTiersFor?: (modelId: string) => string[];
 }) {
   const [query, setQuery] = useState("");
-  const [providerFilter, setProviderFilter] = useState<ProviderFilter>(initialProviderFilter);
+  const [savingVisibility, setSavingVisibility] = useState<string | null>(null);
+  const [visibilityError, setVisibilityError] = useState<string | null>(null);
+  const [internalProviderFilter, setInternalProviderFilter] = useState<ProviderFilter>(initialProviderFilter);
+  const providerFilter = controlledProviderFilter ?? internalProviderFilter;
+  const setProviderFilter = (next: ProviderFilter) => {
+    onProviderFilterChange?.(next);
+    if (controlledProviderFilter === undefined) setInternalProviderFilter(next);
+  };
   const selectedRowRef = useRef<HTMLDivElement | null>(null);
 
   const counts = useMemo(() => {
@@ -327,6 +375,7 @@ export function ModelPickerList({
       openai: 0,
       anthropic: 0,
       google: 0,
+      xai: 0,
     };
     for (const m of models) c[m.provider] += 1;
     return c;
@@ -370,6 +419,7 @@ export function ModelPickerList({
 
   return (
     <div className="space-y-2">
+      {visibilityError && <p role="alert" className="text-xs text-red-400">{visibilityError}</p>}
       {(showSearch || showFilter) && (
         <div className="space-y-1.5">
           {showSearch && (
@@ -430,7 +480,7 @@ export function ModelPickerList({
             </div>
             {group.items.map(m => {
               const selected = !browse && selectedId === m.id;
-              const result = results?.[m.id];
+              const result = results?.[modelKey(m)];
               const blurb = browse ? blurbFor?.(m) : undefined;
               const tiers = browse ? assignedTiersFor?.(m.id) ?? [] : [];
               const hint = modelPickerHint(m);
@@ -459,6 +509,12 @@ export function ModelPickerList({
                       </span>
                     )}
                   </span>
+                  {browse && (
+                    <span className="block mt-1 text-[0.6rem] text-foreground/60">
+                      {menuStatusLabel(m)}
+                      {m.checkedAt && <span> · {new Date(m.checkedAt).toLocaleString()}</span>}
+                    </span>
+                  )}
                   {hint && (
                     <span className="block text-[0.58rem] text-foreground/40 truncate mt-0.5">
                       {hint}
@@ -538,6 +594,23 @@ export function ModelPickerList({
                         Test
                       </button>
                     )}
+                    {browse && onToggleVisibility && (
+                      <button
+                        type="button"
+                        aria-label={`${m.hidden ? "Show" : "Hide"} ${m.name} in model menus`}
+                        disabled={savingVisibility !== null}
+                        onClick={async () => {
+                          setSavingVisibility(modelKey(m));
+                          setVisibilityError(null);
+                          try { await onToggleVisibility(m); }
+                          catch { setVisibilityError("Could not save model visibility. Try again."); }
+                          finally { setSavingVisibility(null); }
+                        }}
+                        className="shrink-0 rounded-md border border-indigo-400/30 bg-indigo-500/10 px-2 py-1 text-[0.58rem] text-foreground/75 hover:bg-indigo-500/20 disabled:opacity-40 cursor-pointer"
+                      >
+                        {savingVisibility === modelKey(m) ? "Saving…" : m.hidden ? "Show" : "Hide"}
+                      </button>
+                    )}
                   </div>
 
                   {result && !result.pending && !result.ok && (
@@ -603,34 +676,37 @@ function FilterChip({
 /** Runs the reachability check and tracks per-model results. */
 export function useModelTester() {
   const [results, setResults] = useState<Record<string, ModelTestResult>>({});
+  const { refresh } = useModelCatalog();
 
   const test = useCallback(async (model: CatalogModel) => {
-    setResults(prev => ({ ...prev, [model.id]: { ok: false, pending: true } }));
+    setResults(prev => ({ ...prev, [modelKey(model)]: { ok: false, pending: true } }));
     try {
       const res = await fetch("/api/models/test", {
         method: "POST",
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modelId: model.id }),
+        body: JSON.stringify({ modelId: model.id, provider: model.provider }),
       });
       const data = (await res.json()) as ModelTestResult & { error?: string };
       setResults(prev => ({
         ...prev,
-        [model.id]: res.ok
+        [modelKey(model)]: res.ok
           ? { ...data, pending: false }
           : { ok: false, pending: false, message: data.error ?? `Request failed (${res.status})` },
       }));
     } catch (err) {
       setResults(prev => ({
         ...prev,
-        [model.id]: {
+        [modelKey(model)]: {
           ok: false,
           pending: false,
           message: err instanceof Error ? err.message : "Test failed",
         },
       }));
+    } finally {
+      await refresh();
     }
-  }, []);
+  }, [refresh]);
 
   return { results, test };
 }
