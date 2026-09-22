@@ -18,7 +18,7 @@ describe("onboarding copy", () => {
     const hello = defaultWorkspaceHello("Mindy Locke", "cloud");
     expect(hello).toContain("Getting started");
     expect(hello).toContain("/getting-started");
-    expect(hello).toContain("settings=providers");
+    expect(hello).toContain("settings=inference");
     expect(hello).toContain("highlight=bedrock");
     expect(hello).not.toContain("ADR");
 
