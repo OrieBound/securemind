@@ -15,7 +15,7 @@ describe("model inventory copy", () => {
         model({ id: "c", name: "C", provider: "google" }),
         model({ id: "d", name: "D", provider: "ollama" }),
       ]),
-    ).toBe("Groq 2 · Google 1 · Ollama 1");
+    ).toBe("Groq 2 · Gemini 1 · Ollama 1");
   });
 
   it("uses a short blurb per family instead of hiding vendor models", () => {
