@@ -25,6 +25,11 @@ export function runtimeEdition(): RuntimeEdition {
   return isHostedRuntime() ? "cloud" : "local";
 }
 
+export function runtimeDeployment(): "docker" | "host" | "hosted" {
+  if (isHostedRuntime()) return "hosted";
+  return process.env.SECUREMIND_RUNTIME === "docker" ? "docker" : "host";
+}
+
 /**
  * Document chunk embedding must finish before the handler returns on Lambda,
  * or be delegated to a second invocation. Local Next may still background it

@@ -63,6 +63,7 @@ export type InstanceConfigRow = {
   voiceSttAudioAckAt: Date | null;
   /** Sparse Admin list-rate overrides. Hosted Dynamo JSON; local file. Not Prisma. */
   pricingRateOverrides?: unknown;
+  modelAvailability?: unknown;
   updatedAt: Date;
   updatedByUserId: string | null;
 };
@@ -79,7 +80,7 @@ export type KeyInventoryItem = {
   status: "ready" | "incomplete" | "stored" | "local";
   region?: string | null;
   /** Links this credential to a model catalog bucket. */
-  catalog: "groq" | "bedrock" | "ollama" | "google" | "openai" | "anthropic" | "none";
+  catalog: "groq" | "bedrock" | "ollama" | "google" | "openai" | "anthropic" | "xai" | "none";
   /** True when SecureMind cannot edit this credential from the UI by design. */
   managedByEnvironment?: boolean;
 };

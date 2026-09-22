@@ -8,6 +8,7 @@
 import { useMemo } from "react";
 import {
   ModelPickerList,
+  isChatSelectableModel,
   providerLabel,
   type CatalogModel,
   type ModelProviderId,
@@ -21,9 +22,18 @@ const PROVIDER_ORDER: ModelProviderId[] = [
   "openai",
   "anthropic",
   "google",
+  "xai",
   "bedrock",
   "ollama",
 ];
+
+/** How a saved vendor key should describe its models: listed from the key, in menus after a successful test. */
+export function vendorMenuPhrase(listed: number, inMenus: number): string | null {
+  if (listed <= 0) return null;
+  if (inMenus >= listed) return `${listed} in menus`;
+  if (inMenus <= 0) return `${listed} listed · test to use`;
+  return `${inMenus} of ${listed} in menus`;
+}
 
 export function providerCountsLine(models: CatalogModel[]): string {
   const counts = Object.fromEntries(PROVIDER_ORDER.map(p => [p, 0])) as Record<ModelProviderId, number>;
@@ -77,6 +87,11 @@ export function modelBlurb(model: CatalogModel): string {
     return "OpenAI chat.";
   }
 
+  if (model.provider === "xai") {
+    if (id.includes("mini") || id.includes("fast")) return "Faster, lighter Grok chat.";
+    return "Grok chat via xAI.";
+  }
+
   if (model.provider === "anthropic") {
     if (id.includes("haiku")) return "Faster Anthropic chat.";
     return "Anthropic Claude chat.";
@@ -101,48 +116,54 @@ export function ModelInventory({
   errors,
   complexityTiers,
   onTest,
+  onToggleVisibility,
   results,
   emptyLabel,
   blockedNotice,
+  providerFilter = "all",
+  onProviderFilterChange,
 }: {
   models: CatalogModel[];
   loading?: boolean;
   errors?: string[];
   complexityTiers: ComplexityTiersBind | null;
   onTest?: (model: CatalogModel) => void;
+  onToggleVisibility?: (model: CatalogModel) => Promise<void>;
   results?: Record<string, ModelTestResult>;
   emptyLabel: string;
   /** Keys saved in Providers that the live catalog cannot list yet. */
   blockedNotice?: string | null;
+  providerFilter?: ModelProviderId | "all";
+  onProviderFilterChange?: (next: ModelProviderId | "all") => void;
 }) {
-  const counts = useMemo(() => providerCountsLine(models), [models]);
+  const inMenus = useMemo(() => models.filter(isChatSelectableModel), [models]);
+  const notInMenus = useMemo(() => models.filter(m => !isChatSelectableModel(m)), [models]);
+  const counts = useMemo(() => providerCountsLine(inMenus), [inMenus]);
+  const filteredNotInMenus = useMemo(
+    () => providerFilter === "all" ? notInMenus : notInMenus.filter(m => m.provider === providerFilter),
+    [notInMenus, providerFilter],
+  );
+  const filteredInMenus = useMemo(
+    () => providerFilter === "all" ? inMenus : inMenus.filter(m => m.provider === providerFilter),
+    [inMenus, providerFilter],
+  );
   const needsEnablement = models.some(m => m.access === "needs_enablement");
 
   return (
     <div className="space-y-3">
       <p className="text-[0.62rem] text-foreground/38 leading-relaxed">
-        Every chat-capable model this instance can reach — Groq, Google, OpenAI, Anthropic,
-        Bedrock, and Ollama. Embedding-only, retired, and Bedrock ids AWS does not open to
-        every account (for example Claude Opus 5) are omitted. Assign what chat uses in{" "}
-        <span className="text-foreground/55">Complexity tiers</span>. Credentials live in{" "}
-        <span className="text-foreground/55">Providers</span>.{" "}
-        <span className="text-foreground/55">Test</span> sends a short reachability call.
+        {providerFilter === "all"
+          ? "Chat uses the models in this list. Untested ones are under Not in menus."
+          : `${providerLabel(providerFilter)} · ${filteredInMenus.length} in menus · ${filteredNotInMenus.length} not in menus. A successful test moves a model into chat.`}
       </p>
 
       {needsEnablement && (
         <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-[0.65rem] text-amber-100/90 leading-relaxed">
-          Amazon Bedrock models marked <span className="font-semibold">Needs enablement</span> are
-          listed for this region but not turned on for this account yet. In the AWS console go to{" "}
-          <span className="font-semibold">Amazon Bedrock → Discover → Model catalog</span>, open the
-          model, and for Anthropic complete the first-time use-case form if asked. Do{" "}
-          <span className="font-semibold">not</span> use Tune → Marketplace model deployments — that
-          page is for third-party endpoint models, not Claude. They stay hidden from Chat until
-          enabled. Sales-gated ids such as Claude Opus 5 are omitted from Chat and this list —
-          Playground “not available for this account” means AWS Sales, not a console toggle.
+          Some Bedrock models are listed but not turned on for this account. In AWS, open Bedrock → Discover → Model catalog and enable the model. They stay out of chat until then.
         </p>
       )}
 
-      {counts && models.length > 0 && (
+      {counts && inMenus.length > 0 && providerFilter === "all" && (
         <p className="text-[0.65rem] text-foreground/50">{counts}</p>
       )}
 
@@ -165,16 +186,50 @@ export function ModelInventory({
 
       {(models.length > 0 || !loading) && (
         <ModelPickerList
-          models={models}
+          models={inMenus}
           browse
           blurbFor={modelBlurb}
           assignedTiersFor={id => assignedTiers(complexityTiers, id)}
           onTest={onTest}
+          onToggleVisibility={onToggleVisibility}
           results={results}
           alwaysShowProviderFilters
+          providerFilter={providerFilter}
+          onProviderFilterChange={onProviderFilterChange}
           maxHeightClass="max-h-[min(32rem,70vh)]"
-          emptyLabel={emptyLabel}
+          emptyLabel={inMenus.length === 0 && notInMenus.length > 0 ? "Nothing in menus yet." : emptyLabel}
         />
+      )}
+
+      {notInMenus.length > 0 && (
+        <details
+          key={providerFilter}
+          open={providerFilter !== "all" && filteredNotInMenus.length > 0}
+          className="rounded-lg border border-border bg-card"
+        >
+          <summary className="cursor-pointer px-3 py-2.5 text-[0.72rem] font-medium text-foreground/70">
+            Not in menus · {filteredNotInMenus.length}
+          </summary>
+          <div className="border-t border-border px-2 py-2">
+            <p className="px-1.5 pb-2 text-[0.62rem] text-foreground/45">
+              Test a model to add it to chat.
+            </p>
+            <ModelPickerList
+              models={notInMenus}
+              browse
+              blurbFor={modelBlurb}
+              assignedTiersFor={id => assignedTiers(complexityTiers, id)}
+              onTest={onTest}
+              onToggleVisibility={onToggleVisibility}
+              results={results}
+              alwaysShowProviderFilters
+              providerFilter={providerFilter}
+              onProviderFilterChange={onProviderFilterChange}
+              maxHeightClass="max-h-[min(24rem,50vh)]"
+              emptyLabel="None."
+            />
+          </div>
+        </details>
       )}
     </div>
   );

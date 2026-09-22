@@ -17,6 +17,7 @@ export const BILLABLE_INFERENCE_PROVIDERS = new Set([
   "openai",
   "anthropic",
   "google",
+  "xai",
 ]);
 
 export type CostCapWarningLevel = "none" | "warn50" | "warn80" | "blocked";

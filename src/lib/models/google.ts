@@ -38,16 +38,23 @@ export async function hasGoogleRuntime(): Promise<boolean> {
 }
 
 export async function listGoogleModels(apiKey: string): Promise<CatalogModel[]> {
-  const url = new URL("https://generativelanguage.googleapis.com/v1beta/models");
-  url.searchParams.set("key", apiKey);
-  const res = await fetchWithTimeout(url.toString(), {}, 15_000);
-  if (!res.ok) {
-    throw new Error(`Google models list failed (${res.status})`);
-  }
-  const body = (await res.json()) as {
-    models?: Array<{ name?: string; displayName?: string; supportedGenerationMethods?: string[] }>;
-  };
-  return (body.models ?? [])
+  type ListedModel = { name?: string; displayName?: string; supportedGenerationMethods?: string[] };
+  const models: ListedModel[] = [];
+  const seenTokens = new Set<string>();
+  let pageToken: string | undefined;
+  do {
+    const url = new URL("https://generativelanguage.googleapis.com/v1beta/models");
+    url.searchParams.set("pageSize", "1000");
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+    const res = await fetchWithTimeout(url.toString(), { headers: { "x-goog-api-key": apiKey } }, 15_000);
+    if (!res.ok) throw new Error(`Google models list failed (${res.status})`);
+    const body = await res.json() as { models?: ListedModel[]; nextPageToken?: string };
+    models.push(...(body.models ?? []));
+    pageToken = body.nextPageToken;
+    if (pageToken && seenTokens.has(pageToken)) throw new Error("Google catalog returned a repeated page token");
+    if (pageToken) seenTokens.add(pageToken);
+  } while (pageToken);
+  return models
     .filter(m => (m.supportedGenerationMethods ?? []).includes("generateContent"))
     .map(m => {
       const id = (m.name ?? "").replace(/^models\//, "");
@@ -65,10 +72,11 @@ export async function listGoogleModels(apiKey: string): Promise<CatalogModel[]> 
 export async function* streamGoogleChat(
   messages: ChatMessage[],
   model: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<string> {
   const apiKey = await resolveVendorApiKey("google");
   if (!apiKey) {
-    throw new Error("Google API key is not configured. Add one in Settings → Providers.");
+    throw new Error("Google API key is not configured. Add one in Settings → Models.");
   }
 
   const modelId = model.startsWith("models/") ? model.slice("models/".length) : model;
@@ -79,6 +87,7 @@ export async function* streamGoogleChat(
   url.searchParams.set("key", apiKey);
 
   const res = await fetchWithTimeout(url.toString(), {
+    signal,
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ contents: toGeminiContents(messages) }),

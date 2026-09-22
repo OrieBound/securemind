@@ -3,7 +3,7 @@
  * Does not provision databases — it only records a choice.
  *
  * Cloud is DynamoDB only. Neon/Aurora stay parked as a possible later SQL path.
- * Local default is Postgres; DynamoDB is an optional lab preference.
+ * Local / Docker setup uses Postgres only. Old preferences cannot override the edition.
  */
 
 export type WizardStorageChoice = "postgres" | "dynamodb";
@@ -11,14 +11,12 @@ export type WizardStorageChoice = "postgres" | "dynamodb";
 export type RuntimeEdition = "local" | "cloud";
 
 export function parseWizardStorage(
-  raw: string | null | undefined,
+  _raw: string | null | undefined,
   edition: RuntimeEdition,
-  localFallback: "postgres" | "dynamodb",
+  _localFallback: "postgres" | "dynamodb",
 ): WizardStorageChoice {
   if (edition === "cloud") return "dynamodb";
-  const v = (raw ?? "").toLowerCase().trim();
-  if (v === "dynamodb" || v === "postgres") return v;
-  return localFallback;
+  return "postgres";
 }
 
 export function isValidWizardStorage(
@@ -26,5 +24,5 @@ export function isValidWizardStorage(
   edition: RuntimeEdition,
 ): backend is WizardStorageChoice {
   if (edition === "cloud") return backend === "dynamodb";
-  return backend === "postgres" || backend === "dynamodb";
+  return backend === "postgres";
 }

@@ -18,6 +18,7 @@ import {
 } from "@/components/app/model-catalog";
 import { DEFAULT_TIER_MODELS } from "@/lib/models/tier-assignment";
 import { isChatUsableModelId } from "@/lib/models/catalog-shared";
+import type { ModelSelectionStatus } from "@/lib/models/model-availability";
 
 const TIERS = ["Max", "Plus", "Standard", "Light", "Micro"] as const;
 type Tier = (typeof TIERS)[number];
@@ -37,6 +38,7 @@ export type LastRouteSummary = {
 };
 
 export type ComplexityTiersEditorProps = {
+  deployment?: "docker" | "host" | "hosted";
   variant: "rail" | "page";
   modelSelectionMode: "auto" | "fixed";
   onModelSelectionModeChange: (mode: "auto" | "fixed") => void;
@@ -49,7 +51,7 @@ export type ComplexityTiersEditorProps = {
   labelFor: (id: string) => string;
   providerFor: (id: string) => ModelProviderId | null;
   displayModelFor: (tier: string) => string;
-  tierStatus: (modelId: string) => { ready: boolean; notForChat: boolean };
+  tierStatus: (modelId: string) => ModelSelectionStatus;
   usageCount?: (tier: string) => number;
   changedTiers?: Record<string, number>;
   cloudDefaultsWillRun: boolean;
@@ -69,6 +71,7 @@ export type ComplexityTiersBind = Omit<
 >;
 
 export function ComplexityTiersEditor({
+  deployment,
   variant,
   modelSelectionMode,
   onModelSelectionModeChange,
@@ -130,6 +133,11 @@ export function ComplexityTiersEditor({
 
   return (
     <div className={cn(isPage && "space-y-4")}>
+      {deployment && (
+        <p className="mb-2 text-[0.65rem] text-foreground/55">
+          {deployment === "docker" ? "Local · Docker" : deployment === "host" ? "Local · Running directly" : "Hosted · Cloud"}
+        </p>
+      )}
       <div className={cn(
         "flex gap-1 p-0.5 bg-foreground/5 rounded-lg mb-2 border border-foreground/10",
         isPage && "max-w-md mb-3",
@@ -181,12 +189,12 @@ export function ComplexityTiersEditor({
         </p>
       )}
 
-      {modelSelectionMode === "auto" && !groqCatalogReady && !ollamaCatalogReady && !bedrockCatalogReady && (
+      {modelSelectionMode === "auto" && !groqCatalogReady && !localFallbackModel && !chatCatalogModels.length && !bedrockCatalogReady && (
         <p className="text-[0.65rem] leading-relaxed text-amber-300/85 bg-amber-500/10 border border-amber-500/25 rounded-lg px-2.5 py-2 mb-2">
           <span className="font-semibold text-amber-200">No cloud or local chat model.</span>{" "}
           {isPage
-            ? "Add a vendor, Bedrock, or Ollama model in the sections below."
-            : "Open Settings → Providers to add a credential."}
+            ? "Connect a vendor, Bedrock, or Ollama in Connections above."
+            : "Open Settings → Models to add a credential."}
         </p>
       )}
       {modelSelectionMode === "auto" && groqCatalogReady && (
@@ -217,10 +225,26 @@ export function ComplexityTiersEditor({
       )}
       {modelSelectionMode === "auto" && !groqCatalogReady && !bedrockCatalogReady && ollamaCatalogReady && (
         <p className="text-[0.65rem] leading-relaxed text-foreground/45 bg-foreground/[0.04] border border-foreground/10 rounded-lg px-2.5 py-2 mb-2">
-          Live chat uses{" "}
+          Unassigned tiers use{" "}
           <span className="font-medium text-foreground/70">Ollama</span>
-          {localFallbackModel ? ` (${localFallbackModel})` : ""} until you assign a cloud model that is set up.
+          {localFallbackModel ? ` (${localFallbackModel})` : ""}. No cloud API key is needed.
         </p>
+      )}
+
+      {localFallbackModel && chatCatalogModels.some(m => m.provider === "ollama" && m.id === localFallbackModel) && (
+        modelSelectionMode === "fixed" ? !tierStatus(fixedModelId).ready
+          : Object.values(modeModelOverrides).some(id => !tierStatus(id).ready)
+      ) && (
+        <div className="mb-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-2 text-[0.65rem] leading-relaxed text-amber-200/85">
+          Some saved model selections are unavailable on this installation. Select an available model, or use the installed local model for all tiers.
+          <button type="button" className="mt-2 block font-medium text-indigo-300 underline cursor-pointer"
+            onClick={() => {
+              TIERS.forEach(tier => onAssignTier(tier, localFallbackModel));
+              onModelSelectionModeChange("auto");
+            }}>
+            Use local model for all tiers
+          </button>
+        </div>
       )}
 
       {modelSelectionMode === "auto" && !picking && beforeList}
@@ -243,7 +267,7 @@ export function ComplexityTiersEditor({
               {fixedModelId}
             </code>
             <p className="mt-2 text-[0.62rem] text-indigo-200/55 leading-relaxed">
-              Every chat message uses this model. Open the list only when you want to switch.
+              Every message uses this model.
             </p>
             <button
               type="button"
@@ -255,7 +279,7 @@ export function ComplexityTiersEditor({
                 "mt-2.5 w-full rounded-lg px-3 py-2 text-[0.72rem] font-semibold cursor-pointer",
                 fixedPickerOpen
                   ? "bg-foreground/10 text-foreground/80 hover:bg-foreground/15"
-                  : "bg-primary text-primary-foreground hover:bg-[var(--primary-hover)]",
+                  : "border border-indigo-400/45 bg-indigo-500/20 text-indigo-200 hover:bg-indigo-500/30 hover:border-indigo-400/65 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 transition-colors",
               )}
             >
               {fixedPickerOpen ? "Keep this model" : "Change model"}
@@ -264,7 +288,7 @@ export function ComplexityTiersEditor({
           {fixedPickerOpen && (
             <div className="rounded-xl border border-foreground/10 bg-foreground/[0.03] p-2">
               <p className="px-1.5 pb-2 text-[0.62rem] text-foreground/45">
-                Search, then click a model. It applies to the next chat message — no save step.
+                Click a model. It applies to the next message.
               </p>
               <ModelPickerList
                 models={chatCatalogModels}
@@ -276,7 +300,7 @@ export function ComplexityTiersEditor({
                 }}
                 maxHeightClass={isPage ? "max-h-[min(28rem,50vh)]" : "max-h-72"}
                 selectedBadgeLabel="In use"
-                emptyLabel="No models available — add a credential in Settings → Providers."
+                emptyLabel="No models in menus yet. Test one in Settings → Models."
               />
             </div>
           )}
@@ -397,7 +421,7 @@ function TierRow({
   usage: number;
   labelFor: (id: string) => string;
   providerFor: (id: string) => ModelProviderId | null;
-  status: { ready: boolean; notForChat: boolean };
+  status: ModelSelectionStatus;
   onToggle: () => void;
 }) {
   const isPage = variant === "page";
@@ -478,7 +502,7 @@ function TierRow({
               <ProviderBadge provider={provider} />
             ) : (
               <span className="text-[0.5rem] uppercase tracking-wider font-semibold text-amber-400/90 bg-amber-400/10 border border-amber-400/25 px-1 py-0.5 rounded shrink-0">
-                {status.notForChat ? "Not for chat" : "Not set up"}
+                {status.notForChat ? "Not for chat" : status.label ?? "Not set up"}
               </span>
             )
           )}
@@ -583,7 +607,7 @@ function RailPicker({
           autoFocusSearch
           maxHeightClass="max-h-72"
           selectedBadgeLabel="Using"
-          emptyLabel="No models available — add a credential in Settings → Providers."
+          emptyLabel="No models in menus yet. Test one in Settings → Models."
           onSelect={opt => {
             if (!isChatUsableModelId(opt.id) || !isChatSelectableModel(opt)) return;
             onSelect(opt.id);
@@ -663,7 +687,7 @@ function PagePicker({
         autoFocusSearch
         maxHeightClass="max-h-[min(32rem,55vh)]"
         selectedBadgeLabel="Using"
-        emptyLabel="No models available — add a vendor key, Bedrock, or a local Ollama chat model in Settings → Providers."
+        emptyLabel="No models in menus yet. Test one in Settings → Models."
         onSelect={opt => {
           if (!isChatUsableModelId(opt.id) || !isChatSelectableModel(opt)) return;
           onSelect(opt.id);

@@ -264,7 +264,7 @@ export async function runSetupComplete(
 ): Promise<{ ok: true; persisted: boolean; setupComplete: true }> {
   if (input.riskAck !== true) {
     throw new SetupClaimError(
-      "Confirm that you understand filters can miss things and that you use this at your own risk.",
+      "Please acknowledge that you remain responsible for your decisions and any information you choose to enter, upload, or share through SecureMind.",
       422,
     );
   }
@@ -278,7 +278,7 @@ export async function runSetupComplete(
     throw new SetupClaimError(
       edition === "cloud"
         ? "This hosted install uses DynamoDB."
-        : "Choose Postgres or DynamoDB.",
+        : "Local setup uses Postgres with pgvector.",
       422,
     );
   }

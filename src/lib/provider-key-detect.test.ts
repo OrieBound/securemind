@@ -32,6 +32,14 @@ describe("detectProviderKey", () => {
     expect(d.wired).toBe(true);
   });
 
+  it("detects xAI Grok keys and does not treat them as Groq", () => {
+    const d = detectProviderKey("xai-abcDEF1234567890");
+    expect(d.kind).toBe("xai");
+    expect(d.label).toBe("Grok");
+    expect(d.wired).toBe(true);
+    expect(detectProviderKey("gsk_not_xai").kind).toBe("groq");
+  });
+
   it("detects Anthropic", () => {
     const d = detectProviderKey("sk-ant-api03-xxxxxxxxxxxxxxxxxxxx");
     expect(d.kind).toBe("anthropic");

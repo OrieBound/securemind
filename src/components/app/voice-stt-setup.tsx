@@ -118,10 +118,7 @@ export function VoiceSttSetupDialog({
               Choose a transcription provider
             </h2>
             <p className="text-sm text-foreground/50 mt-1.5 leading-relaxed">
-              Voice does not run until you pick one. This is not the chat model — it is speech-to-text
-              only. While you speak, a live preview appears above the waveform. Done writes a final
-              transcript into the composer (it can differ slightly from the preview). Send still waits
-              for you.
+              Speech-to-text only. You still review the text before sending.
             </p>
           </div>
         </div>
@@ -130,10 +127,7 @@ export function VoiceSttSetupDialog({
           className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3 text-[0.78rem] text-amber-100/90 leading-relaxed"
           role="note"
         >
-          What you say is sent to the provider as audio. SecureMind cannot redact or replace values
-          in that recording. After the words appear in the composer, detection runs on the text
-          before you send a chat message — that is risk reduction, not a guarantee, and it does not
-          apply to audio that already left.
+          Audio is sent as recorded. Detection runs on the transcript before chat, not on the audio.
         </div>
 
         <fieldset className="space-y-2">
@@ -144,12 +138,7 @@ export function VoiceSttSetupDialog({
             title="Groq Whisper"
             badge="Usually $0 on their free tier"
           >
-            <p>
-              Spoken audio is sent to Groq Cloud under the key you create. SecureMind does not
-              control where Groq processes that audio, how long they keep it, or which region they
-              use. The free plan does not require a credit card; rate limits apply, and paid Whisper
-              is billed by Groq if you leave the free plan.
-            </p>
+            <p>Audio goes to Groq Whisper with your Groq key.</p>
             {GROQ && (
               <a
                 href={GROQ.keyCreateUrl}
@@ -180,7 +169,7 @@ export function VoiceSttSetupDialog({
                   </label>
                 ) : (
                   <p className="text-foreground/55">
-                    Ask an Admin to save a Groq key in Settings → Providers, then return here.
+                    Ask an Admin to save a Groq key in Settings → Models, then return here.
                   </p>
                 )}
               </div>
@@ -193,13 +182,7 @@ export function VoiceSttSetupDialog({
             title="Amazon Transcribe"
             badge="Billed on this AWS account"
           >
-            <p>
-              Spoken audio is sent to Amazon Transcribe in this AWS account — the same account as
-              Bedrock (IAM; no AWS keys in SecureMind). It does not go to Groq. It still leaves this
-              app host; AWS processes it. Transcribe minutes are billed separately from Bedrock chat
-              tokens. Standard streaming is typically about $0.024 per minute after AWS’s small
-              new-account allowance. Confirm current rates in the AWS billing console.
-            </p>
+            <p>Audio goes to Amazon Transcribe in this AWS account. Billed separately from chat.</p>
             {choice === "transcribe" && (
               <div className="mt-3 space-y-2">
                 {status?.allowRealAws || status?.transcribeAvailable ? (
@@ -222,7 +205,7 @@ export function VoiceSttSetupDialog({
                   </label>
                 ) : (
                   <p className="text-foreground/55">
-                    Ask an Admin to enable billable AWS in Settings → Providers.
+                    Ask an Admin to enable billable AWS in Settings → Models.
                   </p>
                 )}
               </div>
@@ -231,8 +214,7 @@ export function VoiceSttSetupDialog({
         </fieldset>
 
         <p className="text-[0.68rem] text-foreground/40 leading-relaxed">
-          On-prem Whisper (audio stays on this machine) is not offered on hosted SecureMind. Browser
-          speech APIs that send audio to Google are not offered either.
+          On-device speech is not available.
         </p>
 
         <label className="flex items-start gap-2.5 rounded-xl border border-foreground/8 bg-foreground/[0.03] px-3 py-2.5 cursor-pointer">
@@ -243,9 +225,7 @@ export function VoiceSttSetupDialog({
             className="mt-0.5 accent-[var(--primary)]"
           />
           <span className="text-[0.78rem] text-foreground/70 leading-relaxed">
-            I understand that spoken audio is sent to the provider I chose, that SecureMind cannot
-            redact that audio, and that composer detection only runs on the transcribed text before
-            chat send.
+            Audio goes to the provider I chose. Detection applies to the transcript, not the recording.
           </span>
         </label>
 

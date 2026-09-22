@@ -33,7 +33,7 @@ async function getClient(): Promise<Groq> {
   const groqApiKey = selectGroqApiKey(secrets);
   if (!groqApiKey) {
     throw new Error(
-      "GROQ_API_KEY is not set. Add a key in Settings → Providers (Admin) or .env.local.",
+      "GROQ_API_KEY is not set. Add a key in Settings → Models (Admin) or .env.local.",
     );
   }
   return new Groq({ apiKey: groqApiKey });
@@ -45,6 +45,7 @@ export async function* streamGroqChat(
   messages: ChatMessage[],
   model: string,
   onUsage?: (usage: GroqUsage) => void,
+  signal?: AbortSignal,
 ): AsyncGenerator<string> {
   const client = await getClient();
 
@@ -66,7 +67,7 @@ export async function* streamGroqChat(
     temperature: 0.8,
     max_tokens: 1024,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any) as unknown as AsyncIterable<GroqStreamChunk>;
+  } as any, { signal }) as unknown as AsyncIterable<GroqStreamChunk>;
 
   // Think-token filter: some reasoning models (Qwen3, DeepSeek R1) output
   // <think>...</think> blocks before their answer. Strip them so only the
@@ -144,12 +145,12 @@ export async function getGroqUnavailableReason(): Promise<
 export const VENDOR_RISK_REQUIRED_CODE = "VENDOR_RISK_REQUIRED";
 
 export const VENDOR_RISK_REQUIRED_MESSAGE =
-  "Vendor APIs (e.g. Groq) are blocked until you acknowledge the risk in Settings → Providers.";
+  "Vendor APIs (e.g. Groq) are blocked until you acknowledge the risk in Settings → Models.";
 
 export const GROQ_NOT_CONFIGURED_CODE = "GROQ_NOT_CONFIGURED";
 
 export const GROQ_NOT_CONFIGURED_MESSAGE =
-  "Groq is not configured. Add a Groq API key in Settings → Providers, " +
+  "Groq is not configured. Add a Groq API key in Settings → Models, " +
   "or use an installed local Ollama chat model.";
 
 /** Pattern pass — Micro only for true one-liners; real conversation floors at Standard. */

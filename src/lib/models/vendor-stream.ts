@@ -41,5 +41,6 @@ export async function fetchWithTimeout(
   init: RequestInit,
   timeoutMs = 60_000,
 ): Promise<Response> {
-  return fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return fetch(url, { ...init, signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout });
 }

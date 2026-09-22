@@ -16,6 +16,18 @@ beforeEach(() => {
 });
 
 describe("resolveAllowedModel", () => {
+  it("retests failed listed models but does not accept them as chat preferences", async () => {
+    getModelCatalogCached.mockResolvedValue({ google: [{ id: "sample-chat", provider: "google", modality: "text", verification: "failed" }] });
+    const { resolveAllowedModel } = await import("@/lib/models/allowlist");
+    expect(await resolveAllowedModel("sample-chat")).toBeNull();
+    expect(await resolveAllowedModel("sample-chat", { forTest: true, provider: "google" })).toEqual({ model: "sample-chat", provider: "google" });
+    expect(await resolveAllowedModel("sample-chat", { forTest: true, provider: "ollama" })).toBeNull();
+  });
+  it("cannot test an unlisted builtin or fallback id", async () => {
+    const { resolveAllowedModel } = await import("@/lib/models/allowlist");
+    expect(await resolveAllowedModel("openai/gpt-oss-120b", { forTest: true })).toBeNull();
+    expect(await resolveAllowedModel("amazon.nova-micro-v1:0", { forTest: true })).toBeNull();
+  });
   it("allows a model the router itself can select", async () => {
     const { resolveAllowedModel } = await import("@/lib/models/allowlist");
     const allowed = await resolveAllowedModel("openai/gpt-oss-120b");

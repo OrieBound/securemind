@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { GETTING_STARTED_PATH, PROVIDERS_DEEP_LINK, markBedrockHighlight } from "@/lib/onboarding";
 import { PRODUCT_NAME } from "@/lib/branding";
+import { ProductMark } from "@/components/app/product-mark";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -72,9 +73,12 @@ export function GettingStartedGuide({ edition: editionProp }: { edition: "local"
     <div className="min-h-dvh bg-background px-4 py-10">
       <div className="mx-auto w-full max-w-2xl space-y-10">
         <header className="space-y-3">
-          <p className="text-meta uppercase tracking-[0.2em] text-[var(--primary-soft-foreground)]">
-            {PRODUCT_NAME}
-          </p>
+          <div className="flex items-center gap-3">
+            <ProductMark size={40} className="size-10 shrink-0" />
+            <p className="text-meta uppercase tracking-[0.2em] text-[var(--primary-soft-foreground)]">
+              {PRODUCT_NAME}
+            </p>
+          </div>
           <h1 className="text-display">Get chat working</h1>
           <p className="text-body text-[var(--text-muted)] leading-[var(--leading-body)]">
             {cloud
@@ -87,7 +91,7 @@ export function GettingStartedGuide({ edition: editionProp }: { edition: "local"
               onClick={() => markBedrockHighlight()}
               className={cn(buttonVariants({ variant: "default" }), "h-10 px-4")}
             >
-              Open Providers and highlight Bedrock
+              Open Models and highlight Bedrock
             </Link>
             <Link
               href="/"
@@ -100,20 +104,20 @@ export function GettingStartedGuide({ edition: editionProp }: { edition: "local"
 
         {cloud ? (
           <>
-            <Step n={1} title="Open Settings → Providers">
+            <Step n={1} title="Open Settings → Models">
               <p className="text-ui text-[var(--text-muted)] leading-[var(--leading-body)]">
                 Bottom of the left sidebar: <strong className="text-foreground">Settings</strong>, then{" "}
-                <strong className="text-foreground">Providers</strong>. Or use the button above — it opens that page and highlights the box you must check.
+                <strong className="text-foreground">Models</strong>. Connections is open at the top. Or use the button above — it opens that page and highlights the Bedrock box you must check.
               </p>
-              <ScreenshotFrame title="SecureMind · Settings" caption="Look for Providers in Settings — not Models.">
+              <ScreenshotFrame title="SecureMind · Settings" caption="Open Models. Connections is the first section.">
                 <div className="flex gap-3 text-[0.72rem]">
                   <div className="w-28 shrink-0 space-y-1 rounded-lg bg-black/30 p-2 text-white/50">
-                    {["Overview", "Models", "Providers", "My Profile"].map(label => (
+                    {["Overview", "Models", "My Profile"].map(label => (
                       <div
                         key={label}
                         className={cn(
                           "rounded-md px-2 py-1.5",
-                          label === "Providers"
+                          label === "Models"
                             ? "bg-indigo-500/30 font-semibold text-indigo-100 ring-2 ring-indigo-400"
                             : "",
                         )}
@@ -123,8 +127,8 @@ export function GettingStartedGuide({ edition: editionProp }: { edition: "local"
                     ))}
                   </div>
                   <div className="min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.04] p-3 text-white/70">
-                    <p className="text-[0.65rem] uppercase tracking-wider text-white/35">Providers</p>
-                    <p className="mt-1 font-medium text-white/90">How models are reached</p>
+                    <p className="text-[0.65rem] uppercase tracking-wider text-white/35">Models</p>
+                    <p className="mt-1 font-medium text-white/90">Connections</p>
                     <p className="mt-2 text-[0.68rem] leading-relaxed">
                       Vendor keys, Amazon Bedrock, and (on a local install) Ollama.
                     </p>
@@ -139,7 +143,7 @@ export function GettingStartedGuide({ edition: editionProp }: { edition: "local"
                 SecureMind never asks for an AWS access key.
               </p>
               <ScreenshotFrame
-                title="Settings → Providers → Amazon Bedrock"
+                title="Settings → Models → Connections → Amazon Bedrock"
                 caption="Check this box. It will turn green when it is on."
               >
                 <div className="relative space-y-3">
@@ -207,14 +211,14 @@ export function GettingStartedGuide({ edition: editionProp }: { edition: "local"
             <section className="rounded-xl border border-foreground/10 bg-popover p-4 space-y-2">
               <h2 className="text-section">Or use a vendor API instead</h2>
               <p className="text-ui text-[var(--text-muted)] leading-[var(--leading-body)]">
-                On the same Providers page you can paste a Groq, OpenAI, Anthropic, or Google key.
+                On the same Models page, under Connections, you can paste a Groq, Gemini, Grok, OpenAI, or Anthropic key.
                 Never paste AWS access keys — they are rejected.
               </p>
             </section>
           </>
         ) : (
           <>
-            <Step n={1} title="Open Settings → Providers">
+            <Step n={1} title="Open Settings → Models">
               <p className="text-ui text-[var(--text-muted)] leading-[var(--leading-body)]">
                 Connect Ollama on this machine, or Amazon Bedrock / a vendor key.
               </p>
@@ -223,7 +227,7 @@ export function GettingStartedGuide({ edition: editionProp }: { edition: "local"
                 onClick={() => markBedrockHighlight()}
                 className={cn(buttonVariants({ variant: "default" }), "h-10 px-4")}
               >
-                Open Providers
+                Open Models
               </Link>
             </Step>
             <Step n={2} title="Start Ollama or enable Bedrock">

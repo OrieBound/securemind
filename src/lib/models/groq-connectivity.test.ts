@@ -18,6 +18,18 @@ describe("formatGroqConnectivityError", () => {
     expect(msg).toMatch(/VPN/i);
   });
 
+  it("explains a Groq edge block without treating Whisper as proof chat works", () => {
+    const err = new Error(
+      '403 {"error":{"message":"Access denied. Please check your network settings."}}',
+    );
+    const msg = formatGroqChatError(err);
+    expect(classifyGroqError(err)).toBe("network");
+    expect(msg).toMatch(/refused chat and the model list/i);
+    expect(msg).toMatch(/Whisper/i);
+    expect(msg).toMatch(/api\.groq\.com/i);
+    expect(msg).not.toMatch(/rejected this API key/i);
+  });
+
   it("reports bad key on 401", () => {
     const msg = formatGroqConnectivityError(new Error("Groq models list failed (401)"));
     expect(msg).toMatch(/rejected this API key/i);

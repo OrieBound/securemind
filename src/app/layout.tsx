@@ -7,6 +7,10 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: PRODUCT_TITLE,
   description: PRODUCT_DESCRIPTION,
+  icons: {
+    icon: [{ url: "/brand/securemind-logo.png", type: "image/png" }],
+    apple: "/brand/securemind-logo.png",
+  },
 };
 
 export default function RootLayout({

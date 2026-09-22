@@ -23,6 +23,19 @@ export function diagnoseModelTestError(
   const raw = err instanceof Error ? err.message : String(err);
   const blob = `${name} ${raw}`;
 
+  if (/insufficient_quota|billing|quota.*limit:\s*0|subscription|payment.required/i.test(raw)) {
+    return { code: "quota_or_billing", message: "This API account has no usable quota or billing access for the model.", remediation: "Check this model's API quota and billing in the provider console, then test again." };
+  }
+  if (/\(404\)|NOT_FOUND|model_not_found|deprecated|decommissioned|not found|not supported for.*generateContent/i.test(raw)) {
+    return { code: "not_available", message: "The provider could not run this model id.", remediation: "Refresh the catalog. This model may be retired, unavailable to this key, or incompatible with streaming chat." };
+  }
+  if (/\(40[123]\)|PERMISSION_DENIED|UNAUTHENTICATED/i.test(raw)) {
+    return { code: "access_denied", message: "The provider rejected access to this model.", remediation: "Check the API key's permissions and API plan, then test again." };
+  }
+  if (/\(429\)|RESOURCE_EXHAUSTED/i.test(raw)) {
+    return { code: "throttled", message: "The provider's rate or quota limit was reached.", remediation: "Check API quota or retry later. A failed check does not permanently disable the model." };
+  }
+
   if (/not available for this account|contact AWS Sales|additional access options/i.test(raw)) {
     return {
       code: "not_entitled",

@@ -84,13 +84,16 @@ Restore into a running `db` service only. Encrypted keys in `InstanceConfig` nee
 
 ## Migrations / upgrades
 
+For an existing running Docker stack, rebuild both the initializer and app. Updating only the app can leave the database missing fields required by the newer code.
+
 ```bash
-docker compose up -d db
-npx prisma migrate deploy
-docker compose up --build
+docker compose up --build --no-deps --exit-code-from init init
+docker compose up -d --build --no-deps --wait app
 ```
 
-Greenfield Compose `init` still uses `prisma db push` so an empty volume matches the current schema. Host-dev and existing volumes should use `migrate deploy`.
+Run the second command only after the initializer succeeds. The initializer synchronizes the schema without accepting data loss and does not run the demo seed. It reuses the existing database, accounts, uploads, and installed models. If Prisma reports a destructive change, resolve that schema change explicitly before proceeding.
+
+Both Docker and `npm run dev` are local: they run on your computer. Docker includes the Ollama service and default models; a direct development server uses an already-running Ollama service, which can also be the one in Docker. Hosted installations require their own configured provider. The Models panel identifies the current runtime as **Local · Docker**, **Local · Running directly**, or **Hosted · Cloud**.
 
 ## Tear down
 

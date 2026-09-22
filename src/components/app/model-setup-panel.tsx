@@ -10,6 +10,7 @@ import type { SettingsSection } from "@/components/app/settings-hub";
 
 export type RuntimeStatusPayload = {
   edition: "local" | "cloud";
+  deployment?: "docker" | "host" | "hosted";
   chatReady: boolean;
   code: string | null;
   capabilities: {
@@ -293,7 +294,7 @@ export function ModelSetupPanel({
           }}
           className="text-[0.72rem] font-medium text-indigo-200 underline underline-offset-2 hover:text-indigo-100 cursor-pointer"
         >
-          Open Settings → {setup.settingsSection === "inference" ? "Models" : "Providers"}
+          Open Settings → Models
         </button>
         <a
           href="/getting-started"

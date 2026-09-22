@@ -31,7 +31,7 @@ export async function bedrockBlockReason(): Promise<string | null> {
   if (!status.allowRealAws) {
     return status.lockedByEnvironment
       ? "Billable AWS calls are blocked by ALLOW_REAL_AWS=false in the environment."
-      : "Billable AWS calls are turned off. Enable them in Settings → Providers.";
+      : "Billable AWS calls are turned off. Enable them in Settings → Models.";
   }
   if (runtimeEdition() === "cloud") {
     return null;
@@ -40,10 +40,10 @@ export async function bedrockBlockReason(): Promise<string | null> {
     return "Floci placeholder credentials are in use. Bedrock streaming requires real AWS credentials.";
   }
   if (!status.detected) {
-    return "No AWS credentials found on this host. Sign in with the AWS CLI, then pick a profile in Settings → Providers.";
+    return "No AWS credentials found on this host. Sign in with the AWS CLI, then pick a profile in Settings → Models.";
   }
   if (!status.region) {
-    return "No AWS region configured. Choose one in Settings → Providers.";
+    return "No AWS region configured. Choose one in Settings → Models.";
   }
   return null;
 }
@@ -77,6 +77,7 @@ export async function* streamBedrockChat(
   messages: ChatMessage[],
   modelId: string,
   onUsage?: (usage: BedrockTokenUsage) => void,
+  signal?: AbortSignal,
 ): AsyncGenerator<string> {
   const blocked = await bedrockBlockReason();
   if (blocked) throw new Error(blocked);
@@ -136,6 +137,7 @@ export async function* streamBedrockChat(
           ? { system: [{ text: systemParts.join("\n\n") }] }
           : {}),
       }),
+      { abortSignal: signal },
     );
   });
 

@@ -43,13 +43,15 @@ export async function listOpenAIModels(apiKey: string): Promise<CatalogModel[]> 
 export async function* streamOpenAIChat(
   messages: ChatMessage[],
   model: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<string> {
   const apiKey = await resolveVendorApiKey("openai");
   if (!apiKey) {
-    throw new Error("OpenAI API key is not configured. Add one in Settings → Providers.");
+    throw new Error("OpenAI API key is not configured. Add one in Settings → Models.");
   }
 
   const res = await fetchWithTimeout("https://api.openai.com/v1/chat/completions", {
+    signal,
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,

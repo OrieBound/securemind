@@ -14,13 +14,14 @@ import {
   type ChatSetupGuidance,
 } from "@/lib/models/resolve-chat-runtime";
 import { probeHardware } from "@/lib/models/local-recommendations";
-import { runtimeEdition } from "@/lib/runtime-env";
+import { runtimeEdition, runtimeDeployment } from "@/lib/runtime-env";
 import { SUPPORTED_DOC_FORMATS_SHORT } from "@/lib/documents/constants";
 import { pickImageExtractBackend } from "@/lib/image-extract";
 import { pickTranscribeBackend, transcribeUnavailableMessage } from "@/lib/transcribe/backend";
 
 export type RuntimeStatus = {
   edition: "local" | "cloud";
+  deployment: "docker" | "host" | "hosted";
   chatReady: boolean;
   code: string | null;
   capabilities: {
@@ -115,6 +116,7 @@ export async function getRuntimeStatus(): Promise<RuntimeStatus> {
 
   return {
     edition,
+    deployment: runtimeDeployment(),
     chatReady: decision.ok,
     code: decision.ok ? null : decision.code,
     capabilities: {

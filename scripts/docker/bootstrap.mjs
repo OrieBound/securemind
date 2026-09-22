@@ -122,13 +122,13 @@ async function main() {
   await waitForTcp("ollama", 11434, "Ollama");
 
   log("Applying Prisma schema (db push)…");
-  run("npx", ["prisma", "db", "push", "--accept-data-loss"]);
+  run("npx", ["prisma", "db", "push"]);
 
   log("Ensuring pgvector column…");
   run("npx", ["prisma", "db", "execute", "--file", "scripts/add-vector-embedding.sql"]);
 
-  log("Seeding default workspace…");
-  run("npx", ["tsx", "prisma/seed.ts"]);
+  // Workspaces are created for the signed-in user by listWorkspaces().
+  // Never run the destructive demo seed during an install or upgrade.
 
   log("Provisioning Floci Cognito…");
   const cognitoOut = join(root, "scripts", ".floci-cognito.env");

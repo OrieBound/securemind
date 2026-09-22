@@ -3,34 +3,26 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { PRODUCT_NAME } from "@/lib/branding";
-import { cn } from "@/lib/utils";
+import { ProductMark } from "@/components/app/product-mark";
 import type { WizardStorageChoice } from "@/lib/wizard-storage";
-
-type LocalChoice = "postgres" | "dynamodb";
 
 type Props = {
   edition: "local" | "cloud";
-  preferredStorage: WizardStorageChoice;
   onDone: () => void;
 };
-
-function initialLocal(preferred: WizardStorageChoice): LocalChoice {
-  return preferred === "dynamodb" ? "dynamodb" : "postgres";
-}
 
 /**
  * Blocking first-run wizard after the owner is signed in.
  * Records a storage preference and a risk acknowledgement.
  * Does not provision databases from the UI.
  */
-export function InstanceSetupWizard({ edition, preferredStorage, onDone }: Props) {
+export function InstanceSetupWizard({ edition, onDone }: Props) {
   const [step, setStep] = useState<1 | 2>(1);
-  const [localStorage, setLocalStorage] = useState<LocalChoice>(() => initialLocal(preferredStorage));
   const [riskAck, setRiskAck] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const storage: WizardStorageChoice = edition === "cloud" ? "dynamodb" : localStorage;
+  const storage: WizardStorageChoice = edition === "cloud" ? "dynamodb" : "postgres";
 
   async function finish() {
     setBusy(true);
@@ -58,23 +50,28 @@ export function InstanceSetupWizard({ edition, preferredStorage, onDone }: Props
   return (
     <div className="flex h-dvh items-center justify-center bg-background px-4">
       <div className="w-full max-w-lg rounded-2xl border border-foreground/10 bg-popover p-6 shadow-2xl space-y-5">
-        <div>
-          <p className="text-meta uppercase tracking-[0.2em] text-[var(--primary-soft-foreground)] font-medium">
-            {PRODUCT_NAME}
-          </p>
-          <h1 className="text-title mt-1.5">
-            {step === 1
-              ? edition === "cloud"
-                ? "Hosted data store"
-                : "Choose your data store"
-              : "Before you start"}
-          </h1>
-          <p className="text-ui text-[var(--text-muted)] mt-2 leading-[var(--leading-body)]">
+        <div className="space-y-2">
+          <div className="flex items-center gap-3">
+            <ProductMark size={40} className="size-10 shrink-0" />
+            <div>
+              <p className="text-meta uppercase tracking-[0.2em] text-[var(--primary-soft-foreground)] font-medium">
+                {PRODUCT_NAME}
+              </p>
+              <h1 className="text-title mt-1.5">
+                {step === 1
+                  ? edition === "cloud"
+                    ? "Hosted data store"
+                    : "Local data store"
+                  : "Before you start"}
+              </h1>
+            </div>
+          </div>
+          <p className="text-ui text-[var(--text-muted)] leading-[var(--leading-body)]">
             {step === 1
               ? edition === "cloud"
                 ? "This hosted workspace stores everything in Amazon DynamoDB — workspaces, chat, Knowledge, memory, and Insights. There is no Postgres on this install."
-                : "On this machine the default is Postgres with pgvector. DynamoDB is optional and only records a preference until you connect a table."
-              : "SecureMind helps you work with AI in a workspace that detects and replaces sensitive values before they leave this browser. That reduces risk. It cannot catch everything, and it is not a promise of complete security or compliance."}
+                : "This local installation uses Postgres with pgvector for workspace data and Knowledge search."
+              : "SecureMind is an open-source AI workspace with tools to help identify and replace sensitive information. It adds a layer of assistance, but detection can miss things. Your judgment and careful review remain essential."}
           </p>
         </div>
 
@@ -97,46 +94,18 @@ export function InstanceSetupWizard({ edition, preferredStorage, onDone }: Props
         )}
 
         {step === 1 && edition === "local" && (
-          <fieldset className="space-y-3">
-            <legend className="text-label uppercase tracking-wider text-[var(--text-muted)]">
-              Local options
-            </legend>
-            <label className={cn("flex gap-3 items-start rounded-lg border p-3 cursor-pointer", localStorage === "postgres" ? "border-[var(--primary-soft-foreground)]/40 bg-foreground/[0.03]" : "border-foreground/10")}>
-              <input
-                type="radio"
-                name="storage"
-                checked={localStorage === "postgres"}
-                onChange={() => setLocalStorage("postgres")}
-                className="mt-1"
-              />
-              <span>
-                <span className="flex items-center gap-2">
-                  <span className="text-sm font-medium">Postgres + pgvector</span>
-                  <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-indigo-200">
-                    Default
-                  </span>
-                </span>
-                <span className="text-ui text-[var(--text-muted)]">
-                  Best for localhost and Docker. Flatter, always-on database cost if you host Postgres yourself.
-                </span>
+          <div className="rounded-lg border border-foreground/10 p-3 space-y-2">
+            <p className="flex items-center gap-2">
+              <span className="text-sm font-medium">Postgres + pgvector</span>
+              <span className="rounded-full bg-indigo-500/20 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-indigo-200">
+                Local store
               </span>
-            </label>
-            <label className={cn("flex gap-3 items-start rounded-lg border p-3 cursor-pointer", localStorage === "dynamodb" ? "border-[var(--primary-soft-foreground)]/40 bg-foreground/[0.03]" : "border-foreground/10")}>
-              <input
-                type="radio"
-                name="storage"
-                checked={localStorage === "dynamodb"}
-                onChange={() => setLocalStorage("dynamodb")}
-                className="mt-1"
-              />
-              <span>
-                <span className="block text-sm font-medium">DynamoDB</span>
-                <span className="text-ui text-[var(--text-muted)]">
-                  Pay-per-use. Records a preference only — this screen does not create AWS tables.
-                </span>
-              </span>
-            </label>
-          </fieldset>
+            </p>
+            <p className="text-ui text-[var(--text-muted)]">
+              Postgres stores your workspace data. The pgvector extension supports Knowledge search.
+              Docker keeps the database in a persistent volume across app restarts and rebuilds.
+            </p>
+          </div>
         )}
 
         {step === 2 && (
@@ -148,11 +117,18 @@ export function InstanceSetupWizard({ edition, preferredStorage, onDone }: Props
               className="mt-1"
             />
             <span className="text-ui leading-[var(--leading-body)]">
-              I understand this is a help, not a guarantee. Filters can miss things.
-              I will review what I send, I use this at my own risk, and the operators
-              of this instance are not responsible if sensitive information gets past detection.
+              I understand that I remain responsible for my decisions and any
+              information I choose to enter, upload, or share through SecureMind.
             </span>
           </label>
+        )}
+
+        {step === 2 && (
+          <p className="text-meta text-[var(--text-muted)] leading-[var(--leading-body)]">
+            SecureMind is provided as is. The project and its contributors do not
+            guarantee complete detection, security, or compliance, or accept
+            responsibility for information disclosed through its use.
+          </p>
         )}
 
         {error && (

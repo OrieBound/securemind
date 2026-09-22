@@ -55,14 +55,16 @@ export async function listAnthropicModels(apiKey: string): Promise<CatalogModel[
 export async function* streamAnthropicChat(
   messages: ChatMessage[],
   model: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<string> {
   const apiKey = await resolveVendorApiKey("anthropic");
   if (!apiKey) {
-    throw new Error("Anthropic API key is not configured. Add one in Settings → Providers.");
+    throw new Error("Anthropic API key is not configured. Add one in Settings → Models.");
   }
 
   const { system, messages: turns } = splitAnthropicMessages(messages);
   const res = await fetchWithTimeout("https://api.anthropic.com/v1/messages", {
+    signal,
     method: "POST",
     headers: {
       "x-api-key": apiKey,

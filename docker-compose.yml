@@ -108,6 +108,9 @@ services:
       - path: .env.onprem
         required: false
     environment:
+      SECUREMIND_EDITION: local
+      SECUREMIND_RUNTIME: docker
+      STORAGE_BACKEND: postgres
       DATABASE_URL: postgresql://securemind:securemind@db:5432/securemind
       DIRECT_URL: postgresql://securemind:securemind@db:5432/securemind
       AUTH_MODE: cognito

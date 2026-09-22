@@ -8,7 +8,7 @@ import type { CatalogModel } from "./catalog-shared";
 import { BEDROCK_TEXT_MODELS } from "./catalog-shared";
 
 export const UNCONFIGURED_VENDOR_NOTE =
-  "Add an API key in Settings → Providers to use this model.";
+  "Add an API key in Settings → Models to use this model.";
 
 /** Router defaults + common Groq chat models. */
 export const REFERENCE_GROQ: CatalogModel[] = [
@@ -65,7 +65,7 @@ export const REFERENCE_OLLAMA: CatalogModel[] = [
 
 export type ReferenceCatalogSlice = Pick<
   ModelCatalogShape,
-  "groq" | "bedrock" | "ollama" | "openai" | "anthropic" | "google"
+  "groq" | "bedrock" | "ollama" | "openai" | "anthropic" | "google" | "xai"
 >;
 
 type ModelCatalogShape = {
@@ -75,6 +75,7 @@ type ModelCatalogShape = {
   openai: CatalogModel[];
   anthropic: CatalogModel[];
   google: CatalogModel[];
+  xai: CatalogModel[];
 };
 
 export function isReferenceOnlyModel(model: Pick<CatalogModel, "note">): boolean {
@@ -101,6 +102,7 @@ export function mergeCatalogWithReference(catalog: ReferenceCatalogSlice): Catal
     ...mergeProviderModels(catalog.openai, REFERENCE_OPENAI),
     ...mergeProviderModels(catalog.anthropic, REFERENCE_ANTHROPIC),
     ...mergeProviderModels(catalog.google, REFERENCE_GOOGLE),
+    ...(catalog.xai ?? []),
     ...(catalog.bedrock.length > 0
       ? catalog.bedrock
       : mergeProviderModels(catalog.bedrock, BEDROCK_TEXT_MODELS)),
@@ -114,6 +116,7 @@ export function flattenLiveCatalog(catalog: ReferenceCatalogSlice): CatalogModel
     ...catalog.openai,
     ...catalog.anthropic,
     ...catalog.google,
+    ...(catalog.xai ?? []),
     ...catalog.bedrock,
     ...catalog.ollama,
   ];

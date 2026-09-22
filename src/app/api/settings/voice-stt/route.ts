@@ -87,7 +87,7 @@ export async function PUT(req: NextRequest) {
       return Response.json(
         {
           error:
-            "Amazon Transcribe uses billable AWS (the same account as Bedrock). Enable it here (Admin) or in Settings → Providers.",
+            "Amazon Transcribe uses billable AWS (the same account as Bedrock). Enable it here (Admin) or in Settings → Models.",
         },
         { status: 422 },
       );

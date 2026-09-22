@@ -3,8 +3,11 @@
  */
 
 const VPN_HINT =
-  "Could not reach Groq (api.groq.com). VPNs, corporate proxies, and firewalls often block " +
-  "cloud AI APIs — try disabling the VPN or allowlisting api.groq.com, then refresh Settings.";
+  "Can't reach api.groq.com. A VPN or firewall may be blocking it. Allow that host, then use Check key.";
+
+/** Groq's edge refused this server. Whisper is a different endpoint and can still succeed. */
+const CHAT_BLOCKED_HINT =
+  "Groq refused chat and the model list from this server (api.groq.com). The key can still be valid. Voice uses Groq Whisper, a different endpoint, and can still work. Allow that host, then use Check key.";
 
 const BAD_KEY_HINT =
   "Groq rejected this API key. Re-paste the full key from console.groq.com (starts with gsk_). " +
@@ -47,6 +50,10 @@ function looksLikeBadKey(msg: string): boolean {
   );
 }
 
+function looksLikeEdgeBlock(msg: string): boolean {
+  return /access denied|check your network settings/i.test(msg);
+}
+
 function looksLikeModelGone(msg: string): boolean {
   return /decommissioned|model_not_found|unknown model|does not exist|not_found/i.test(msg);
 }
@@ -63,6 +70,8 @@ export function classifyGroqError(err: unknown): GroqErrorKind {
 
 /** Turn a Groq list/stream failure into an actionable message for Settings or chat. */
 export function formatGroqConnectivityError(err: unknown): string {
+  const msg = errorText(err);
+  if (looksLikeEdgeBlock(msg)) return CHAT_BLOCKED_HINT;
   const kind = classifyGroqError(err);
   if (kind === "network") return VPN_HINT;
   if (kind === "auth") return BAD_KEY_HINT;
@@ -72,7 +81,6 @@ export function formatGroqConnectivityError(err: unknown): string {
       "The Insights GROQ labels are preferred cloud defaults, not a live health check."
     );
   }
-  const msg = errorText(err);
   return msg.trim() || VPN_HINT;
 }
 
@@ -98,6 +106,4 @@ export function groqVendorStatusLabel(opts: {
 }
 
 export const GROQ_VPN_SETTINGS_NOTE =
-  "Groq calls api.groq.com from this server. Listing models is not the same as chat working. " +
-  "Some VPNs and corporate networks block Groq — if replies fail with a saved key, disconnect " +
-  "the VPN, re-paste the key, or use local Ollama.";
+  "Chat and the model list call api.groq.com from this server. Voice uses Groq Whisper, a different endpoint, so transcription can work when chat cannot. Use Check key to retry the model list.";
