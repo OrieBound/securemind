@@ -54,48 +54,46 @@
 }
 
 /*
- * Light theme — clean white canvas with cool grey chrome (Udemy-like).
+ * Light theme — ordinary cool-gray workspace, not a white sheet.
  * Applied when <html> does NOT have .dark (default preference remains dark via boot script).
  *
  * Layer stack:
- *   white canvas → cool-grey sidebar/rail → white cards → borders do the separation
+ *   gray canvas → slightly darker sidebar → off-white cards
  */
 :root {
   color-scheme: light;
 
   /*
-   * Canvas / content — clean near-white (Udemy-like), with cool grey chrome
-   * so hierarchy comes from borders/hover — not a taupe wash.
+   * Canvas sits a step below the cards so the page is not one field of white.
+   * Cards stay the lightest surface, the way a document sits on a desk.
    */
-  /* Center canvas — hair off pure white so the shell isn’t a flat glare */
-  --background:           #F7F8FA;
-  --foreground:           #1C1D1F;
+  --background:           #E6E8ED;
+  --foreground:           #1A1C1F;
 
-  --card:                 #FFFFFF;
-  --card-foreground:      #1C1D1F;
+  --card:                 #F4F5F7;
+  --card-foreground:      #1A1C1F;
 
-  --popover:              #FFFFFF;
-  --popover-foreground:   #1C1D1F;
+  --popover:              #F4F5F7;
+  --popover-foreground:   #1A1C1F;
 
-  /* Chips / elevated rows — barely-off white so borders do the work */
-  --elevated:             #FFFFFF;
+  --elevated:             #EEF0F3;
 
-  /* Brand purple — bold enough to anchor chrome on white */
-  --primary:              #5B3FE0;
+  /* Brand purple — quieter than the previous electric violet on white */
+  --primary:              #5B4DB8;
   --primary-foreground:   #FFFFFF;
-  --primary-hover:        #4A2FC9;
-  --primary-soft:         #EDE9FF;
-  --primary-soft-foreground: #352287;
-  --primary-border:       #A78BFA;
+  --primary-hover:        #4A3E9E;
+  --primary-soft:         #E4E2F2;
+  --primary-soft-foreground: #3A3278;
+  --primary-border:       #C4BEDF;
 
-  --secondary:            #F3F4F6;
-  --secondary-foreground: #1C1D1F;
+  --secondary:            #F0F1F4;
+  --secondary-foreground: #1A1C1F;
 
-  --muted:                #EBECEF;
-  --muted-foreground:     #6A6F7C;
+  --muted:                #E1E3E8;
+  --muted-foreground:     #5C616B;
 
-  --accent:               #EDE9FF;
-  --accent-foreground:    #352287;
+  --accent:               #E4E2F2;
+  --accent-foreground:    #3A3278;
 
   /* Semantic — deep text/icon colours (pair with tinted surfaces below) */
   --destructive:          #9F2A20;
@@ -103,58 +101,57 @@
   --warning:              #8A5A00;
   --info:                 #184FA8;
 
-  --success-soft:         #E3F5EB;
+  --success-soft:         #DDECE4;
   --success-border:       #8FCBAA;
-  --warning-soft:         #FBF0CC;
-  --warning-border:       #E0C05A;
-  --destructive-soft:     #FCE8E6;
-  --destructive-border:   #E8A39C;
-  --info-soft:            #E5EEFA;
-  --info-border:          #9BB8E3;
+  --warning-soft:         #F3E8C8;
+  --warning-border:       #D4B86A;
+  --destructive-soft:     #F6E4E1;
+  --destructive-border:   #E0A8A2;
+  --info-soft:            #DEE7F4;
+  --info-border:          #A8BFE0;
 
-  --border:               #D1D5DB;
-  --border-strong:        #9CA3AF;
-  --input:                #D1D5DB;
-  --ring:                 #5B3FE0;
+  --border:               #D0D3DA;
+  --border-strong:        #B4B8C2;
+  --input:                #D0D3DA;
+  --ring:                 #5B4DB8;
   --overlay:              rgb(28 29 31 / 45%);
 
-  --surface-hover:        #E5E7EB;
-  --surface-selected:     #EDE9FF;
+  --surface-hover:        #D8DBE2;
+  --surface-selected:     #E4E2F2;
 
   --radius: 0.75rem;
 
-  --sidebar:                    #F7F7F8;
-  --sidebar-foreground:         #1C1D1F;
-  --sidebar-primary:            #5B3FE0;
+  --sidebar:                    #DDE0E6;
+  --sidebar-foreground:         #1A1C1F;
+  --sidebar-primary:            #5B4DB8;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent:             #EDE9FF;
-  --sidebar-accent-foreground:  #352287;
-  --sidebar-border:             #E5E7EB;
-  --sidebar-ring:               #5B3FE0;
+  --sidebar-accent:             #E4E2F2;
+  --sidebar-accent-foreground:  #3A3278;
+  --sidebar-border:             #D0D3DA;
+  --sidebar-ring:               #5B4DB8;
 
   /* Chart series — deliberate, accessible on light canvas */
-  --chart-1: #5B3FE0; /* brand */
+  --chart-1: #5B4DB8; /* brand */
   --chart-2: #0D6B63; /* teal */
   --chart-3: #184FA8; /* blue */
   --chart-4: #176B42; /* green */
   --chart-5: #9A4A08; /* amber */
 
-  --scrollbar-thumb: #C0C4CC;
-  --scrollbar-thumb-hover: #9CA3AF;
+  --scrollbar-thumb: #C5C8D0;
+  --scrollbar-thumb-hover: #A8ADB6;
 
   --shadow-sm: 0 1px 2px rgb(28 29 31 / 6%);
   --shadow-md: 0 4px 16px rgb(28 29 31 / 8%);
   --shadow-lg: 0 14px 40px rgb(28 29 31 / 12%);
 
-  --code-bg: #F3F4F6;
-  --code-border: #D1D5DB;
+  --code-bg: #EEF0F3;
+  --code-border: #D0D3DA;
 
-  /* Text roles — dark on white; secondary greys closer to product chrome */
-  --text-secondary: #3E4149;
-  --text-muted:     #6A6F7C;
-  --text-subtle:    #8B909C;
-  /* Long-form body — match foreground on white */
-  --text-body:      #1C1D1F;
+  /* Text roles — dark ink on gray paper */
+  --text-secondary: #3A3E46;
+  --text-muted:     #5C616B;
+  --text-subtle:    #7A808A;
+  --text-body:      #1A1C1F;
 
   /*
    * Typography scale — shared roles (use these instead of one-off rem sizes).
@@ -565,12 +562,12 @@ html:not(.dark) .workspace-avatar {
   color: oklch(0.96 0.004 265);
 }
 .theme-preview-light {
-  background: #F7F8FA;
-  color: #1C1D1F;
+  background: #E6E8ED;
+  color: #1A1C1F;
 }
 .theme-preview-light .theme-preview-card {
-  background: #FFFFFF;
-  border-color: #D1D5DB;
+  background: #F4F5F7;
+  border-color: #D0D3DA;
 }
 
 /*

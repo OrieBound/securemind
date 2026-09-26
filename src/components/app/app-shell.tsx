@@ -93,6 +93,7 @@ import {
 import {
   ModelCatalogProvider,
   ProviderBadge,
+  buildAssignmentPickerModels,
   buildChatPickerModels,
   guessProvider,
   isChatSelectableModel,
@@ -2761,6 +2762,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   // Live vendor lists load when the user opens a picker — not on every page load.
   const { catalog, byId: catalogById, ensureLoaded, loaded: catalogLoaded } = useModelCatalog();
   const chatCatalogModels = useMemo(() => buildChatPickerModels(catalog), [catalog]);
+  const assignmentModels = useMemo(() => buildAssignmentPickerModels(catalog), [catalog]);
   const pickerById = useCallback(
     (id: string) => chatCatalogModels.find(m => m.id === id) ?? catalogById(id),
     [chatCatalogModels, catalogById],
@@ -5349,6 +5351,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     onFixedModelIdChange: setFixedModelId,
     lastRoute: lastRouteInfo,
     chatCatalogModels,
+    assignmentModels,
     labelFor,
     providerFor,
     displayModelFor: displayModelIdForTier,

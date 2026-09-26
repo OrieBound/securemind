@@ -35,7 +35,7 @@ import {
 import {
   WIRED_VENDOR_APIS,
   STORE_ONLY_VENDOR_APIS,
-  vendorApiSpec,
+  isWiredVendorKind,
   type WiredVendorKind,
 } from "@/lib/vendor-providers";
 import {
@@ -80,6 +80,7 @@ type AwsStatus = {
 
 type ProviderStatus = {
   edition?: RuntimeEdition;
+  deployment?: "docker" | "host" | "hosted";
   primaryProvider: "auto" | "groq" | "bedrock" | "ollama";
   hasGroqKey: boolean;
   hasEnvGroqKey: boolean;
@@ -156,6 +157,12 @@ export function InferenceSettings(props: Props) {
   const [keyRegion, setKeyRegion] = useState("us-east-1");
   const [keyLabel, setKeyLabel] = useState("");
   const [voiceSetupOpen, setVoiceSetupOpen] = useState(false);
+  const [setupRun, setSetupRun] = useState<{
+    provider: WiredVendorKind;
+    done: number;
+    total: number;
+  } | null>(null);
+  const setupCancel = useRef(false);
 
   const detection = useMemo(() => detectProviderKey(keyDraft), [keyDraft]);
   const rejected = isRejectedKeyKind(detection.kind);
@@ -307,6 +314,86 @@ export function InferenceSettings(props: Props) {
     void refresh();
   }, [refresh]);
 
+  useEffect(() => () => {
+    setupCancel.current = true;
+  }, []);
+
+  const runSetupCheck = useCallback(async (provider: WiredVendorKind) => {
+    setupCancel.current = false;
+    setSetupRun({ provider, done: 0, total: 0 });
+    setNote("Checking which models this key can use. Each model is tried once.");
+    let checked = 0;
+    let ready = 0;
+    let throttles = 0;
+    try {
+      for (;;) {
+        if (setupCancel.current) return;
+        const res = await fetch("/api/models/verify-setup", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ provider, fresh: checked === 0 }),
+        });
+        let data: {
+          done?: boolean;
+          stopped?: boolean;
+          ok?: boolean | null;
+          remaining?: number;
+          code?: string | null;
+          message?: string | null;
+          error?: string;
+        } = {};
+        try {
+          data = await res.json();
+        } catch {
+          setNote("Could not check model access.");
+          return;
+        }
+        if (!res.ok) {
+          setNote(data.error ?? "Could not check model access.");
+          return;
+        }
+        if (data.stopped) {
+          setNote(data.message ?? "This account cannot run models yet. The rest were left unchecked.");
+          return;
+        }
+        if (data.done) {
+          setNote(
+            ready > 0
+              ? `${ready} models are ready for chat.`
+              : checked === 0
+                ? "These models were already checked for this key."
+                : "No listed model answered. They stay out of the chat menus.",
+          );
+          return;
+        }
+        checked += 1;
+        if (data.ok) ready += 1;
+        setSetupRun({
+          provider,
+          done: checked,
+          total: checked + (data.remaining ?? 0),
+        });
+        if (data.code === "throttled") {
+          throttles += 1;
+          if (throttles >= 3) {
+            setNote("The provider is rate limiting the check. Press Check access again in a moment.");
+            return;
+          }
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        } else {
+          throttles = 0;
+        }
+      }
+    } catch (err) {
+      setNote(err instanceof Error ? err.message : "Could not check model access.");
+    } finally {
+      setSetupRun(null);
+      await refresh({ providers: false, catalog: true, module: "models" });
+      await sharedCatalog.refresh();
+    }
+  }, [refresh, sharedCatalog]);
+
   useEffect(() => {
     if (pickedProviderDefault.current) return;
     try {
@@ -327,6 +414,7 @@ export function InferenceSettings(props: Props) {
   async function save(body: Record<string, unknown>, okMsg: string) {
     setBusy(true);
     setNote(null);
+    let sweep: WiredVendorKind | null = null;
     try {
       const res = await fetch("/api/settings/providers", {
         method: "PUT",
@@ -377,13 +465,19 @@ export function InferenceSettings(props: Props) {
           /* refresh already ran */
         }
       }
-      setNote(okMsg);
+      const addedKind =
+        typeof body.addKey === "object" && body.addKey
+          ? (body.addKey as { kind?: string }).kind
+          : undefined;
+      if (isWiredVendorKind(addedKind ?? "")) sweep = addedKind as WiredVendorKind;
+      if (!sweep) setNote(okMsg);
       onProvidersChanged?.();
     } catch (err) {
       setNote(err instanceof Error ? err.message : "Could not save provider settings.");
     } finally {
       setBusy(false);
     }
+    if (sweep) await runSetupCheck(sweep);
   }
 
   const canEdit = status?.canEdit ?? false;
@@ -460,32 +554,6 @@ export function InferenceSettings(props: Props) {
         block: "start",
       });
     }, 50);
-  }
-
-  /** Selecting a credential opens the models that key can list. */
-  function selectKey(key: KeyInventoryItem) {
-    setSelectedKeyId(key.id);
-    if (key.catalog === "bedrock") {
-      setModelFilter("bedrock");
-      setConnectionsOpen(true);
-      setOpenModule("bedrock");
-      return;
-    }
-    if (key.catalog === "ollama") {
-      setModelFilter("ollama");
-      setConnectionsOpen(true);
-      setOpenModule("local");
-      return;
-    }
-    if (
-      key.catalog === "groq" ||
-      key.catalog === "google" ||
-      key.catalog === "openai" ||
-      key.catalog === "anthropic" ||
-      key.catalog === "xai"
-    ) {
-      openAvailableModels(key.catalog);
-    }
   }
 
   const aws = status?.aws ?? null;
@@ -649,8 +717,8 @@ export function InferenceSettings(props: Props) {
         theme={PROVIDER_THEME.groq}
       >
         <div className="space-y-3">
-          <p className="text-[0.75rem] text-foreground/60 leading-relaxed">
-            Detected personal data is replaced before text goes to these vendors. That reduces risk. Review what you send.
+          <p className="text-sm text-foreground/70 leading-relaxed">
+            Two steps for each vendor. <span className="font-medium text-foreground/85">Key setup</span> stays on this row and shows where to create the key. <span className="font-medium text-foreground/85">Review models</span> moves you to the model list further down, where a successful test makes a model available in chat.
           </p>
           <details className="text-[0.68rem] text-foreground/40">
             <summary className="cursor-pointer text-foreground/55">Learn more</summary>
@@ -709,6 +777,17 @@ export function InferenceSettings(props: Props) {
                 }}
                 catalogErrors={errors}
                 riskAck={riskAck}
+                canEdit={canEdit}
+                busy={busy}
+                setupRun={setupRun}
+                onCheckAccess={provider => void runSetupCheck(provider)}
+                unverifiedCounts={{
+                  groq: allModels.filter(m => m.provider === "groq" && (m.verification === undefined || m.verification === "unverified") && !m.hidden && m.modality !== "other").length,
+                  openai: allModels.filter(m => m.provider === "openai" && (m.verification === undefined || m.verification === "unverified") && !m.hidden && m.modality !== "other").length,
+                  anthropic: allModels.filter(m => m.provider === "anthropic" && (m.verification === undefined || m.verification === "unverified") && !m.hidden && m.modality !== "other").length,
+                  google: allModels.filter(m => m.provider === "google" && (m.verification === undefined || m.verification === "unverified") && !m.hidden && m.modality !== "other").length,
+                  xai: allModels.filter(m => m.provider === "xai" && (m.verification === undefined || m.verification === "unverified") && !m.hidden && m.modality !== "other").length,
+                }}
                 inMenuCounts={{
                   groq: inMenuCount("groq"),
                   openai: inMenuCount("openai"),
@@ -717,100 +796,8 @@ export function InferenceSettings(props: Props) {
                   xai: inMenuCount("xai"),
                 }}
                 onOpenModels={openAvailableModels}
+                onRemove={k => void save({ removeKeyId: k.id }, `Removed ${k.label}`)}
               />
-              <p className="text-[0.72rem] text-muted-foreground">
-                Paste a vendor API key. The issuer is detected automatically. A Groq key saved from
-                the voice microphone setup is the same key — it shows here, not only in chat.
-              </p>
-
-              <ul className="space-y-1.5">
-                {vendorKeys.length === 0 && (
-                  <li className="text-[0.68rem] text-foreground/40 px-1 py-2">
-                    No vendor keys stored yet. Keys pasted in voice setup or in this form appear in
-                    this list.
-                  </li>
-                )}
-                {vendorKeys.map(k => {
-                  const spec = vendorApiSpec(k.kind);
-                  const removable =
-                    canEdit &&
-                    k.source === "instance" &&
-                    (k.id === "groq-instance" || k.id.startsWith("extra:"));
-                  return (
-                  <li key={k.id} className="flex items-stretch gap-2">
-                    <button
-                      type="button"
-                      onClick={() => selectKey(k)}
-                      className={cn(
-                        "flex-1 min-w-0 text-left rounded-lg border px-3 py-2.5 transition-colors cursor-pointer",
-                        selectedKeyId === k.id
-                          ? themeForVendor(k.kind).surface
-                          : "border-border bg-card hover:border-[var(--border-strong)] hover:bg-muted",
-                      )}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                            <p className="text-[0.75rem] font-medium text-foreground/85">{spec?.productName ?? k.label}</p>
-                            {k.hint && (
-                              <span
-                                className="inline-flex items-center rounded border border-border bg-muted/80 px-1.5 py-0.5 text-[0.58rem] font-mono text-foreground/60"
-                                title="Masked key identifier — full secret is never shown"
-                              >
-                                {k.hint}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[0.6rem] text-foreground/40 mt-0.5 leading-snug">
-                            {spec?.blurb ?? k.description}
-                          </p>
-                        </div>
-                        <StatusChip
-                          status={k.status}
-                          catalog={k.catalog}
-                          vendorKind={k.kind}
-                          count={
-                            k.catalog === "none" ||
-                            k.catalog === "bedrock" ||
-                            k.catalog === "ollama"
-                              ? 0
-                              : modelCount(k.catalog)
-                          }
-                          inMenus={
-                            k.catalog === "groq" ||
-                            k.catalog === "google" ||
-                            k.catalog === "openai" ||
-                            k.catalog === "anthropic" ||
-                            k.catalog === "xai"
-                              ? inMenuCount(k.catalog)
-                              : undefined
-                          }
-                        />
-                      </div>
-                    </button>
-                    {removable && (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        aria-label={`Remove ${k.label}`}
-                        title={`Remove ${k.label}`}
-                        onClick={() => void save({ removeKeyId: k.id }, `Removed ${k.label}`)}
-                        className={cn(
-                          "shrink-0 self-center inline-flex items-center gap-1.5 rounded-lg border px-3 py-2",
-                          "border-[var(--destructive-border)] bg-[var(--destructive-soft)]",
-                          "text-[0.68rem] font-semibold text-destructive hover:brightness-95 transition-colors",
-                          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                          "disabled:opacity-45 disabled:pointer-events-none cursor-pointer",
-                        )}
-                      >
-                        <Trash2 className="size-3.5 shrink-0" aria-hidden />
-                        Remove
-                      </button>
-                    )}
-                  </li>
-                  );
-                })}
-              </ul>
 
               {vendorKeys.some(k => k.catalog === "groq") && groq.length === 0 && (
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2.5 space-y-2">
@@ -865,8 +852,7 @@ export function InferenceSettings(props: Props) {
                       </p>
                       {!rejected && detection.wired && detection.kind !== "unknown" && (
                         <p className="text-[0.58rem] text-emerald-200/75 mt-1">
-                          {detection.label} is supported — save the key, then refresh to load models
-                          in Available models.
+                          {detection.label} is supported. Saving the key checks each listed model once.
                         </p>
                       )}
                       {!rejected && !detection.wired && detection.kind !== "unknown" && (
@@ -952,6 +938,7 @@ export function InferenceSettings(props: Props) {
               canEdit={canEdit}
               busy={busy || refreshingModule === "bedrock"}
               hosted={hosted}
+              docker={status.deployment === "docker"}
               embedded
               onSave={save}
               onRecheck={() => refreshModule("bedrock")}
@@ -1318,12 +1305,52 @@ const COMMON_REGIONS = [
   "ap-northeast-1",
 ];
 
+function LocalBedrockSignIn({
+  docker,
+  profile,
+  hasProfiles,
+}: {
+  docker: boolean;
+  profile: string | null;
+  hasProfiles: boolean;
+}) {
+  const loginProfile = profile || "your-profile";
+  return (
+    <div className="rounded-lg border border-border bg-elevated px-3 py-3 text-sm text-foreground/75 space-y-2">
+      <p className="font-semibold text-foreground/90">Sign in on this computer</p>
+      <p className="leading-relaxed">
+        {docker
+          ? "Docker reads the AWS CLI config on this computer. SecureMind does not store AWS keys."
+          : "This app reads the AWS CLI config on this computer. SecureMind does not store AWS keys."}
+      </p>
+      <ol className="list-decimal list-inside space-y-1.5 leading-relaxed">
+        {!hasProfiles && (
+          <li>
+            One time, create a profile:{" "}
+            <code className="font-mono text-foreground/85">aws configure sso</code>
+          </li>
+        )}
+        <li>
+          Sign in:{" "}
+          <code className="font-mono text-foreground/85">aws sso login --profile {loginProfile}</code>
+        </li>
+        <li>{hasProfiles ? "Press Re-check host, then choose that profile." : "Press Re-check host."}</li>
+      </ol>
+      <p className="leading-relaxed text-foreground/60">
+        A working sign-in shows Found and the AWS account id. When the session expires, run the
+        sign-in command again and press Re-check host.
+      </p>
+    </div>
+  );
+}
+
 function BedrockEnvironmentCard({
   aws,
   region,
   canEdit,
   busy,
   hosted = false,
+  docker = false,
   embedded = false,
   onSave,
   onRecheck,
@@ -1334,6 +1361,8 @@ function BedrockEnvironmentCard({
   busy: boolean;
   /** Hosted install: chat uses Lambda IAM, not a laptop profile. */
   hosted?: boolean;
+  /** Local Compose app: AWS CLI files are mounted from this computer. */
+  docker?: boolean;
   /** When true, omit outer card chrome (parent SettingsModule already provides it). */
   embedded?: boolean;
   onSave: (body: Record<string, unknown>, okMsg: string) => Promise<void>;
@@ -1392,10 +1421,10 @@ function BedrockEnvironmentCard({
       )}
 
       {embedded && (
-        <p className="text-[0.75rem] text-foreground/60 leading-relaxed">
+        <p className="text-sm text-foreground/70 leading-relaxed">
           {hosted
-            ? "Enable Amazon Bedrock for this hosted install. Chat runs through this deployment’s IAM role — never paste AWS access keys. SecureMind cannot enable model access or set AWS billing limits for you."
-            : "Enable Amazon Bedrock. SecureMind cannot enable model access or set AWS billing limits for you."}
+            ? "Enable Amazon Bedrock for this hosted install. Chat runs through this deployment’s IAM role. SecureMind does not take AWS access keys, and it cannot enable model access or set AWS billing limits for you."
+            : "Enable Amazon Bedrock. Sign in with the AWS CLI on this computer, then choose a profile. SecureMind does not take AWS access keys, and it cannot enable model access or set AWS billing limits for you."}
         </p>
       )}
 
@@ -1481,8 +1510,15 @@ function BedrockEnvironmentCard({
 
       {aws.allowRealAws && (
         <>
+          {!hosted && (!aws.detected || aws.looksLikeFloci) && (
+            <LocalBedrockSignIn
+              docker={docker}
+              profile={aws.profile}
+              hasProfiles={profiles.length > 0}
+            />
+          )}
           {hosted && (
-            <p className="text-[0.68rem] text-foreground/50 leading-relaxed">
+            <p className="text-sm text-foreground/60 leading-relaxed">
               Chat uses this deployment’s existing IAM roles (Terraform) — you do not create a role by
               hand. Enable at least one text model (for example Amazon Nova) in{" "}
               <a
@@ -1496,7 +1532,7 @@ function BedrockEnvironmentCard({
               . That console step is not IAM; the app cannot turn it on for you.
             </p>
           )}
-          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-[0.65rem]">
+          <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
             <dt className="text-foreground/35">Credentials</dt>
             <dd className={
               hosted || (aws.detected && !aws.looksLikeFloci)
@@ -1507,9 +1543,9 @@ function BedrockEnvironmentCard({
                 ? "This deployment’s IAM role (chat Lambda)"
                 : aws.detected
                 ? aws.looksLikeFloci
-                  ? "Placeholder only (Floci) — need a real profile"
+                  ? "Local sign-in only — choose an AWS profile"
                   : `Found${aws.hint ? ` (${aws.hint})` : ""}`
-                : "Not found on this host"}
+                : "Not found on this computer"}
             </dd>
             <dt className="text-foreground/35">Source</dt>
             <dd className="text-foreground/60">{SOURCE_LABELS[aws.source] ?? aws.source}</dd>
@@ -1530,14 +1566,14 @@ function BedrockEnvironmentCard({
               {!hosted && (
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-[0.6rem] uppercase tracking-wider text-foreground/30 font-semibold">
+                  <label className="text-xs uppercase tracking-wider text-foreground/45 font-semibold">
                     AWS profile
                   </label>
                   <button
                     type="button"
                     disabled={busy}
                     onClick={() => void onRecheck()}
-                    className="text-[0.58rem] text-foreground/35 hover:text-foreground/70 disabled:opacity-40 cursor-pointer"
+                    className="text-xs text-foreground/55 hover:text-foreground/80 disabled:opacity-40 cursor-pointer"
                   >
                     Re-check host
                   </button>
@@ -1546,10 +1582,18 @@ function BedrockEnvironmentCard({
                   aria-label="AWS profile"
                   value={aws.profile ?? ""}
                   disabled={busy}
-                  placeholder="Default credential chain"
+                  placeholder="Choose a profile"
                   options={[
-                    { value: "", label: "Default credential chain", hint: "Env vars, then instance role" },
-                    ...profiles.map(p => ({ value: p, label: p, hint: "From ~/.aws" })),
+                    {
+                      value: "",
+                      label: profiles.length > 0 ? "Choose a profile" : "No profiles visible yet",
+                      hint: docker ? "From this computer's AWS CLI" : "AWS CLI on this computer",
+                    },
+                    ...profiles.map(p => ({
+                      value: p,
+                      label: p,
+                      hint: "AWS CLI profile",
+                    })),
                   ]}
                   onChange={v =>
                     void onSave(
@@ -1582,23 +1626,8 @@ function BedrockEnvironmentCard({
             </div>
           )}
 
-          {!usable && (
-            <details className="text-[0.68rem] text-foreground/45">
-              <summary className="cursor-pointer text-foreground/55">Details</summary>
-              <ul className="mt-2 space-y-1 list-disc list-inside leading-relaxed">
-                {!aws.detected && (
-                  <li>
-                    Sign in, then Re-check host:{" "}
-                    <code className="font-mono text-foreground/60">
-                      aws sso login --profile {aws.profile || "my-profile"}
-                    </code>
-                  </li>
-                )}
-                {aws.looksLikeFloci && <li>Select a real AWS profile to override Floci placeholders.</li>}
-                {!region && <li>Choose a region.</li>}
-              </ul>
-              {aws.error && <p className="mt-2 text-[var(--warning)]">{aws.error}</p>}
-            </details>
+          {!usable && aws.error && (
+            <p className="text-sm text-[var(--warning)] leading-relaxed">{aws.error}</p>
           )}
         </>
       )}
@@ -1687,32 +1716,59 @@ function StatusChip({
   );
 }
 
+function vendorNextStep(
+  v: (typeof WIRED_VENDOR_APIS)[number],
+  configured: boolean,
+  models: number,
+  inMenus: number,
+  riskAck: boolean,
+): string {
+  if (!riskAck) return "Allow vendor APIs above before this key can be used.";
+  if (!configured) return `No key yet. Open Key setup to create one, then paste it in the box below. ${v.blurb}`;
+  if (models <= 0) return "Key is saved. Models have not loaded, so chat cannot use this vendor yet.";
+  if (inMenus <= 0) return `The key works. ${models} models are listed. Check access tries each one once for this key and adds the ones that answer.`;
+  if (inMenus < models) return `${inMenus} of ${models} models are ready for chat. Check access tries any that have not been checked for this key.`;
+  return `${inMenus} models are ready for chat.`;
+}
+
 function SupportedVendorsPanel({
   keys,
   modelCounts,
   inMenuCounts,
   catalogErrors,
   riskAck,
+  canEdit,
+  busy,
+  setupRun,
+  unverifiedCounts,
+  onCheckAccess,
   onOpenModels,
+  onRemove,
 }: {
   keys: KeyInventoryItem[];
   modelCounts: Record<WiredVendorKind, number>;
   inMenuCounts: Record<WiredVendorKind, number>;
+  unverifiedCounts: Record<WiredVendorKind, number>;
   catalogErrors: string[];
   riskAck: boolean;
+  canEdit: boolean;
+  busy: boolean;
+  setupRun: { provider: WiredVendorKind; done: number; total: number } | null;
+  onCheckAccess: (kind: WiredVendorKind) => void;
   onOpenModels: (kind: WiredVendorKind) => void;
+  onRemove: (key: KeyInventoryItem) => void;
 }) {
-  const [openKind, setOpenKind] = useState<WiredVendorKind | null>(null);
+  const [openKind, setOpenKind] = useState<WiredVendorKind | "azure" | null>(null);
   const keyed = (kind: WiredVendorKind) =>
     keys.some(k => k.kind === kind && k.status === "ready");
 
   return (
-    <ul className="divide-y divide-border rounded-lg border border-border bg-card">
+    <ul className="space-y-2">
       {WIRED_VENDOR_APIS.map(v => {
         const stored = keys.find(k => k.kind === v.kind && (k.status === "ready" || k.status === "stored"));
         const configured = Boolean(stored) || keyed(v.kind);
         const models = modelCounts[v.kind];
-        const menuPhrase = vendorMenuPhrase(models, inMenuCounts[v.kind]);
+        const inMenus = inMenuCounts[v.kind];
         const open = openKind === v.kind;
         const status = v.kind === "groq"
           ? groqVendorStatusLabel({
@@ -1726,80 +1782,166 @@ function SupportedVendorsPanel({
             : configured
               ? "Connected"
               : "Not configured";
-        const warn = /rejected|Unreachable|0 models/i.test(status);
+        const warn = /rejected|Unreachable|0 models|Consent/i.test(status);
+        const removable = Boolean(
+          canEdit &&
+          stored &&
+          stored.source === "instance" &&
+          (stored.id === "groq-instance" || stored.id.startsWith("extra:")),
+        );
         return (
-          <li key={v.kind}>
-            <button
-              type="button"
-              onClick={() => {
-                if (models > 0) {
-                  onOpenModels(v.kind);
-                  return;
-                }
-                setOpenKind(open ? null : v.kind);
-              }}
-              className="w-full flex items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-muted/60"
-            >
-              <span className="min-w-0 flex items-baseline gap-2">
-                <span className="text-[0.8rem] font-medium text-foreground/85">{v.productName}</span>
-                {v.mark && (
-                  <span
-                    className={cn(
-                      "inline-flex items-center rounded border px-1 py-0.5 text-[0.5rem] font-semibold uppercase tracking-wide",
-                      themeForVendor(v.kind).badge,
-                    )}
-                  >
-                    {v.mark}
-                  </span>
-                )}
-                {stored?.hint && (
-                  <span
-                    className="font-mono text-[0.58rem] text-foreground/45"
-                    title="Masked key identifier — full secret is never shown"
-                  >
-                    {stored.hint}
-                  </span>
-                )}
-              </span>
+          <li
+            key={v.kind}
+            className="rounded-xl border border-border bg-card px-3.5 py-3.5"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[0.95rem] font-semibold text-foreground">{v.productName}</p>
+                  {v.mark && (
+                    <span
+                      className={cn(
+                        "inline-flex items-center rounded border px-1.5 py-0.5 text-[0.58rem] font-semibold uppercase tracking-wide",
+                        themeForVendor(v.kind).badge,
+                      )}
+                    >
+                      {v.mark}
+                    </span>
+                  )}
+                  {stored?.hint && (
+                    <span
+                      className="font-mono text-[0.7rem] text-foreground/50"
+                      title="Masked key identifier. The full secret is never shown."
+                    >
+                      {stored.hint}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1.5 text-sm text-foreground/70 leading-relaxed">
+                  {vendorNextStep(v, configured, models, inMenus, riskAck)}
+                </p>
+              </div>
               <span className={cn(
-                "text-[0.68rem] shrink-0",
-                warn ? "text-amber-200/80" : "text-foreground/45",
+                "shrink-0 rounded-md border px-2 py-1 text-xs font-semibold",
+                warn
+                  ? "border-amber-500/35 bg-amber-500/10 text-amber-100"
+                  : configured
+                    ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
+                    : "border-border bg-muted text-foreground/55",
               )}>
                 {status}
-                {v.kind !== "groq" && configured && menuPhrase ? ` · ${menuPhrase}` : ""}
               </span>
-            </button>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                aria-expanded={open}
+                onClick={() => setOpenKind(open ? null : v.kind)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-strong)] bg-elevated px-3 py-2 text-sm font-medium text-foreground/85 hover:bg-muted cursor-pointer"
+              >
+                Key setup
+                <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} aria-hidden />
+              </button>
+              {setupRun?.provider === v.kind ? (
+                <button
+                  type="button"
+                  disabled
+                  className="inline-flex items-center rounded-lg border border-indigo-400/40 bg-indigo-500/15 px-3 py-2 text-sm font-semibold text-indigo-100 opacity-80 cursor-wait"
+                >
+                  {setupRun.total > 0
+                    ? `Checking ${setupRun.done} of ${setupRun.total}…`
+                    : "Checking access…"}
+                </button>
+              ) : unverifiedCounts[v.kind] > 0 && canEdit ? (
+                <button
+                  type="button"
+                  disabled={busy || setupRun !== null}
+                  onClick={() => onCheckAccess(v.kind)}
+                  className="inline-flex items-center rounded-lg border border-indigo-400/40 bg-indigo-500/15 px-3 py-2 text-sm font-semibold text-indigo-100 hover:bg-indigo-500/25 disabled:opacity-45 cursor-pointer"
+                >
+                  Check access
+                </button>
+              ) : null}
+              {models > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onOpenModels(v.kind)}
+                  className="inline-flex items-center rounded-lg border border-[var(--border-strong)] bg-elevated px-3 py-2 text-sm font-medium text-foreground/85 hover:bg-muted cursor-pointer"
+                >
+                  {inMenus > 0 ? "Review models" : "View models"}
+                </button>
+              )}
+              {removable && stored && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  aria-label={`Remove ${stored.label}`}
+                  onClick={() => onRemove(stored)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--destructive-border)] bg-[var(--destructive-soft)] px-3 py-2 text-sm font-semibold text-destructive hover:brightness-95 disabled:opacity-45 cursor-pointer"
+                >
+                  <Trash2 className="size-3.5" aria-hidden />
+                  Remove
+                </button>
+              )}
+            </div>
             {open && (
-              <div className="px-3 pb-3 space-y-1.5 text-[0.68rem] text-foreground/50">
-                <p className="font-mono text-foreground/35">{v.keyHint}</p>
+              <div className="mt-3 rounded-lg border border-border bg-elevated px-3 py-3 space-y-2 text-sm text-foreground/75">
+                <p>Key format: {v.keyHint}.</p>
                 <a
                   href={v.keyCreateUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-indigo-300/80 underline underline-offset-2"
+                  className="inline-flex items-center gap-1.5 font-medium text-indigo-200 underline underline-offset-2"
                 >
                   {v.keyCreateLabel}
-                  <ExternalLink className="size-3" aria-hidden />
+                  <ExternalLink className="size-3.5" aria-hidden />
                 </a>
-                {(v.kind === "groq" || v.docsNote) && (
-                  <details>
-                    <summary className="cursor-pointer text-foreground/45">Details</summary>
-                    <p className="mt-1 leading-relaxed">
-                      {v.docsNote ?? GROQ_VPN_SETTINGS_NOTE}
-                    </p>
-                  </details>
-                )}
+                <p className="text-foreground/55 leading-relaxed">
+                  {v.docsNote ?? (v.kind === "groq" ? GROQ_VPN_SETTINGS_NOTE : "Create the key on that page, paste it below, then review the models.")}
+                </p>
               </div>
             )}
           </li>
         );
       })}
-      {STORE_ONLY_VENDOR_APIS.map(v => (
-        <li key={v.kind} className="px-3 py-2.5 flex items-center justify-between gap-3 text-[0.75rem]">
-          <span className="text-foreground/65">{v.productName}</span>
-          <span className="text-foreground/35">Store-only</span>
-        </li>
-      ))}
+      {STORE_ONLY_VENDOR_APIS.map(v => {
+        const open = openKind === "azure";
+        return (
+          <li key={v.kind} className="rounded-xl border border-dashed border-border bg-card/60 px-3.5 py-3.5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[0.95rem] font-semibold text-foreground/80">{v.productName}</p>
+                <p className="mt-1.5 text-[0.8rem] text-foreground/55 leading-relaxed">{v.blurb}</p>
+              </div>
+              <span className="shrink-0 rounded-md border border-border bg-muted px-2 py-1 text-[0.68rem] font-semibold text-foreground/50">
+                Saved for later
+              </span>
+            </div>
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={() => setOpenKind(open ? null : "azure")}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-strong)] bg-elevated px-3 py-1.5 text-[0.78rem] font-medium text-foreground/75 hover:bg-muted cursor-pointer"
+            >
+              Key setup
+              <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} aria-hidden />
+            </button>
+            {open && (
+              <div className="mt-3 text-[0.8rem]">
+                <a
+                  href={v.keyCreateUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 font-medium text-indigo-200 underline underline-offset-2"
+                >
+                  {v.keyCreateLabel}
+                  <ExternalLink className="size-3.5" aria-hidden />
+                </a>
+              </div>
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

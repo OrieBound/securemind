@@ -1,7 +1,8 @@
 /**
  * Per-user avatar bytes.
  *
- * Local / on-prem: `.data/avatars/{userId}/` (or AVATAR_STORAGE_PATH).
+ * Local / on-prem: disk under AVATAR_STORAGE_PATH, or a sibling of DOCUMENT_STORAGE_PATH
+ * (Docker uses /data/avatars next to /data/uploads). Host dev default is `.data/avatars`.
  * Hosted AWS: private S3 object when AVATAR_S3_BUCKET is set (Lambda IAM, no UI keys).
  * The browser never talks to S3 — it only hits /api/me/avatar.
  */
@@ -28,10 +29,18 @@ export function avatarObjectKey(userId: string): string {
   return `avatars/${safeSegment(userId)}/avatar`;
 }
 
-function storageRoot(): string {
+/** Disk root for local and on-prem photos. Hosted installs use S3 instead. */
+export function avatarDiskRoot(): string {
   const configured = process.env.AVATAR_STORAGE_PATH?.trim();
   if (configured && configured.length > 0) return resolve(configured);
+  const documents = process.env.DOCUMENT_STORAGE_PATH?.trim();
+  if (documents) return resolve(documents, "..", "avatars");
+  if (process.env.SECUREMIND_RUNTIME === "docker") return resolve("/data/avatars");
   return resolve(join(".data", "avatars"));
+}
+
+function storageRoot(): string {
+  return avatarDiskRoot();
 }
 
 function safeSegment(value: string): string {
@@ -87,10 +96,30 @@ function diskRead(userId: string): { bytes: Buffer; meta: AvatarMeta } | null {
 
 function diskWrite(userId: string, bytes: Buffer, contentType: AvatarImageKind): AvatarMeta {
   const dest = bytesPath(userId);
-  mkdirSync(dirname(dest), { recursive: true });
+  try {
+    mkdirSync(dirname(dest), { recursive: true });
+  } catch (err) {
+    const code = err && typeof err === "object" && "code" in err ? String((err as { code: string }).code) : "";
+    if (code === "EACCES" || code === "EPERM" || code === "EROFS") {
+      const denied = new Error("Profile photos cannot be stored on this machine.");
+      Object.assign(denied, { status: 503 });
+      throw denied;
+    }
+    throw err;
+  }
   const meta: AvatarMeta = { contentType, updatedAt: new Date().toISOString() };
-  writeFileSync(dest, bytes, { mode: 0o600 });
-  writeFileSync(metaPath(userId), JSON.stringify(meta), { encoding: "utf8", mode: 0o600 });
+  try {
+    writeFileSync(dest, bytes, { mode: 0o600 });
+    writeFileSync(metaPath(userId), JSON.stringify(meta), { encoding: "utf8", mode: 0o600 });
+  } catch (err) {
+    const code = err && typeof err === "object" && "code" in err ? String((err as { code: string }).code) : "";
+    if (code === "EACCES" || code === "EPERM" || code === "EROFS") {
+      const denied = new Error("Profile photos cannot be stored on this machine.");
+      Object.assign(denied, { status: 503 });
+      throw denied;
+    }
+    throw err;
+  }
   return meta;
 }
 
@@ -146,9 +175,15 @@ export async function removeAvatar(userId: string): Promise<void> {
 }
 
 export async function resolveAvatarPublicUrl(userId: string): Promise<string | null> {
-  const meta = await readAvatarMeta(userId);
-  if (!meta) return null;
-  return `/api/me/avatar?v=${encodeURIComponent(meta.updatedAt)}`;
+  try {
+    const meta = await readAvatarMeta(userId);
+    if (!meta) return null;
+    return `/api/me/avatar?v=${encodeURIComponent(meta.updatedAt)}`;
+  } catch (err) {
+    // A photo-store miss must not blank the rest of the profile.
+    console.warn("[avatar] meta lookup failed", err instanceof Error ? err.message : err);
+    return null;
+  }
 }
 
 /** @deprecated use resolveAvatarPublicUrl — sync disk-only hint for tests */

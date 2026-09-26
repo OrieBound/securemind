@@ -16,7 +16,8 @@ export type EditableRateRow = {
   model: string;
   inputPerM: number;
   outputPerM: number;
-  source: "list" | "override";
+  /** list = curated table; override = Admin edit; floor = catalog model with no published rate yet. */
+  source: "list" | "override" | "floor";
 };
 
 const MAX_MODEL_ID = 200;
@@ -85,7 +86,10 @@ export function catalogRate(provider: RateProvider, model: string): TokenRate | 
 /**
  * Persist only diffs from the curated tables so Reset = clear the map.
  */
-export function overridesFromEditedRows(rows: EditableRateRow[]): RateOverrideMap {
+export function overridesFromEditedRows(
+  rows: EditableRateRow[],
+  floor?: TokenRate,
+): RateOverrideMap {
   const out: RateOverrideMap = {};
   for (const row of rows) {
     if (row.provider !== "groq" && row.provider !== "bedrock") continue;
@@ -95,12 +99,18 @@ export function overridesFromEditedRows(rows: EditableRateRow[]): RateOverrideMa
     if (!model) continue;
     const catalog = catalogRate(row.provider, model);
     if (catalog && ratesEqual(catalog, rates)) continue;
+    // An untouched floor row is not a chosen price. Saving the table must not
+    // freeze the Max-tier stand-in as if it were a published rate.
+    if (!catalog && floor && ratesEqual(rates, floor)) continue;
     out[overrideKey(row.provider, model)] = rates;
   }
   return out;
 }
 
-export function listEditableRates(overrides: RateOverrideMap): EditableRateRow[] {
+export function listEditableRates(
+  overrides: RateOverrideMap,
+  extras?: { groqModelIds?: string[]; floor?: TokenRate },
+): EditableRateRow[] {
   const seen = new Set<string>();
   const rows: EditableRateRow[] = [];
 
@@ -123,6 +133,23 @@ export function listEditableRates(overrides: RateOverrideMap): EditableRateRow[]
 
   for (const model of Object.keys(BEDROCK_MODEL_PRICING)) push("bedrock", model);
   for (const model of Object.keys(GROQ_MODEL_PRICING)) push("groq", model);
+
+  const floor = extras?.floor;
+  for (const model of extras?.groqModelIds ?? []) {
+    const key = overrideKey("groq", model);
+    if (seen.has(key) || !model.trim()) continue;
+    if (!floor) continue;
+    seen.add(key);
+    const over = overrides[key];
+    const rates = over ?? floor;
+    rows.push({
+      provider: "groq",
+      model: model.trim(),
+      inputPerM: rates.inputPerM,
+      outputPerM: rates.outputPerM,
+      source: over ? "override" : "floor",
+    });
+  }
 
   for (const key of Object.keys(overrides)) {
     const parsed = parseOverrideKey(key);

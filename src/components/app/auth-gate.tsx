@@ -213,7 +213,7 @@ export function AuthGate({ children }: Props) {
     }
   }
 
-  const logout = useCallback(async () => {
+  const logout = useCallback(async (reason?: string) => {
     await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
     storeClientAccessToken(null);
     setMe(prev => ({
@@ -222,9 +222,35 @@ export function AuthGate({ children }: Props) {
       email: null,
       mode: prev?.mode ?? "cognito",
     }));
+    if (reason) setError(reason);
     const next = await refreshSetup();
     setMode(next?.claimAvailable ? "claim" : "login");
   }, []);
+
+  useEffect(() => {
+    if (!me?.authenticated || me.mode === "local") return;
+    let cancelled = false;
+    const recheck = async () => {
+      try {
+        const res = await fetch("/api/auth/me", { credentials: "same-origin" });
+        if (cancelled || res.ok) return;
+        if (res.status === 401) {
+          setMe({ userId: "", authenticated: false, email: null, mode: me.mode });
+          setError("Your sign-in expired. Sign in again.");
+        }
+      } catch {
+        /* Keep the current screen if the server is briefly unreachable. */
+      }
+    };
+    const onFocus = () => { void recheck(); };
+    window.addEventListener("focus", onFocus);
+    const id = window.setInterval(() => { void recheck(); }, 60_000);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", onFocus);
+      window.clearInterval(id);
+    };
+  }, [me?.authenticated, me?.mode]);
 
   const session = useMemo(
     () =>

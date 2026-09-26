@@ -5,8 +5,6 @@ import {
   BarChart,
   CartesianGrid,
   Legend,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -20,9 +18,18 @@ import {
   type InsightsSubjectScope,
 } from "./analytics-shell";
 import { ChartFrame } from "./chart-frame";
+import { DailyAmountChart } from "./daily-amount-chart";
 import { tooltipStyle, useChartTheme } from "./use-chart-theme";
 import { KpiCard } from "./kpi-card";
 import { fmtPct, shortModel } from "@/lib/analytics/client";
+import {
+  bucketLatencyMs,
+  fmtCount,
+  fmtLatency,
+  groundingStack,
+  orderTierCounts,
+  prefersDailyColumns,
+} from "@/lib/analytics/chart-shape";
 import { useAnalyticsQuery } from "./use-analytics-query";
 import { USAGE_SECTION_HREF, usagePageSection } from "@/lib/analytics/usage-hash";
 
@@ -73,17 +80,21 @@ export function UsageAnalyticsView({ workspaces, subject = null, onBackToAdmin }
       ? "All workspaces"
       : workspaces.find(w => w.id === workspaceId)?.name ?? "Workspace";
 
-  const latencyTrend = (data?.overTime ?? []).map((row, i, arr) => {
-    // Approximate: use overall avg as flat line when per-day latency isn't stored
-    const avg = data?.kpis.avgLatencyMs;
-    return { date: row.date, latencyMs: avg, requests: row.requests, _i: i, _n: arr.length };
-  });
+  const overTime = data?.overTime ?? [];
+  const dailyAsColumns = prefersDailyColumns(overTime.length);
+  const volumeNote = dailyAsColumns
+    ? "Requests per day. Columns, because each day starts from zero and the range is still short."
+    : "Requests per day. A straight line with a dot on each day.";
+  const tiers = orderTierCounts(data?.byTier ?? []);
+  const grounding = groundingStack(data?.byGrounding ?? []);
+  const latencyBuckets = bucketLatencyMs(data?.latencySamples ?? []);
+  const latencyHasSamples = latencyBuckets.some(bucket => bucket.count > 0);
 
   return (
     <AnalyticsShell
       active="usage"
       title="Usage"
-      subtitle="Request totals and by-workspace on Overview; volume, routing, and grounding charts on Charts. Refreshes about every 15 seconds. Not AWS infrastructure consumption."
+      subtitle="Headline totals, then volume, routing, and grounding. Charts is the same picture without the workspace table. Refreshes about every 15 seconds. Not AWS infrastructure consumption."
       workspaces={workspaces}
       range={range}
       workspaceId={workspaceId}
@@ -112,17 +123,20 @@ export function UsageAnalyticsView({ workspaces, subject = null, onBackToAdmin }
 
       {pageSection === "overview" && (
       <div id="usage-overview" role="tabpanel" className="space-y-5">
-      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
-        <KpiCard label="AI requests" value={loading ? "…" : String(data?.kpis.totalRequests ?? 0)} />
-        <KpiCard label="Input tokens" value={loading ? "…" : String(data?.kpis.promptTokens ?? 0)} />
-        <KpiCard label="Output tokens" value={loading ? "…" : String(data?.kpis.completionTokens ?? 0)} />
-        <KpiCard
-          label="Avg latency"
-          value={loading ? "…" : data?.kpis.avgLatencyMs != null ? `${data.kpis.avgLatencyMs} ms` : "—"}
-        />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <KpiCard label="AI requests" value={loading ? "…" : fmtCount(data?.kpis.totalRequests ?? 0)} />
         <KpiCard label="Success rate" value={loading ? "…" : fmtPct(data?.kpis.successRate)} />
-        <KpiCard label="Grounded answers" value={loading ? "…" : fmtPct(data?.kpis.groundedRate)} />
         <KpiCard label="Retrieval hits" value={loading ? "…" : fmtPct(data?.kpis.retrievalHitRate)} />
+        <KpiCard
+          label="Grounded answers"
+          value={loading ? "…" : fmtPct(data?.kpis.groundedRate)}
+          hint="Share of answers that were asked to cite"
+        />
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <KpiCard label="Input tokens" value={loading ? "…" : fmtCount(data?.kpis.promptTokens ?? 0)} />
+        <KpiCard label="Output tokens" value={loading ? "…" : fmtCount(data?.kpis.completionTokens ?? 0)} />
+        <KpiCard label="Avg latency" value={loading ? "…" : fmtLatency(data?.kpis.avgLatencyMs)} />
         <KpiCard label="Most-used model" value={loading ? "…" : shortModel(data?.kpis.topModel)} />
       </div>
 
@@ -159,54 +173,68 @@ export function UsageAnalyticsView({ workspaces, subject = null, onBackToAdmin }
       </div>
       )}
 
-      {pageSection === "charts" && (
       <div id="usage-charts" role="tabpanel" className="space-y-5">
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <ChartFrame
-          title="Request volume over time"
-          interpretation="How many AI requests SecureMind handled per day."
+          title="Request volume"
+          interpretation={volumeNote}
           rangeLabel={rangeLabel}
           workspaceLabel={workspaceLabel}
           loading={loading}
           error={error}
-          empty={!loading && (data?.overTime.length ?? 0) === 0}
+          empty={!loading && overTime.length === 0}
           tableHeaders={["Date", "Requests"]}
-          tableRows={(data?.overTime ?? []).map(r => [r.date, r.requests])}
+          tableRows={overTime.map(r => [r.date, r.requests])}
         >
-          <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={data?.overTime ?? []}>
-              <CartesianGrid stroke={chart.grid} />
-              <XAxis dataKey="date" tick={{ fill: chart.tick, fontSize: 11 }} />
-              <YAxis tick={{ fill: chart.tick, fontSize: 11 }} allowDecimals={false} />
-              <Tooltip contentStyle={tooltipStyle(chart)} />
-              <Line type="monotone" dataKey="requests" stroke={chart.series[0]} strokeWidth={2} dot={false} name="Requests" />
-            </LineChart>
-          </ResponsiveContainer>
+          <DailyAmountChart
+            data={overTime}
+            dataKey="requests"
+            name="Requests"
+            color={chart.series[0]}
+            chart={chart}
+          />
         </ChartFrame>
 
-        <ChartFrame
-          title="Input and output tokens"
-          interpretation="Token volume over time — separate series, not a dual-axis mix with requests."
-          rangeLabel={rangeLabel}
-          workspaceLabel={workspaceLabel}
-          loading={loading}
-          error={error}
-          empty={!loading && (data?.overTime.length ?? 0) === 0}
-          tableHeaders={["Date", "Input", "Output"]}
-          tableRows={(data?.overTime ?? []).map(r => [r.date, r.prompt, r.completion])}
-        >
-          <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={data?.overTime ?? []}>
-              <CartesianGrid stroke={chart.grid} />
-              <XAxis dataKey="date" tick={{ fill: chart.tick, fontSize: 11 }} />
-              <YAxis tick={{ fill: chart.tick, fontSize: 11 }} allowDecimals={false} />
-              <Tooltip contentStyle={tooltipStyle(chart)} />
-              <Legend />
-              <Line type="monotone" dataKey="prompt" stroke={chart.series[3]} strokeWidth={2} dot={false} name="Input" />
-              <Line type="monotone" dataKey="completion" stroke={chart.series[4]} strokeWidth={2} dot={false} name="Output" />
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartFrame>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 xl:col-span-2">
+          <ChartFrame
+            title="Input tokens"
+            interpretation="Input tokens per day, on their own scale."
+            rangeLabel={rangeLabel}
+            workspaceLabel={workspaceLabel}
+            loading={loading}
+            error={error}
+            empty={!loading && overTime.length === 0}
+            tableHeaders={["Date", "Input"]}
+            tableRows={overTime.map(r => [r.date, r.prompt])}
+          >
+            <DailyAmountChart
+              data={overTime}
+              dataKey="prompt"
+              name="Input"
+              color={chart.series[3]}
+              chart={chart}
+            />
+          </ChartFrame>
+          <ChartFrame
+            title="Output tokens"
+            interpretation="Output tokens per day, on their own scale."
+            rangeLabel={rangeLabel}
+            workspaceLabel={workspaceLabel}
+            loading={loading}
+            error={error}
+            empty={!loading && overTime.length === 0}
+            tableHeaders={["Date", "Output"]}
+            tableRows={overTime.map(r => [r.date, r.completion])}
+          >
+            <DailyAmountChart
+              data={overTime}
+              dataKey="completion"
+              name="Output"
+              color={chart.series[4]}
+              chart={chart}
+            />
+          </ChartFrame>
+        </div>
 
         <ChartFrame
           title="Requests by model"
@@ -235,77 +263,90 @@ export function UsageAnalyticsView({ workspaces, subject = null, onBackToAdmin }
         </ChartFrame>
 
         <ChartFrame
-          title="Routing-tier distribution"
-          interpretation="Complexity tiers selected for Chat turns."
+          title="Routing tiers"
+          interpretation="Complexity tiers from Max to Micro. Unused tiers stay in place so the mix is readable."
           rangeLabel={rangeLabel}
           workspaceLabel={workspaceLabel}
           loading={loading}
           error={error}
-          empty={!loading && (data?.byTier.length ?? 0) === 0}
+          empty={!loading && tiers.length === 0}
           tableHeaders={["Tier", "Requests"]}
-          tableRows={(data?.byTier ?? []).map(r => [r.tier, r.count])}
+          tableRows={tiers.map(r => [r.tier, r.count])}
         >
           <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={data?.byTier ?? []}>
-              <CartesianGrid stroke={chart.grid} />
+            <BarChart data={tiers}>
+              <CartesianGrid stroke={chart.grid} vertical={false} />
               <XAxis dataKey="tier" tick={{ fill: chart.tick, fontSize: 11 }} />
               <YAxis tick={{ fill: chart.tick, fontSize: 11 }} allowDecimals={false} />
               <Tooltip contentStyle={tooltipStyle(chart)} />
-              <Bar dataKey="count" fill={chart.series[1]} name="Requests" />
+              <Bar dataKey="count" fill={chart.series[1]} name="Requests" maxBarSize={48} />
             </BarChart>
           </ResponsiveContainer>
         </ChartFrame>
 
         <ChartFrame
-          title="Grounding distribution"
-          interpretation="Citation-audit outcomes: grounded, partial, uncited, invalid, declined."
-          rangeLabel={rangeLabel}
-          workspaceLabel={workspaceLabel}
-          loading={loading}
-          error={error}
-          empty={!loading && (data?.byGrounding.length ?? 0) === 0}
-          tableHeaders={["Status", "Count"]}
-          tableRows={(data?.byGrounding ?? []).map(r => [r.status, r.count])}
-        >
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={data?.byGrounding ?? []}>
-              <CartesianGrid stroke={chart.grid} />
-              <XAxis dataKey="status" tick={{ fill: chart.tick, fontSize: 11 }} />
-              <YAxis tick={{ fill: chart.tick, fontSize: 11 }} allowDecimals={false} />
-              <Tooltip contentStyle={tooltipStyle(chart)} />
-              <Bar dataKey="count" fill={chart.series[3]} name="Answers" />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartFrame>
-
-        <ChartFrame
-          title="Response latency"
+          title="Citation outcomes"
           interpretation={
-            data?.kpis.avgLatencyMs != null
-              ? `Average latency ${data.kpis.avgLatencyMs} ms across recorded requests in this period.`
-              : "Latency is recorded per request when the stream completes."
+            grounding.notApplicable > 0
+              ? `${fmtCount(grounding.notApplicable)} turns were outside citation, such as a greeting, and are not in this stack.`
+              : "Grounded, partial, and uncited answers. Social turns are left out."
           }
           rangeLabel={rangeLabel}
           workspaceLabel={workspaceLabel}
           loading={loading}
           error={error}
-          empty={!loading && (data?.kpis.avgLatencyMs == null || (data?.overTime.length ?? 0) === 0)}
-          tableHeaders={["Date", "Requests", "Avg latency (period)"]}
-          tableRows={latencyTrend.map(r => [r.date, r.requests, r.latencyMs ?? "—"])}
+          empty={!loading && grounding.series.length === 0}
+          tableHeaders={["Outcome", "Count"]}
+          tableRows={grounding.series.map(label => [label, grounding.point[label] ?? 0])}
         >
           <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={latencyTrend}>
-              <CartesianGrid stroke={chart.grid} />
-              <XAxis dataKey="date" tick={{ fill: chart.tick, fontSize: 11 }} />
-              <YAxis tick={{ fill: chart.tick, fontSize: 11 }} />
+            <BarChart data={[grounding.point]}>
+              <CartesianGrid stroke={chart.grid} vertical={false} />
+              <XAxis dataKey="label" tick={{ fill: chart.tick, fontSize: 11 }} />
+              <YAxis tick={{ fill: chart.tick, fontSize: 11 }} allowDecimals={false} />
               <Tooltip contentStyle={tooltipStyle(chart)} />
-              <Line type="monotone" dataKey="latencyMs" stroke={chart.series[5]} strokeWidth={2} dot={false} name="Avg latency (ms)" />
-            </LineChart>
+              <Legend />
+              {grounding.series.map((label, i) => (
+                <Bar
+                  key={label}
+                  dataKey={label}
+                  stackId="cited"
+                  fill={chart.series[i % chart.series.length]}
+                  name={label}
+                  maxBarSize={72}
+                />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartFrame>
+
+        <ChartFrame
+          title="Response time"
+          interpretation={
+            data?.kpis.avgLatencyMs != null
+              ? `How long replies took. Average ${fmtLatency(data.kpis.avgLatencyMs)}.`
+              : "How long replies took, once the stream completes."
+          }
+          rangeLabel={rangeLabel}
+          workspaceLabel={workspaceLabel}
+          loading={loading}
+          error={error}
+          empty={!loading && !latencyHasSamples}
+          tableHeaders={["Bucket", "Requests"]}
+          tableRows={latencyBuckets.map(bucket => [bucket.label, bucket.count])}
+        >
+          <ResponsiveContainer width="100%" height={240}>
+            <BarChart data={latencyBuckets}>
+              <CartesianGrid stroke={chart.grid} vertical={false} />
+              <XAxis dataKey="label" tick={{ fill: chart.tick, fontSize: 11 }} />
+              <YAxis tick={{ fill: chart.tick, fontSize: 11 }} allowDecimals={false} />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
+              <Bar dataKey="count" fill={chart.series[5]} name="Requests" maxBarSize={48} />
+            </BarChart>
           </ResponsiveContainer>
         </ChartFrame>
       </div>
       </div>
-      )}
     </AnalyticsShell>
   );
 }

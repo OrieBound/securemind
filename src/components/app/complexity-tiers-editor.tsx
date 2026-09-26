@@ -10,11 +10,13 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Check, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+  ModelChoiceFilters,
   ModelPickerList,
   ProviderBadge,
-  isChatSelectableModel,
+  isAssignablePickerModel,
   type CatalogModel,
   type ModelProviderId,
+  type ProviderFilter,
 } from "@/components/app/model-catalog";
 import { DEFAULT_TIER_MODELS } from "@/lib/models/tier-assignment";
 import { isChatUsableModelId } from "@/lib/models/catalog-shared";
@@ -48,6 +50,8 @@ export type ComplexityTiersEditorProps = {
   onFixedModelIdChange: (id: string) => void;
   lastRoute: LastRouteSummary | null;
   chatCatalogModels: CatalogModel[];
+  /** Wider list for the search box and provider chips. Falls back to chat menus. */
+  assignmentModels?: CatalogModel[];
   labelFor: (id: string) => string;
   providerFor: (id: string) => ModelProviderId | null;
   displayModelFor: (tier: string) => string;
@@ -81,6 +85,7 @@ export function ComplexityTiersEditor({
   onFixedModelIdChange,
   lastRoute,
   chatCatalogModels,
+  assignmentModels,
   labelFor,
   providerFor,
   displayModelFor,
@@ -98,6 +103,9 @@ export function ComplexityTiersEditor({
   afterList,
 }: ComplexityTiersEditorProps) {
   const isPage = variant === "page";
+  const pickerModels = assignmentModels ?? chatCatalogModels;
+  const [modelQuery, setModelQuery] = useState("");
+  const [providerFilter, setProviderFilter] = useState<ProviderFilter>("all");
   const initialPageTier =
     lastRoute?.mode && TIERS.includes(lastRoute.mode as Tier) ? lastRoute.mode : "Standard";
   const [openPicker, setOpenPicker] = useState<string | null>(isPage ? initialPageTier : null);
@@ -105,8 +113,8 @@ export function ComplexityTiersEditor({
   const picking = modelSelectionMode === "auto" && Boolean(openPicker) && !isPage;
 
   useEffect(() => {
-    if (openPicker || modelSelectionMode === "fixed") onNeedCatalog?.();
-  }, [openPicker, modelSelectionMode, onNeedCatalog]);
+    onNeedCatalog?.();
+  }, [onNeedCatalog]);
 
   useEffect(() => {
     if (modelSelectionMode !== "fixed") setFixedPickerOpen(false);
@@ -123,6 +131,18 @@ export function ComplexityTiersEditor({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [openPicker, fixedPickerOpen, isPage]);
+
+  const choiceFilters = !isPage && pickerModels.length > 0 && !picking && !(modelSelectionMode === "fixed" && fixedPickerOpen) ? (
+    <div className="mb-2">
+      <ModelChoiceFilters
+        models={pickerModels}
+        query={modelQuery}
+        onQueryChange={setModelQuery}
+        providerFilter={providerFilter}
+        onProviderFilterChange={setProviderFilter}
+      />
+    </div>
+  ) : null;
 
   function assign(tier: string, id: string) {
     if (!isChatUsableModelId(id)) return;
@@ -248,6 +268,11 @@ export function ComplexityTiersEditor({
       )}
 
       {modelSelectionMode === "auto" && !picking && beforeList}
+      {modelSelectionMode === "auto" && choiceFilters}
+
+      {modelSelectionMode === "fixed" && (
+        choiceFilters
+      )}
 
       {modelSelectionMode === "fixed" && (
         <div className={cn("space-y-2 mb-1", isPage && "space-y-3")}>
@@ -291,10 +316,15 @@ export function ComplexityTiersEditor({
                 Click a model. It applies to the next message.
               </p>
               <ModelPickerList
-                models={chatCatalogModels}
+                models={pickerModels}
                 selectedId={fixedModelId}
                 autoFocusSearch
+                query={modelQuery}
+                onQueryChange={setModelQuery}
+                providerFilter={providerFilter}
+                onProviderFilterChange={setProviderFilter}
                 onSelect={m => {
+                  if (!isAssignablePickerModel(m)) return;
                   onFixedModelIdChange(m.id);
                   setFixedPickerOpen(false);
                 }}
@@ -314,7 +344,11 @@ export function ComplexityTiersEditor({
           hasOverride={Boolean(modeModelOverrides[openPicker] && isChatUsableModelId(modeModelOverrides[openPicker]))}
           labelFor={labelFor}
           providerFor={providerFor}
-          models={chatCatalogModels}
+          models={pickerModels}
+          query={modelQuery}
+          onQueryChange={setModelQuery}
+          providerFilter={providerFilter}
+          onProviderFilterChange={setProviderFilter}
           onSelect={id => assign(openPicker, id)}
           onDone={() => setOpenPicker(null)}
           onReset={() => {
@@ -352,7 +386,11 @@ export function ComplexityTiersEditor({
               displayModelId={displayModelFor(openPicker)}
               hasOverride={Boolean(modeModelOverrides[openPicker] && isChatUsableModelId(modeModelOverrides[openPicker]))}
               labelFor={labelFor}
-              models={chatCatalogModels}
+              models={pickerModels}
+              query={modelQuery}
+              onQueryChange={setModelQuery}
+              providerFilter={providerFilter}
+              onProviderFilterChange={setProviderFilter}
               onSelect={id => assign(openPicker, id)}
               onReset={() => onAssignTier(openPicker, null)}
             />
@@ -539,6 +577,10 @@ function RailPicker({
   labelFor,
   providerFor,
   models,
+  query,
+  onQueryChange,
+  providerFilter,
+  onProviderFilterChange,
   onSelect,
   onDone,
   onReset,
@@ -550,6 +592,10 @@ function RailPicker({
   labelFor: (id: string) => string;
   providerFor: (id: string) => ModelProviderId | null;
   models: CatalogModel[];
+  query: string;
+  onQueryChange: (next: string) => void;
+  providerFilter: ProviderFilter;
+  onProviderFilterChange: (next: ProviderFilter) => void;
   onSelect: (id: string) => void;
   onDone: () => void;
   onReset: () => void;
@@ -605,11 +651,15 @@ function RailPicker({
           models={models}
           selectedId={displayModelId}
           autoFocusSearch
+          query={query}
+          onQueryChange={onQueryChange}
+          providerFilter={providerFilter}
+          onProviderFilterChange={onProviderFilterChange}
           maxHeightClass="max-h-72"
           selectedBadgeLabel="Using"
           emptyLabel="No models in menus yet. Test one in Settings → Models."
           onSelect={opt => {
-            if (!isChatUsableModelId(opt.id) || !isChatSelectableModel(opt)) return;
+            if (!isChatUsableModelId(opt.id) || !isAssignablePickerModel(opt)) return;
             onSelect(opt.id);
           }}
         />
@@ -646,6 +696,10 @@ function PagePicker({
   hasOverride,
   labelFor,
   models,
+  query,
+  onQueryChange,
+  providerFilter,
+  onProviderFilterChange,
   onSelect,
   onReset,
 }: {
@@ -654,6 +708,10 @@ function PagePicker({
   hasOverride: boolean;
   labelFor: (id: string) => string;
   models: CatalogModel[];
+  query: string;
+  onQueryChange: (next: string) => void;
+  providerFilter: ProviderFilter;
+  onProviderFilterChange: (next: ProviderFilter) => void;
   onSelect: (id: string) => void;
   onReset: () => void;
 }) {
@@ -685,11 +743,15 @@ function PagePicker({
         models={models}
         selectedId={displayModelId}
         autoFocusSearch
+        query={query}
+        onQueryChange={onQueryChange}
+        providerFilter={providerFilter}
+        onProviderFilterChange={onProviderFilterChange}
         maxHeightClass="max-h-[min(32rem,55vh)]"
         selectedBadgeLabel="Using"
         emptyLabel="No models in menus yet. Test one in Settings → Models."
         onSelect={opt => {
-          if (!isChatUsableModelId(opt.id) || !isChatSelectableModel(opt)) return;
+          if (!isChatUsableModelId(opt.id) || !isAssignablePickerModel(opt)) return;
           onSelect(opt.id);
         }}
       />

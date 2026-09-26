@@ -122,7 +122,7 @@ describe("canUseBedrock", () => {
     expect(await canUseBedrock(settings)).toBe(false);
     const status = await getAwsCredentialStatus(settings);
     expect(status.looksLikeFloci).toBe(true);
-    expect(status.error).toMatch(/Floci placeholder/i);
+    expect(status.error).toMatch(/Sign in on this computer/i);
   });
 
   it("hides a Floci endpoint override while resolving credentials", async () => {

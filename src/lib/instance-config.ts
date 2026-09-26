@@ -8,7 +8,7 @@
  */
 
 import { db } from "@/lib/db";
-import { isHostedRuntime, runtimeEdition } from "@/lib/runtime-env";
+import { isHostedRuntime, runtimeDeployment, runtimeEdition } from "@/lib/runtime-env";
 import { hostedInstanceConfig } from "@/lib/instance-config-hosted";
 import type { WizardStorageChoice } from "@/lib/wizard-storage";
 import { decryptSecret, encryptSecret } from "@/lib/secret-at-rest";
@@ -87,6 +87,8 @@ export type KeyInventoryItem = {
 
 export type PublicProviderStatus = {
   edition: "local" | "cloud";
+  /** Where this process runs. Docker local Bedrock reads the mounted AWS CLI directory. */
+  deployment: "docker" | "host" | "hosted";
   primaryProvider: PrimaryProvider;
   hasGroqKey: boolean;
   groqKeyHint: string | null;
@@ -240,7 +242,7 @@ function bedrockInventoryItem(
     return {
       ...base,
       description:
-        "Floci placeholder credentials detected. Bedrock streaming needs real AWS credentials.",
+        "Local sign-in placeholders are present. Bedrock needs an AWS CLI profile on this computer.",
       status: "incomplete",
     };
   }
@@ -405,6 +407,7 @@ export async function getPublicProviderStatus(): Promise<PublicProviderStatus> {
   const primary = (row?.primaryProvider ?? "auto") as PrimaryProvider;
   return {
     edition: runtimeEdition(),
+    deployment: runtimeDeployment(),
     primaryProvider: ["auto", "groq", "bedrock", "ollama"].includes(primary)
       ? primary
       : "auto",

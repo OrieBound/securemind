@@ -5,8 +5,6 @@ import {
   BarChart,
   CartesianGrid,
   Legend,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -20,6 +18,8 @@ import {
   type InsightsSubjectScope,
 } from "./analytics-shell";
 import { ChartFrame } from "./chart-frame";
+import { DailyAmountChart } from "./daily-amount-chart";
+import { prefersDailyColumns } from "@/lib/analytics/chart-shape";
 import { tooltipStyle, useChartTheme } from "./use-chart-theme";
 import { KpiCard } from "./kpi-card";
 import { fmtUsd, fmtUsdLabeled, shortModel } from "@/lib/analytics/client";
@@ -241,7 +241,11 @@ export function CostAnalyticsView({ workspaces, subject = null, onBackToAdmin }:
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <ChartFrame
           title="Estimated cost over time"
-          interpretation="Daily estimated inference spend from recorded Groq and Bedrock token usage."
+          interpretation={
+            prefersDailyColumns(data?.overTime.length ?? 0)
+              ? "Estimated spend per day. Columns, because each day starts from zero and the range is still short."
+              : "Estimated spend per day. A straight line with a dot on each day."
+          }
           rangeLabel={rangeLabel}
           workspaceLabel={workspaceLabel}
           disclaimer={disclaimer}
@@ -251,18 +255,14 @@ export function CostAnalyticsView({ workspaces, subject = null, onBackToAdmin }:
           tableHeaders={["Date", "Estimated USD"]}
           tableRows={(data?.overTime ?? []).map(r => [r.date, r.costUsd.toFixed(6)])}
         >
-          <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={data?.overTime ?? []}>
-              <CartesianGrid stroke={chart.grid} />
-              <XAxis dataKey="date" tick={{ fill: chart.tick, fontSize: 11 }} />
-              <YAxis tick={{ fill: chart.tick, fontSize: 11 }} />
-              <Tooltip
-                contentStyle={tooltipStyle(chart)}
-                formatter={(v) => fmtUsd(typeof v === "number" ? v : Number(v))}
-              />
-              <Line type="monotone" dataKey="costUsd" stroke={chart.series[4]} strokeWidth={2} dot={false} name="Est. USD" />
-            </LineChart>
-          </ResponsiveContainer>
+          <DailyAmountChart
+            data={data?.overTime ?? []}
+            dataKey="costUsd"
+            name="Est. USD"
+            color={chart.series[4]}
+            chart={chart}
+            formatValue={value => fmtUsd(value)}
+          />
         </ChartFrame>
 
         <ChartFrame

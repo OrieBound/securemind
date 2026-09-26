@@ -87,6 +87,11 @@ export function ProfileSettings() {
         fetch("/api/me/profile", { credentials: "same-origin" }),
         fetch("/api/me/security", { credentials: "same-origin" }),
       ]);
+      if (pRes.status === 401) {
+        setLoadError("Your sign-in expired. Sign in again to open your profile.");
+        await authSession?.logout("Your sign-in expired. Sign in again.");
+        return;
+      }
       if (!pRes.ok) {
         setLoadError("Could not load profile.");
         return;
@@ -114,7 +119,7 @@ export function ProfileSettings() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [authSession]);
 
   useEffect(() => {
     void load();
@@ -182,6 +187,7 @@ export function ProfileSettings() {
   }
 
   async function acceptCrop(blob: Blob) {
+    const previousUrl = photoUrl;
     setPhotoBusy(true);
     setNotice(null);
     setError(null);
@@ -190,6 +196,13 @@ export function ProfileSettings() {
     previewUrlRef.current = preview;
     setPhotoUrl(preview);
     setCropFile(null);
+    const dropPreview = () => {
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
+      setPhotoUrl(previousUrl);
+    };
     try {
       const body = new FormData();
       body.append("file", blob, "avatar.jpg");
@@ -198,8 +211,9 @@ export function ProfileSettings() {
         credentials: "same-origin",
         body,
       });
-      const data = (await res.json()) as { error?: string; avatarUrl?: string };
+      const data = (await res.json().catch(() => ({}))) as { error?: string; avatarUrl?: string };
       if (!res.ok) {
+        dropPreview();
         setError(data.error ?? "Could not save that photo.");
         return;
       }
@@ -212,6 +226,7 @@ export function ProfileSettings() {
       setNotice("Photo saved. It shows here and in the header.");
       notifyAvatarChanged();
     } catch {
+      dropPreview();
       setError("Could not save that photo.");
     } finally {
       setPhotoBusy(false);

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ollamaModelCapabilities } from "./ollama";
 import { catalogSelectionStatus, withModelAvailability } from "./model-availability";
-import { buildChatPickerModels } from "@/components/app/model-catalog";
+import { buildAssignmentPickerModels, buildChatPickerModels } from "@/components/app/model-catalog";
 import { runtimeDeployment } from "@/lib/runtime-env";
 import type { CatalogModel } from "./catalog-shared";
 
@@ -22,6 +22,24 @@ describe("local model readiness", () => {
     expect(buildChatPickerModels({ ...empty, ollama: [hidden, failed] })).toEqual([]);
     expect(catalogSelectionStatus(hidden).label).toBe("Hidden");
     expect(catalogSelectionStatus(failed)).toMatchObject({ notForChat: false, label: "Check failed" });
+  });
+  it("keeps a hidden local model in the tier picker so the provider filter can list it", () => {
+    const hidden = withModelAvailability(local, { hidden: true }, "local");
+    const gemini = withModelAvailability(
+      { id: "gemini-3-flash-preview", name: "Gemini", provider: "google", modality: "text" },
+      { verification: { ok: true, checkedAt: new Date().toISOString(), scope: "key" } },
+      "key",
+    );
+    const failed = withModelAvailability(
+      { id: "gemini-failed", name: "Failed", provider: "google", modality: "text" },
+      { verification: { ok: false, checkedAt: new Date().toISOString(), scope: "key" } },
+      "key",
+    );
+    expect(buildChatPickerModels({ ...empty, ollama: [hidden], google: [gemini, failed] }).map(m => m.id)).toEqual([gemini.id]);
+    expect(buildAssignmentPickerModels({ ...empty, ollama: [hidden], google: [gemini, failed] }).map(m => m.id)).toEqual([
+      gemini.id,
+      hidden.id,
+    ]);
   });
   it("keeps an untested cloud model out of menus", () => {
     const cloud = withModelAvailability({ ...local, provider: "google" }, undefined, "key");

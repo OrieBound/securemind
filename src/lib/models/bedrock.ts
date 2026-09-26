@@ -37,7 +37,7 @@ export async function bedrockBlockReason(): Promise<string | null> {
     return null;
   }
   if (status.looksLikeFloci) {
-    return "Floci placeholder credentials are in use. Bedrock streaming requires real AWS credentials.";
+    return "Bedrock needs an AWS CLI profile on this computer. The local sign-in placeholders cannot call AWS.";
   }
   if (!status.detected) {
     return "No AWS credentials found on this host. Sign in with the AWS CLI, then pick a profile in Settings → Models.";
