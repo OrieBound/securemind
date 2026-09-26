@@ -11,6 +11,7 @@
 
 import { NextRequest } from "next/server";
 import { getIdentity } from "@/lib/identity";
+import { normalizeWorkspaceColor } from "@/lib/workspaces/color";
 import {
   deleteWorkspace,
   getWorkspaceWithFacts,
@@ -67,10 +68,16 @@ export async function PATCH(
     return Response.json({ error: "A workspace name is required" }, { status: 400 });
   }
 
+  const colorInput = optional(body.color, 32);
+  const color = colorInput ? normalizeWorkspaceColor(colorInput) : colorInput;
+  if (colorInput && !color) {
+    return Response.json({ error: "Use a hex color such as #6366f1." }, { status: 400 });
+  }
+
   const data = {
     ...(name !== undefined && { name }),
     ...(optional(body.emoji, 8) !== undefined && { emoji: optional(body.emoji, 8) ?? "🗂️" }),
-    ...(optional(body.color, 32) !== undefined && { color: optional(body.color, 32) ?? "#6366f1" }),
+    ...(color !== undefined && { color: color ?? "#6366f1" }),
     ...(body.description !== undefined && { description: optional(body.description, MAX_DESCRIPTION) }),
     ...(body.context !== undefined && { context: optional(body.context, MAX_CONTEXT) }),
     ...(body.modelOverride !== undefined && { modelOverride: optional(body.modelOverride, 128) }),

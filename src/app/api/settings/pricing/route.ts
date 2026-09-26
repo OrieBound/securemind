@@ -7,7 +7,9 @@ import {
   COST_ESTIMATE_DISCLAIMER,
   PRICING_BUNDLE_EFFECTIVE,
   PRICING_BUNDLE_VERSION,
+  UNPRICED_CLOUD_FLOOR_RATES,
 } from "@/lib/pricing";
+import { getModelCatalogCached } from "@/lib/models/catalog";
 import {
   listEditableRates,
   overridesFromEditedRows,
@@ -57,15 +59,30 @@ function parseEditedRows(raw: unknown): { rows?: EditableRateRow[]; error?: stri
   return { rows };
 }
 
+async function groqCatalogIds(): Promise<string[]> {
+  try {
+    const catalog = await getModelCatalogCached();
+    return catalog.groq.map(model => model.id);
+  } catch {
+    return [];
+  }
+}
+
 async function payload(canEdit: boolean) {
-  const overrides = await getPricingRateOverrides();
+  const [overrides, groqModelIds] = await Promise.all([
+    getPricingRateOverrides(),
+    groqCatalogIds(),
+  ]);
   return {
     disclaimer: COST_ESTIMATE_DISCLAIMER,
     pricing: {
       version: PRICING_BUNDLE_VERSION,
       effective: PRICING_BUNDLE_EFFECTIVE,
     },
-    rates: listEditableRates(overrides),
+    rates: listEditableRates(overrides, {
+      groqModelIds,
+      floor: UNPRICED_CLOUD_FLOOR_RATES,
+    }),
     overrideCount: Object.keys(overrides).length,
     canEdit,
   };
@@ -106,7 +123,7 @@ export async function PUT(req: NextRequest) {
       return Response.json({ error: parsed.error ?? "Invalid rates." }, { status: 422 });
     }
 
-    const map = overridesFromEditedRows(parsed.rows);
+    const map = overridesFromEditedRows(parsed.rows, UNPRICED_CLOUD_FLOOR_RATES);
     await savePricingRateOverrides(map, identity.userId);
     return Response.json(await payload(true));
   } catch (err) {

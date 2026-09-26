@@ -127,7 +127,7 @@ These are **risk-reduction** controls, not a security or compliance guarantee. D
 
 ## Discoveries and roadblocks (dated)
 
-**Last stamped: 2026-09-21.** First AWS sandbox apply (account `your-aws-profile` / `543828674400`). Full symptom → cause → fix notes: [`docs/deploy/hosted-sandbox-roadblocks.md`](docs/deploy/hosted-sandbox-roadblocks.md).
+**Last stamped: 2026-09-26.** First AWS sandbox apply (account `your-aws-profile` / `543828674400`). Full symptom → cause → fix notes: [`docs/deploy/hosted-sandbox-roadblocks.md`](docs/deploy/hosted-sandbox-roadblocks.md). Local Docker changes below are not on Amplify until `main` is pushed and the deploy job finishes.
 
 **Not live until GitHub Actions finishes.** First-run Owner claim was pushed to `main` on 2026-08-29 so CI can `terraform apply` (environment `aws-sandbox`) and `amplify start-job`. Until that workflow is green, the live Amplify URL is still the job-12 Sign in build against an **empty** Cognito pool. After a green apply: `terraform output -raw setup_claim_secret` (Actions logs will not print it; use the CLI or the Terraform state output). Local try: empty Floci pool (`docker compose down -v` if old demo users exist) → `npm run dev`.
 
@@ -149,6 +149,11 @@ These are **risk-reduction** controls, not a security or compliance guarantee. D
 | 2026-08-30 | “Cloud is Dynamo” applied to keys and (wrongly) to passwords | Dynamo = app data only. Vendor API keys → Secrets Manager. Login passwords stay in Cognito (hashed), not SM or Dynamo. AWS access stays on the IAM role. |
 | 2026-08-30 | Terraform apply failed on Amplify vendor-keys IAM `count` | New Secrets Manager ARN is unknown at plan. Always attach the policy. |
 | 2026-09-21 | Groq tiers shown, “Hello” waited on Ollama, Whisper still worked | A saved Groq key is not a live model list. This install’s primary was Ollama. Groq’s edge refused chat (`403` / check network settings) while Whisper uses a different endpoint. **Check key** now probes the model list. Tiers show Groq only after that list succeeds. A refused Groq call is not swapped for Ollama. Local Docker image rebuilt; not on Amplify until deploy. |
+| 2026-09-26 | After Docker Desktop restarted, only the website came back | The database, local login service, and Ollama now restart with Docker. The one-time setup jobs still run once and then exit. |
+| 2026-09-26 | Opening a vendor jumped straight to the model list | Key setup stays on the vendor row. Reviewing models is a separate step. |
+| 2026-09-26 | A saved key listed models, and chat still could not use them | **Check access** tries each listed chat model once for that key. A model that answers is added to the chat menus. If the account has no quota, or the provider cannot be reached, the check stops and leaves the rest unchecked. |
+| 2026-09-26 | Bedrock showed no AWS profiles inside Docker | The app reads the AWS CLI directory on this computer through a read-only mount. Sign in with `aws sso login`, then choose the profile. The hosted install does not use that list. Chat there uses the deployment’s IAM role. |
+| 2026-09-26 | Workspace icons were a short generic row, and color was seven swatches | Icons are one list matched to privacy, Knowledge, memory, models, evidence, cost, and where the work runs. Color can be any `#rrggbb`. |
 
 Production is a **second stack** in `your-aws-profile`, not a retarget of sandbox.
 

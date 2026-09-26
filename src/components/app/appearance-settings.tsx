@@ -20,7 +20,7 @@ const OPTIONS: {
   {
     id: "light",
     label: "Light",
-    description: "Clean white surfaces with cool grey chrome — high contrast, light hierarchy.",
+    description: "Cool gray workspace with off-white cards. Easier on the eyes than a white page.",
     Preview: LightPreview,
   },
 ];
@@ -43,15 +43,15 @@ function DarkPreview() {
 
 function LightPreview() {
   return (
-    <div className="theme-preview-light rounded-lg border border-[#D1D5DB] p-2.5 h-[5.5rem] flex flex-col gap-1.5 overflow-hidden shadow-sm">
+    <div className="theme-preview-light rounded-lg border border-[#D0D3DA] p-2.5 h-[5.5rem] flex flex-col gap-1.5 overflow-hidden shadow-sm">
       <div className="flex items-center gap-1.5">
-        <div className="size-2 rounded-full bg-[#5B3FE0]" />
-        <div className="h-1.5 w-12 rounded-full bg-[#1C1D1F]/80" />
+        <div className="size-2 rounded-full bg-[#5B4DB8]" />
+        <div className="h-1.5 w-12 rounded-full bg-[#1A1C1F]/80" />
       </div>
       <div className="theme-preview-card flex-1 rounded-md border p-1.5 space-y-1 shadow-sm">
-        <div className="h-1 w-3/4 rounded-full bg-[#1C1D1F]/45" />
-        <div className="h-1 w-1/2 rounded-full bg-[#6A6F7C]/80" />
-        <div className="mt-1 h-4 w-10 rounded bg-[#5B3FE0]" />
+        <div className="h-1 w-3/4 rounded-full bg-[#1A1C1F]/45" />
+        <div className="h-1 w-1/2 rounded-full bg-[#5C616B]/80" />
+        <div className="mt-1 h-4 w-10 rounded bg-[#5B4DB8]" />
       </div>
     </div>
   );

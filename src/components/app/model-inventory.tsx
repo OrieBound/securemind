@@ -148,14 +148,42 @@ export function ModelInventory({
     [inMenus, providerFilter],
   );
   const needsEnablement = models.some(m => m.access === "needs_enablement");
+  const visibleErrors = (errors ?? []).filter(err => {
+    if (providerFilter === "all") return true;
+    const text = err.toLowerCase();
+    const names = [providerFilter, providerLabel(providerFilter).toLowerCase()];
+    if (providerFilter === "google") names.push("gemini");
+    if (providerFilter === "xai") names.push("grok");
+    return names.some(name => text.includes(name));
+  });
 
   return (
     <div className="space-y-3">
-      <p className="text-[0.62rem] text-foreground/38 leading-relaxed">
-        {providerFilter === "all"
-          ? "Chat uses the models in this list. Untested ones are under Not in menus."
-          : `${providerLabel(providerFilter)} · ${filteredInMenus.length} in menus · ${filteredNotInMenus.length} not in menus. A successful test moves a model into chat.`}
-      </p>
+      {providerFilter === "all" ? (
+        <p className="text-sm text-foreground/60 leading-relaxed">
+          Chat uses the models in this list. Untested ones stay under Not in menus until a test succeeds.
+        </p>
+      ) : (
+        <div className="rounded-lg border border-indigo-400/30 bg-indigo-500/10 px-3.5 py-3">
+          <p className="text-sm font-semibold text-foreground/90">
+            Showing {providerLabel(providerFilter)} models
+          </p>
+          <p className="mt-1 text-[0.8rem] text-foreground/60 leading-relaxed">
+            {filteredInMenus.length} ready for chat
+            {filteredNotInMenus.length > 0 ? ` · ${filteredNotInMenus.length} still need a test` : ""}.
+            You opened this list from Connections. A successful test moves a model into chat.
+          </p>
+          {onProviderFilterChange && (
+            <button
+              type="button"
+              onClick={() => onProviderFilterChange("all")}
+              className="mt-2 text-[0.78rem] font-medium text-indigo-200 underline underline-offset-2 cursor-pointer"
+            >
+              Show every vendor
+            </button>
+          )}
+        </div>
+      )}
 
       {needsEnablement && (
         <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-[0.65rem] text-amber-100/90 leading-relaxed">
@@ -174,9 +202,9 @@ export function ModelInventory({
       {loading && models.length === 0 && (
         <p className="text-xs text-foreground/35">Loading catalog…</p>
       )}
-      {errors && errors.length > 0 && (
+      {visibleErrors.length > 0 && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 space-y-1.5">
-          {errors.map(err => (
+          {visibleErrors.map(err => (
             <p key={err} className="text-[0.65rem] text-amber-100/90 leading-relaxed">
               {err}
             </p>
@@ -207,12 +235,12 @@ export function ModelInventory({
           open={providerFilter !== "all" && filteredNotInMenus.length > 0}
           className="rounded-lg border border-border bg-card"
         >
-          <summary className="cursor-pointer px-3 py-2.5 text-[0.72rem] font-medium text-foreground/70">
-            Not in menus · {filteredNotInMenus.length}
+          <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium text-foreground/80">
+            Not in chat yet · {filteredNotInMenus.length}
           </summary>
           <div className="border-t border-border px-2 py-2">
-            <p className="px-1.5 pb-2 text-[0.62rem] text-foreground/45">
-              Test a model to add it to chat.
+            <p className="px-1.5 pb-2 text-sm text-foreground/65">
+              Check access tries each listed model once. A model that answers is added to the chat menus. Test still checks one model on its own.
             </p>
             <ModelPickerList
               models={notInMenus}

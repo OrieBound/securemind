@@ -42,8 +42,9 @@ RUN apt-get update \
 
 RUN addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 --ingroup nodejs nextjs \
-  && mkdir -p /data \
-  && chown nextjs:nodejs /data
+  && mkdir -p /data /home/nextjs \
+  && chown nextjs:nodejs /data /home/nextjs
+ENV HOME=/home/nextjs
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./

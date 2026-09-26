@@ -6,7 +6,7 @@ export type AuthSession = {
   userId: string;
   email: string | null;
   role?: "super_admin" | "admin" | "member";
-  logout: () => void | Promise<void>;
+  logout: (reason?: string) => void | Promise<void>;
 };
 
 const AuthSessionContext = createContext<AuthSession | null>(null);

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import EmojiPicker, { Theme, type EmojiClickData } from "emoji-picker-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/components/app/theme-provider";
+import { normalizeWorkspaceColor } from "@/lib/workspaces/color";
 import { cn } from "@/lib/utils";
 
 type WorkspaceFields = {
@@ -29,12 +30,24 @@ type Props = {
 
 const COLORS = ["#6366f1", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
 
-/** Curated icons for ops / security workspaces */
+/**
+ * One set, matched to what a workspace is for here: privacy, Knowledge,
+ * memory, models, evidence, cost, and where the work runs.
+ */
 const WORKSPACE_ICONS = [
-  "🗂️", "🔐", "🛡️", "🔑", "💳", "🌐", "☁️", "📡",
-  "🧠", "⚡", "🔍", "📋", "🧾", "🗄️", "⚙️", "🚨",
-  "🧪", "📊", "🔗", "🧬", "🛰️", "💡", "🎯", "🔒",
+  "🛡️", "🔐", "🔒", "🔑",
+  "📚", "📖", "📝", "💡",
+  "🧠", "🤖", "💬", "⚡",
+  "🔍", "📋", "🧭", "🧪",
+  "📊", "💰",
+  "☁️", "🌐", "🖥️", "📡", "🔗", "✨",
 ] as const;
+
+const CURATED_ICONS = new Set<string>(WORKSPACE_ICONS);
+
+function colorInputValue(value: string): string {
+  return normalizeWorkspaceColor(value) ?? "#6366f1";
+}
 
 export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
   const { theme } = useTheme();
@@ -65,8 +78,13 @@ export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = name.trim();
+    const nextColor = normalizeWorkspaceColor(color);
     if (!trimmed) {
       setError("A workspace name is required.");
+      return;
+    }
+    if (!nextColor) {
+      setError("Use a hex color such as #6366f1.");
       return;
     }
     setSaving(true);
@@ -75,7 +93,7 @@ export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
       await onSave({
         name: trimmed,
         emoji: emoji.trim() || "🗂️",
-        color,
+        color: nextColor,
         description: description.trim() || null,
         context: context.trim() || null,
       });
@@ -120,7 +138,7 @@ export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
       </div>
 
       <div>
-        <p className="text-[0.65rem] uppercase tracking-wider text-foreground/30 font-semibold mb-2">Icon</p>
+        <p className="text-xs uppercase tracking-wider text-foreground/45 font-semibold mb-2">Icon</p>
         <div className="flex flex-wrap gap-1.5">
           {WORKSPACE_ICONS.map(icon => (
             <button
@@ -146,12 +164,13 @@ export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
               type="button"
               onClick={() => setPickerOpen(o => !o)}
               aria-expanded={pickerOpen}
+              aria-pressed={!CURATED_ICONS.has(emoji)}
               aria-label="Browse more icons"
               className={cn(
-                "size-9 rounded-lg text-[0.65rem] font-medium flex items-center justify-center transition-all cursor-pointer",
-                "border bg-foreground/[0.03] hover:bg-foreground/[0.08] text-foreground/45",
-                pickerOpen
-                  ? "border-indigo-400/50 bg-indigo-500/15 text-indigo-200"
+                "h-9 px-3 rounded-lg text-sm font-medium inline-flex items-center justify-center transition-all cursor-pointer",
+                "border bg-foreground/[0.03] hover:bg-foreground/[0.08] text-foreground/70",
+                pickerOpen || !CURATED_ICONS.has(emoji)
+                  ? "border-indigo-400/50 bg-indigo-500/15 text-indigo-100"
                   : "border-foreground/8",
               )}
             >
@@ -177,22 +196,45 @@ export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
       </div>
 
       <div>
-        <p className="text-[0.65rem] uppercase tracking-wider text-foreground/30 font-semibold mb-2">Color</p>
-        <div className="flex flex-wrap gap-2">
+        <p className="text-xs uppercase tracking-wider text-foreground/45 font-semibold mb-2">Color</p>
+        <div className="flex flex-wrap items-center gap-2">
           {COLORS.map(c => (
             <button
               key={c}
               type="button"
               onClick={() => setColor(c)}
               aria-label={`Color ${c}`}
-              aria-pressed={color === c}
+              aria-pressed={normalizeWorkspaceColor(color) === c}
               className={cn(
                 "size-7 rounded-full border-2 transition-transform cursor-pointer",
-                color === c ? "border-foreground scale-110" : "border-transparent hover:scale-105",
+                normalizeWorkspaceColor(color) === c ? "border-foreground scale-110" : "border-transparent hover:scale-105",
               )}
               style={{ backgroundColor: c }}
             />
           ))}
+          <label className="inline-flex items-center gap-2 text-sm text-foreground/70 cursor-pointer">
+            <input
+              type="color"
+              value={colorInputValue(color)}
+              aria-label="Custom color"
+              onChange={e => setColor(e.target.value)}
+              className="size-8 cursor-pointer rounded-md border border-foreground/15 bg-transparent p-0.5"
+            />
+            Custom
+          </label>
+          <input
+            value={color}
+            onChange={e => setColor(e.target.value)}
+            onBlur={() => {
+              const next = normalizeWorkspaceColor(color);
+              if (next) setColor(next);
+            }}
+            maxLength={7}
+            spellCheck={false}
+            aria-label="Color hex"
+            placeholder="#6366f1"
+            className="h-8 w-24 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-2 font-mono text-sm text-foreground/80 placeholder:text-foreground/25 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
+          />
         </div>
       </div>
 

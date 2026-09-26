@@ -11,8 +11,9 @@
  */
 
 import { NextRequest } from "next/server";
-import { streamOllamaChat } from "@/lib/models/ollama";
+import { probeOllama, streamOllamaChat } from "@/lib/models/ollama";
 import { streamGroqChat } from "@/lib/models/groq";
+import { pickInstalledChatModel } from "@/lib/models/local-recommendations";
 import { routeModel } from "@/lib/models/router";
 import { db } from "@/lib/db";
 import { getIdentity } from "@/lib/identity";
@@ -118,12 +119,21 @@ export async function POST(req: NextRequest) {
 
   let fullResponse = "";
   try {
-    const stream = provider === "groq"
-      ? streamGroqChat(msgs, model)
-      : streamOllamaChat(msgs, model);
-
-    for await (const chunk of stream) {
-      fullResponse += chunk;
+    try {
+      const stream = provider === "groq"
+        ? streamGroqChat(msgs, model)
+        : streamOllamaChat(msgs, model);
+      for await (const chunk of stream) fullResponse += chunk;
+    } catch (err) {
+      if (provider !== "groq") throw err;
+      // The documented fast Groq id is not on every key (this install 404s
+      // llama-3.1-8b-instant). Local chat still has to capture user facts.
+      const probe = await probeOllama(2500);
+      const local = pickInstalledChatModel(probe.tags);
+      if (!local) throw err;
+      console.error("[summarize] Groq fast model failed; using local", local);
+      fullResponse = "";
+      for await (const chunk of streamOllamaChat(msgs, local)) fullResponse += chunk;
     }
 
     const jsonMatch = fullResponse.match(/\{[\s\S]*\}/);

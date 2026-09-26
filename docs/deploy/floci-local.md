@@ -141,7 +141,7 @@ Use a **Compose DB** so teardown is `docker compose down -v` with no impact on N
 - [ ] First visit: create Owner with your email + password — top-right shows **admin** / Owner; can edit Inference & API keys  
 - [ ] Admin invites a Member from the directory — that user is view-only on Inference keys  
 - [ ] Admin saves Groq key → Models list populates; click a text model → chat uses it  
-- [ ] (Optional) Admin saves real Bedrock IAM keys → Bedrock text catalog + chat via AWS  
+- [ ] (Optional) Admin signs in with the AWS CLI, picks that profile and a region, and allows billable calls → Bedrock text catalog + chat via AWS. Do not paste an AWS access key.  
 - [ ] Casual chat streams via Groq, Ollama, or Bedrock  
 
 - [ ] Pre-send review shows when values are detected; the reviewed text is what is sent  

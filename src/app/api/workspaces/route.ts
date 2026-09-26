@@ -8,6 +8,7 @@
 
 import { NextRequest } from "next/server";
 import { getIdentity } from "@/lib/identity";
+import { normalizeWorkspaceColor } from "@/lib/workspaces/color";
 import { createWorkspace, listWorkspaces } from "@/lib/workspaces/store";
 
 export const runtime = "nodejs";
@@ -44,10 +45,16 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "A workspace name is required" }, { status: 400 });
   }
 
+  const colorInput = clean(body.color, 32);
+  const color = colorInput === undefined ? undefined : normalizeWorkspaceColor(colorInput);
+  if (colorInput !== undefined && !color) {
+    return Response.json({ error: "Use a hex color such as #6366f1." }, { status: 400 });
+  }
+
   const workspace = await createWorkspace(userId, {
     name,
     emoji: clean(body.emoji, 8),
-    color: clean(body.color, 32),
+    color: color ?? undefined,
     description: clean(body.description, MAX_DESCRIPTION) ?? null,
     context: clean(body.context, MAX_CONTEXT) ?? null,
   });

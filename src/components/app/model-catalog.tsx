@@ -166,6 +166,21 @@ export function buildChatPickerModels(catalog: ReferenceCatalogSlice): CatalogMo
   return chatSelectableModels(buildPickerModels(catalog));
 }
 
+/**
+ * Models the tier picker can assign. Installed local chat models stay listed
+ * even when hidden from the Settings directory, so the provider filter can
+ * still offer Ollama next to vendors whose models have passed a test.
+ */
+export function isAssignablePickerModel(m: CatalogModel): boolean {
+  if (!isListedChatModel(m) || m.access === "needs_enablement") return false;
+  if (isChatSelectableModel(m)) return true;
+  return m.provider === "ollama" && m.verification === "installed";
+}
+
+export function buildAssignmentPickerModels(catalog: ReferenceCatalogSlice): CatalogModel[] {
+  return buildSettingsCatalogModels(catalog).filter(isAssignablePickerModel);
+}
+
 /** Settings keeps all listed chat candidates available to test and show again. */
 export function buildSettingsCatalogModels(catalog: ReferenceCatalogSlice): CatalogModel[] {
   return settingsCatalogModels(buildPickerModels(catalog));
@@ -303,7 +318,7 @@ const PROVIDER_ORDER: CatalogModel["provider"][] = [
   "ollama",
 ];
 
-type ProviderFilter = "all" | ModelProviderId;
+export type ProviderFilter = "all" | ModelProviderId;
 
 /**
  * Searchable, provider-filtered model list.
@@ -321,8 +336,11 @@ export function ModelPickerList({
   emptyLabel = "No models available.",
   maxHeightClass = "max-h-72",
   autoFocusSearch = false,
+  showSearch,
   showProviderFilter = true,
   alwaysShowProviderFilters = false,
+  query: controlledQuery,
+  onQueryChange,
   initialProviderFilter = "all",
   providerFilter: controlledProviderFilter,
   onProviderFilterChange,
@@ -340,12 +358,17 @@ export function ModelPickerList({
   emptyLabel?: string;
   maxHeightClass?: string;
   autoFocusSearch?: boolean;
+  /** Search box. Omit to show it whenever the list has models. */
+  showSearch?: boolean;
   /** Chip row to filter by vendor. Default on. */
   showProviderFilter?: boolean;
   /** Show vendor chips even when only one provider has models. Default off. */
   alwaysShowProviderFilters?: boolean;
   /** Prefill the vendor chip (e.g. after selecting a Bedrock credential). */
   initialProviderFilter?: ProviderFilter;
+  /** When set, the search box follows this value. */
+  query?: string;
+  onQueryChange?: (next: string) => void;
   /** When set, the vendor chips follow this value. */
   providerFilter?: ProviderFilter;
   onProviderFilterChange?: (next: ProviderFilter) => void;
@@ -356,7 +379,12 @@ export function ModelPickerList({
   blurbFor?: (model: CatalogModel) => string;
   assignedTiersFor?: (modelId: string) => string[];
 }) {
-  const [query, setQuery] = useState("");
+  const [internalQuery, setInternalQuery] = useState("");
+  const query = controlledQuery ?? internalQuery;
+  const setQuery = (next: string) => {
+    onQueryChange?.(next);
+    if (controlledQuery === undefined) setInternalQuery(next);
+  };
   const [savingVisibility, setSavingVisibility] = useState<string | null>(null);
   const [visibilityError, setVisibilityError] = useState<string | null>(null);
   const [internalProviderFilter, setInternalProviderFilter] = useState<ProviderFilter>(initialProviderFilter);
@@ -403,10 +431,8 @@ export function ModelPickerList({
   }, [models, query, providerFilter]);
 
   const total = groups.reduce((n, g) => n + g.items.length, 0);
-  const showSearch = models.length > 6;
-  const showFilter =
-    showProviderFilter &&
-    (alwaysShowProviderFilters ? availableProviders.length > 0 : availableProviders.length > 1);
+  const searchVisible = showSearch ?? models.length > 0;
+  const showFilter = showProviderFilter && availableProviders.length > 0;
 
   useEffect(() => {
     if (!selectedId) return;
@@ -420,42 +446,16 @@ export function ModelPickerList({
   return (
     <div className="space-y-2">
       {visibilityError && <p role="alert" className="text-xs text-red-400">{visibilityError}</p>}
-      {(showSearch || showFilter) && (
-        <div className="space-y-1.5">
-          {showSearch && (
-            <input
-              type="search"
-              value={query}
-              autoFocus={autoFocusSearch}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Search by name or id…"
-              aria-label="Search models by name or id"
-              className="w-full h-8 rounded-lg border border-[var(--border-strong)] bg-elevated px-2.5 text-xs text-foreground placeholder:text-foreground/35 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
-            />
-          )}
-
-          {showFilter && (
-            <div className="flex flex-wrap gap-1" role="group" aria-label="Filter by vendor">
-              <FilterChip
-                active={providerFilter === "all"}
-                onClick={() => setProviderFilter("all")}
-                label="All"
-                count={models.length}
-              />
-              {availableProviders.map(p => (
-                <FilterChip
-                  key={p}
-                  active={providerFilter === p}
-                  onClick={() => setProviderFilter(p)}
-                  label={providerLabel(p)}
-                  count={counts[p]}
-                  provider={p}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      <ModelChoiceFilters
+        models={models}
+        query={query}
+        onQueryChange={setQuery}
+        providerFilter={providerFilter}
+        onProviderFilterChange={setProviderFilter}
+        autoFocusSearch={autoFocusSearch}
+        showSearch={searchVisible}
+        showProviderFilter={showFilter}
+      />
 
       {total === 0 && (
         <p className="text-[0.65rem] text-foreground/35 px-1 py-2">
@@ -557,9 +557,13 @@ export function ModelPickerList({
                         type="button"
                         role="option"
                         aria-selected={selected}
-                        title={rowTitle}
-                        onClick={() => onSelect(m)}
-                        className="flex-1 min-w-0 text-left cursor-pointer"
+                        title={isAssignablePickerModel(m) ? rowTitle : menuStatusLabel(m)}
+                        disabled={!isAssignablePickerModel(m)}
+                        onClick={() => {
+                          if (!isAssignablePickerModel(m)) return;
+                          onSelect(m);
+                        }}
+                        className="flex-1 min-w-0 text-left cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {identity}
                       </button>
@@ -589,7 +593,7 @@ export function ModelPickerList({
                         type="button"
                         disabled={result?.pending}
                         onClick={() => onTest(m)}
-                        className="shrink-0 rounded-md border border-border bg-elevated px-2 py-1 text-[0.58rem] font-medium text-foreground/70 hover:border-[var(--border-strong)] hover:text-foreground disabled:opacity-40 cursor-pointer"
+                        className="shrink-0 rounded-md border border-border bg-elevated px-2.5 py-1.5 text-xs font-medium text-foreground/80 hover:border-[var(--border-strong)] hover:text-foreground disabled:opacity-40 cursor-pointer"
                       >
                         Test
                       </button>
@@ -636,6 +640,71 @@ export function ModelPickerList({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+export function ModelChoiceFilters({
+  models,
+  query,
+  onQueryChange,
+  providerFilter,
+  onProviderFilterChange,
+  autoFocusSearch = false,
+  showSearch = true,
+  showProviderFilter = true,
+}: {
+  models: CatalogModel[];
+  query: string;
+  onQueryChange: (next: string) => void;
+  providerFilter: ProviderFilter;
+  onProviderFilterChange: (next: ProviderFilter) => void;
+  autoFocusSearch?: boolean;
+  showSearch?: boolean;
+  showProviderFilter?: boolean;
+}) {
+  const counts = useMemo(() => {
+    const c: Record<ModelProviderId, number> = {
+      groq: 0, bedrock: 0, ollama: 0, openai: 0, anthropic: 0, google: 0, xai: 0,
+    };
+    for (const m of models) c[m.provider] += 1;
+    return c;
+  }, [models]);
+  const providers = PROVIDER_ORDER.filter(p => counts[p] > 0);
+  if ((!showSearch || models.length === 0) && (!showProviderFilter || providers.length === 0)) return null;
+  return (
+    <div className="space-y-1.5">
+      {showSearch && models.length > 0 && (
+        <input
+          type="search"
+          value={query}
+          autoFocus={autoFocusSearch}
+          onChange={e => onQueryChange(e.target.value)}
+          placeholder="Search by name or id…"
+          aria-label="Search models by name or id"
+          className="w-full h-8 rounded-lg border border-[var(--border-strong)] bg-elevated px-2.5 text-xs text-foreground placeholder:text-foreground/35 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
+        />
+      )}
+      {showProviderFilter && providers.length > 0 && (
+        <div className="flex flex-wrap gap-1" role="group" aria-label="Filter by vendor">
+          <FilterChip
+            active={providerFilter === "all"}
+            onClick={() => onProviderFilterChange("all")}
+            label="All"
+            count={models.length}
+          />
+          {providers.map(p => (
+            <FilterChip
+              key={p}
+              active={providerFilter === p}
+              onClick={() => onProviderFilterChange(p)}
+              label={providerLabel(p)}
+              count={counts[p]}
+              provider={p}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

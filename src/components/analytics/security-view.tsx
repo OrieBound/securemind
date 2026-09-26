@@ -10,8 +10,6 @@ import {
   Tooltip,
   XAxis,
   YAxis,
-  Area,
-  AreaChart,
 } from "recharts";
 import {
   AnalyticsShell,
@@ -467,7 +465,7 @@ export function SecurityAnalyticsView({
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <ChartFrame
           title="Findings over time"
-          interpretation="Stacked volume of findings by category across the selected period."
+          interpretation="Findings by category for each day. Columns start from zero, so a short range stays readable."
           rangeLabel={rangeLabel}
           workspaceLabel={workspaceLabel}
           loading={loading}
@@ -484,26 +482,23 @@ export function SecurityAnalyticsView({
           ]}
         >
           <ResponsiveContainer width="100%" height={240}>
-            <AreaChart data={data?.overTime ?? []}>
-              <CartesianGrid stroke={chart.grid} />
+            <BarChart data={data?.overTime ?? []}>
+              <CartesianGrid stroke={chart.grid} vertical={false} />
               <XAxis dataKey="date" tick={{ fill: chart.tick, fontSize: 11 }} />
               <YAxis tick={{ fill: chart.tick, fontSize: 11 }} allowDecimals={false} />
-              <Tooltip
-                contentStyle={tooltipStyle(chart)}
-              />
+              <Tooltip contentStyle={tooltipStyle(chart)} />
               <Legend />
               {overTimeKeys.map((k, i) => (
-                <Area
+                <Bar
                   key={k}
-                  type="monotone"
                   dataKey={k}
-                  stackId="1"
-                  stroke={chart.series[i % chart.series.length]}
+                  stackId="findings"
                   fill={chart.series[i % chart.series.length]}
-                  fillOpacity={0.35}
+                  name={k}
+                  maxBarSize={56}
                 />
               ))}
-            </AreaChart>
+            </BarChart>
           </ResponsiveContainer>
         </ChartFrame>
 
@@ -530,28 +525,6 @@ export function SecurityAnalyticsView({
               />
               <Tooltip contentStyle={tooltipStyle(chart)} />
               <Bar dataKey="count" fill={chart.series[0]} name="Findings" />
-            </BarChart>
-          </ResponsiveContainer>
-        </ChartFrame>
-
-        <ChartFrame
-          title="Outcomes"
-          interpretation="Blocked, redacted, safe-listed, and dismissed — only when those actions were recorded."
-          rangeLabel={rangeLabel}
-          workspaceLabel={workspaceLabel}
-          loading={loading}
-          error={error}
-          empty={!loading && (data?.byOutcome.length ?? 0) === 0}
-          tableHeaders={["Outcome", "Count"]}
-          tableRows={(data?.byOutcome ?? []).map(r => [r.outcome, r.count])}
-        >
-          <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={data?.byOutcome ?? []}>
-              <CartesianGrid stroke={chart.grid} />
-              <XAxis dataKey="outcome" tick={{ fill: chart.tick, fontSize: 11 }} />
-              <YAxis tick={{ fill: chart.tick, fontSize: 11 }} allowDecimals={false} />
-              <Tooltip contentStyle={tooltipStyle(chart)} />
-              <Bar dataKey="count" fill={chart.series[3]} name="Events" />
             </BarChart>
           </ResponsiveContainer>
         </ChartFrame>

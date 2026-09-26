@@ -6,8 +6,8 @@
 
 import { costFromRates, type TokenRate } from "./types";
 
-export const GROQ_PRICING_VERSION = "groq-list-2026-08";
-export const GROQ_PRICING_EFFECTIVE = "2026-08-01";
+export const GROQ_PRICING_VERSION = "groq-list-2026-09";
+export const GROQ_PRICING_EFFECTIVE = "2026-09-22";
 
 /**
  * USD per million tokens (input / output).
@@ -21,6 +21,8 @@ export const GROQ_MODEL_PRICING: Record<string, TokenRate> = {
   "meta-llama/llama-4-scout-17b-16e-instruct": { inputPerM: 0.11,  outputPerM: 0.34 },
   "openai/gpt-oss-20b":                        { inputPerM: 0.075, outputPerM: 0.30 },
   "llama-3.1-8b-instant":                      { inputPerM: 0.05,  outputPerM: 0.08 },
+  // Preview rate from console.groq.com/docs/models on 2026-09-22.
+  "qwen/qwen3.8-27b":                          { inputPerM: 0.80,  outputPerM: 4.00 },
 };
 
 /** Documented premium baseline for routing-savings charts — not AWS savings. */

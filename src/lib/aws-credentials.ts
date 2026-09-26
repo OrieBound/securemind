@@ -347,8 +347,8 @@ export async function getAwsCredentialStatus(
           : profile
             ? `Profile "${profile}" has no usable credentials. Try: aws sso login --profile ${profile}`
             : placeholdersPresent
-              ? "Only Floci placeholder credentials are present. Select a real profile above, or sign in with the AWS CLI."
-              : "No AWS credentials found. Sign in with the AWS CLI or select a profile.",
+              ? "No AWS profile is usable yet. Sign in on this computer with the AWS CLI, choose a profile, then press Re-check host."
+              : "No AWS credentials found. Sign in with the AWS CLI on this computer, then press Re-check host.",
     };
   }
 

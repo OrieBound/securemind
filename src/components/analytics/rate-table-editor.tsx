@@ -168,8 +168,11 @@ function RateGroup({
                     onChange={raw => onChange(i, "outputPerM", raw)}
                   />
                 </td>
-                <td className={cn("py-1", row.source === "override" ? "text-amber-200/80" : "text-muted-foreground")}>
-                  {row.source === "override" ? "Override" : "List"}
+                <td className={cn(
+                  "py-1",
+                  row.source === "override" ? "text-amber-200/80" : "text-muted-foreground",
+                )}>
+                  {row.source === "override" ? "Override" : row.source === "floor" ? "Floor" : "List"}
                 </td>
               </tr>
             ))}

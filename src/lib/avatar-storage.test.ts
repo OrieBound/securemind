@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 1, 2, 3]);
@@ -33,6 +33,20 @@ describe("avatar disk store", () => {
     expect(await readAvatar("user-b")).toBeNull();
     await removeAvatar("user-a");
     expect(await readAvatar("user-a")).toBeNull();
+  });
+
+  it("keeps on-prem photos beside the document store", async () => {
+    const prevDocs = process.env.DOCUMENT_STORAGE_PATH;
+    delete process.env.AVATAR_STORAGE_PATH;
+    process.env.DOCUMENT_STORAGE_PATH = join(dir, "uploads");
+    try {
+      const { avatarDiskRoot } = await import("@/lib/avatar-storage");
+      expect(avatarDiskRoot()).toBe(resolve(dir, "avatars"));
+    } finally {
+      process.env.AVATAR_STORAGE_PATH = dir;
+      if (prevDocs === undefined) delete process.env.DOCUMENT_STORAGE_PATH;
+      else process.env.DOCUMENT_STORAGE_PATH = prevDocs;
+    }
   });
 
   it("refuses disk writes on a hosted install without a bucket", async () => {
