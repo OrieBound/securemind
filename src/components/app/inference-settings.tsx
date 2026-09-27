@@ -718,7 +718,7 @@ export function InferenceSettings(props: Props) {
       >
         <div className="space-y-3">
           <p className="text-sm text-foreground/70 leading-relaxed">
-            Two steps for each vendor. <span className="font-medium text-foreground/85">Key setup</span> stays on this row and shows where to create the key. <span className="font-medium text-foreground/85">Review models</span> moves you to the model list further down, where a successful test makes a model available in chat.
+            Two steps for each vendor. <span className="font-medium text-foreground/85">Key setup</span> stays on this row and shows where to create the key. <span className="font-medium text-foreground/85">Review models</span> moves you to the model list further down, where Enable adds a model to chat when it answers.
           </p>
           <details className="text-[0.68rem] text-foreground/40">
             <summary className="cursor-pointer text-foreground/55">Learn more</summary>
