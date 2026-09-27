@@ -146,7 +146,14 @@ export function menuStatusLabel(m: CatalogModel): string {
     return `Not in menus · check failed${code}`;
   }
   if (m.verification === "verified" || m.verification === "installed") return "In menus";
-  return "Not in menus · test to add";
+  return "Not in menus · enable to add";
+}
+
+/** A model already in chat can be rechecked. One that is not is enabled by the same check. */
+export function catalogProbeLabel(m: CatalogModel): "Enable" | "Test" {
+  if (m.hidden || m.verification === "verified" || m.verification === "installed") return "Test";
+  if (isChatSelectableModel(m)) return "Test";
+  return "Enable";
 }
 
 export function chatSelectableModels(models: CatalogModel[]): CatalogModel[] {
@@ -581,7 +588,7 @@ export function ModelPickerList({
                         )}
                       >
                         {result.pending
-                          ? "testing…"
+                          ? (catalogProbeLabel(m) === "Enable" ? "checking…" : "testing…")
                           : result.ok
                             ? `ok ${result.latencyMs}ms`
                             : "failed"}
@@ -592,10 +599,11 @@ export function ModelPickerList({
                       <button
                         type="button"
                         disabled={result?.pending}
+                        aria-label={catalogProbeLabel(m) === "Enable" ? `Enable ${m.name} for chat` : `Test ${m.name}`}
                         onClick={() => onTest(m)}
                         className="shrink-0 rounded-md border border-border bg-elevated px-2.5 py-1.5 text-xs font-medium text-foreground/80 hover:border-[var(--border-strong)] hover:text-foreground disabled:opacity-40 cursor-pointer"
                       >
-                        Test
+                        {catalogProbeLabel(m)}
                       </button>
                     )}
                     {browse && onToggleVisibility && (

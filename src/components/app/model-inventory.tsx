@@ -27,11 +27,11 @@ const PROVIDER_ORDER: ModelProviderId[] = [
   "ollama",
 ];
 
-/** How a saved vendor key should describe its models: listed from the key, in menus after a successful test. */
+/** How a saved vendor key should describe its models: listed from the key, in menus after Enable succeeds. */
 export function vendorMenuPhrase(listed: number, inMenus: number): string | null {
   if (listed <= 0) return null;
   if (inMenus >= listed) return `${listed} in menus`;
-  if (inMenus <= 0) return `${listed} listed · test to use`;
+  if (inMenus <= 0) return `${listed} listed · enable to use`;
   return `${inMenus} of ${listed} in menus`;
 }
 
@@ -161,7 +161,7 @@ export function ModelInventory({
     <div className="space-y-3">
       {providerFilter === "all" ? (
         <p className="text-sm text-foreground/60 leading-relaxed">
-          Chat uses the models in this list. Untested ones stay under Not in menus until a test succeeds.
+          Chat uses the models in this list. The rest stay under Not in chat yet until Enable succeeds.
         </p>
       ) : (
         <div className="rounded-lg border border-indigo-400/30 bg-indigo-500/10 px-3.5 py-3">
@@ -170,8 +170,8 @@ export function ModelInventory({
           </p>
           <p className="mt-1 text-[0.8rem] text-foreground/60 leading-relaxed">
             {filteredInMenus.length} ready for chat
-            {filteredNotInMenus.length > 0 ? ` · ${filteredNotInMenus.length} still need a test` : ""}.
-            You opened this list from Connections. A successful test moves a model into chat.
+            {filteredNotInMenus.length > 0 ? ` · ${filteredNotInMenus.length} still need Enable` : ""}.
+            You opened this list from Connections. Enable adds a model to chat when it answers.
           </p>
           {onProviderFilterChange && (
             <button
@@ -240,7 +240,7 @@ export function ModelInventory({
           </summary>
           <div className="border-t border-border px-2 py-2">
             <p className="px-1.5 pb-2 text-sm text-foreground/65">
-              Check access tries each listed model once. A model that answers is added to the chat menus. Test still checks one model on its own.
+              Check access tries each listed model once. Enable tries one. A model that answers is added to the chat menus. If it cannot answer, it stays here.
             </p>
             <ModelPickerList
               models={notInMenus}

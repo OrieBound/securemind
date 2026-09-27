@@ -3,7 +3,7 @@ import { vendorMenuPhrase } from "./model-inventory";
 
 describe("vendorMenuPhrase", () => {
   it("does not call a full catalog in menus until tests succeed", () => {
-    expect(vendorMenuPhrase(18, 0)).toBe("18 listed · test to use");
+    expect(vendorMenuPhrase(18, 0)).toBe("18 listed · enable to use");
     expect(vendorMenuPhrase(18, 3)).toBe("3 of 18 in menus");
   });
 
