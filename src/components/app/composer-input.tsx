@@ -139,17 +139,16 @@ export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputP
       },
     }), [draft]);
 
-    const busy = isStreaming || isSending;
+    const replyInProgress = isStreaming || isSending;
     const canSend =
       (draft.trim().length > 0 || hasAttachments) &&
       sessionReady &&
       !sessionLoading &&
-      inferenceReady &&
-      !busy;
+      inferenceReady;
 
     return (
       <div className="flex items-end gap-2 px-4 py-3.5">
-        <label className="sr-only" htmlFor="composer">Ask about {workspaceName}</label>
+        <label className="sr-only" htmlFor="composer">Message {workspaceName}</label>
         <textarea
           id="composer"
           ref={inputRef}
@@ -167,9 +166,9 @@ export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputP
               ? "Loading conversation…"
               : !inferenceReady
                 ? "Model provider required — detection and documents still work"
-                : `Ask about ${workspaceName}…`
+                : `Message ${workspaceName}…`
           }
-          disabled={busy || sessionLoading || !sessionReady || !inferenceReady}
+          disabled={sessionLoading || !sessionReady || !inferenceReady}
           autoComplete="off"
           onFocus={() => onComposerFocus?.()}
           className="flex-1 min-h-[3.75rem] max-h-36 resize-none bg-transparent text-[length:var(--font-size-body)] leading-[var(--leading-body)] font-normal tracking-[var(--tracking-body)] text-[var(--text-body)] placeholder:text-[var(--text-subtle)] outline-none border-none"
@@ -179,16 +178,16 @@ export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputP
           onClick={onStartVoice}
           aria-label={voiceTitle ?? (voiceReady ? "Voice input" : (voiceBlockedReason ?? "Voice input unavailable"))}
           title={voiceTitle ?? (voiceReady ? "Dictate a message" : (voiceBlockedReason ?? "Voice input unavailable"))}
-          disabled={busy || !voiceReady}
+          disabled={!voiceReady}
           className={cn(
             "shrink-0 p-1.5 rounded-lg transition-colors",
             "text-foreground/25 hover:text-foreground/60 hover:bg-foreground/6",
-            (busy || !voiceReady) && "opacity-30 pointer-events-none",
+            !voiceReady && "opacity-30 pointer-events-none",
           )}
         >
           <Mic className="size-4" aria-hidden />
         </button>
-        {isStreaming ? (
+        {isStreaming && (
           <button
             type="button"
             onClick={onCancelStream}
@@ -197,23 +196,23 @@ export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputP
           >
             <Square className="size-3.5 fill-current" aria-hidden />
           </button>
-        ) : (
-          <button
-            type="submit"
-            disabled={!canSend}
-            aria-label="Send message"
-            className={cn(
-              "shrink-0 size-8 rounded-xl flex items-center justify-center transition-all",
-              canSend
-                ? "bg-primary text-primary-foreground hover:brightness-110 shadow-lg shadow-indigo-900/40"
-                : "bg-foreground/6 text-foreground/20 cursor-not-allowed",
-            )}
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="size-4">
-              <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
-            </svg>
-          </button>
         )}
+        <button
+          type="submit"
+          disabled={!canSend}
+          aria-label={replyInProgress ? "Queue message" : "Send message"}
+          title={replyInProgress ? "Send when the current reply finishes" : "Send message"}
+          className={cn(
+            "shrink-0 size-8 rounded-xl flex items-center justify-center transition-all",
+            canSend
+              ? "bg-primary text-primary-foreground hover:brightness-110 shadow-lg shadow-indigo-900/40"
+              : "bg-foreground/6 text-foreground/20 cursor-not-allowed",
+          )}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="size-4">
+            <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
+          </svg>
+        </button>
       </div>
     );
   },
