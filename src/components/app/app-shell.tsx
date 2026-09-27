@@ -3208,8 +3208,19 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   const emojiBtnRef    = useRef<HTMLButtonElement>(null);
   const [showEmoji, setShowEmoji] = useState(false);
   const [attachments, setAttachments] = useState<File[]>([]);
+  const attachmentsRef = useRef<File[]>([]);
+  const replaceAttachments = useCallback((next: File[]) => {
+    attachmentsRef.current = next;
+    setAttachments(next);
+  }, []);
   const sendInFlightRef = useRef(false);
   const [sendInFlight, setSendInFlight] = useState(false);
+  /** True from the moment a reply starts until its stream finishes. */
+  const streamActiveRef = useRef(false);
+  const outboundQueueRef = useRef<{ id: string; label: string; payload: DeliverPayload }[]>([]);
+  const [queuedSends, setQueuedSends] = useState<{ id: string; label: string }[]>([]);
+  const deliverMessageRef = useRef<(payload: DeliverPayload) => Promise<void>>(async () => {});
+  const drainOutboundRef = useRef<() => void>(() => {});
   const [composerDragOver, setComposerDragOver] = useState(false);
   const composerDragCounterRef = useRef(0);
   const [knowledgeIngestNote, setKnowledgeIngestNote] = useState<string | null>(null);
@@ -4127,6 +4138,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     const startedAt = Date.now();
     setStreamStartedAt(startedAt);
     setStreamingMessageId(asstId);
+    streamActiveRef.current = true;
     setIsStreaming(true);
 
     try {
@@ -4136,10 +4148,14 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       console.error("[messages] user save failed:", err);
       setSessionSaveError("Message could not be saved. Check your connection and try again.");
       setMessages(p => p.filter(m => m.id !== userId && m.id !== asstId));
+      streamActiveRef.current = false;
       setIsStreaming(false);
       setStreamingMessageId(null);
       setStreamStartedAt(null);
-      composerRef.current?.setValue(raw);
+      if (!composerRef.current?.getValue()?.trim()) {
+        composerRef.current?.setValue(raw);
+      }
+      drainOutboundRef.current();
       return;
     }
 
@@ -4408,12 +4424,18 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
           : m,
       ));
     } finally {
+      streamActiveRef.current = false;
       setIsStreaming(false);
       setStreamingMessageId(null);
       setStreamStartedAt(null);
       abortRef.current = null;
       streamReaderRef.current = null;
-      setTimeout(() => composerRef.current?.focus(), 30);
+      setTimeout(() => {
+        const active = document.activeElement;
+        if (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement) return;
+        composerRef.current?.focus();
+      }, 30);
+      drainOutboundRef.current();
 
       if (sessionIdRef.current) {
         const completedContent = asstContent.trim()
@@ -4432,10 +4454,41 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     postedModelOverrides, messages, lastRouteInfo, piiSensitivity, runtimeStatus,
   ]);
 
+  deliverMessageRef.current = deliverMessage;
+
+  const syncQueuedSends = useCallback(() => {
+    setQueuedSends(outboundQueueRef.current.map(item => ({ id: item.id, label: item.label })));
+  }, []);
+
+  const enqueuePayload = useCallback((payload: DeliverPayload) => {
+    const source = payload.sanitized.trim() || payload.attachedFileNames?.[0] || "Attachment";
+    const label = source.length > 80 ? `${source.slice(0, 80)}…` : source;
+    outboundQueueRef.current.push({ id: crypto.randomUUID(), label, payload });
+    syncQueuedSends();
+    if (!sendInFlightRef.current && !streamActiveRef.current) {
+      drainOutboundRef.current();
+    }
+  }, [syncQueuedSends]);
+
+  const drainOutbound = useCallback(() => {
+    if (sendInFlightRef.current || streamActiveRef.current) return;
+    const next = outboundQueueRef.current.shift();
+    syncQueuedSends();
+    if (!next) return;
+    void deliverMessageRef.current(next.payload);
+  }, [syncQueuedSends]);
+  drainOutboundRef.current = drainOutbound;
+
+  const removeQueuedSend = useCallback((id: string) => {
+    outboundQueueRef.current = outboundQueueRef.current.filter(item => item.id !== id);
+    syncQueuedSends();
+  }, [syncQueuedSends]);
+
   const handleSend = useCallback(async (textOverride?: string) => {
     const raw = (textOverride ?? composerRef.current?.getValue() ?? "").trim();
-    if (!raw && attachments.length === 0) return;
-    if (sendInFlightRef.current || isStreaming) return;
+    const pendingAttachments = attachmentsRef.current;
+    if (!raw && pendingAttachments.length === 0) return;
+    const deferDelivery = sendInFlightRef.current || streamActiveRef.current;
     if (sessionLoading || !sessionIdRef.current) {
       setSessionSaveError(previous => sessionLoading
         ? "Still loading your conversation — wait a moment and try again."
@@ -4467,9 +4520,19 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     setSessionSaveError(null);
     if (voiceState !== "idle") cancelVoice();
 
-    const pendingAttachments = [...attachments];
-    sendInFlightRef.current = true;
-    setSendInFlight(true);
+    const restoreDraft = () => {
+      if (!textOverride) composerRef.current?.setValue(raw);
+      if (pendingAttachments.length === 0) return;
+      const restored = [...pendingAttachments, ...attachmentsRef.current.filter(file => !pendingAttachments.includes(file))];
+      replaceAttachments(restored);
+    };
+    // Take the draft immediately so the next message can be typed while this one is prepared.
+    replaceAttachments([]);
+    if (!textOverride) composerRef.current?.clear();
+    if (!deferDelivery) {
+      sendInFlightRef.current = true;
+      setSendInFlight(true);
+    }
 
     try {
     // Await Knowledge ingest so scrubbed text is available for this chat turn.
@@ -4483,6 +4546,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       );
       uploadedDocs = await ingestChatAttachmentsRef.current(pendingAttachments);
       if (uploadedDocs.length === 0) {
+        restoreDraft();
         setKnowledgeIngestNote(
           "Could not add the file to Knowledge. Stay on this page, check sign-in, and try Send again.",
         );
@@ -4513,6 +4577,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     // Anything detected goes to review first. The composer keeps the raw text so
     // cancelling leaves the user exactly where they were.
     if (scrub.hadRedactions) {
+      restoreDraft();
       setPendingSend({
         raw,
         sanitized:       scrub.sanitized,
@@ -4528,9 +4593,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       return;
     }
 
-    composerRef.current?.clear();
-    setAttachments([]);
-    await deliverMessage({
+    const payload: DeliverPayload = {
       raw,
       sanitized: scrub.sanitized,
       segments: scrub.segments,
@@ -4542,14 +4605,22 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       attachmentHistoryBlock,
       attachedFileNames,
       attachmentExtracts,
-    });
+    };
+    if (deferDelivery || streamActiveRef.current) {
+      enqueuePayload(payload);
+      return;
+    }
+    await deliverMessage(payload);
     } finally {
-      sendInFlightRef.current = false;
-      setSendInFlight(false);
+      if (!deferDelivery) {
+        sendInFlightRef.current = false;
+        setSendInFlight(false);
+        drainOutboundRef.current();
+      }
     }
   }, [
-    attachments, isStreaming, sessionLoading, voiceState, cancelVoice,
-    piiSensitivity, safeTerms, deliverMessage, runtimeStatus,
+    sessionLoading, voiceState, cancelVoice,
+    piiSensitivity, safeTerms, deliverMessage, enqueuePayload, replaceAttachments, runtimeStatus,
   ]);
 
   /** User accepted the redacted form. Only the sanitized text is delivered. */
@@ -4558,9 +4629,14 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     if (!pending) return;
     setPendingSend(null);
     composerRef.current?.clear();
-    setAttachments([]);
-    await deliverMessage({ ...pending, hadRedactions: true });
-  }, [pendingSend, deliverMessage]);
+    replaceAttachments([]);
+    const payload: DeliverPayload = { ...pending, hadRedactions: true };
+    if (sendInFlightRef.current || streamActiveRef.current) {
+      enqueuePayload(payload);
+      return;
+    }
+    await deliverMessage(payload);
+  }, [pendingSend, deliverMessage, enqueuePayload, replaceAttachments]);
 
   /** User wants to rewrite. Drop the pending copy; the composer still holds the text. */
   const cancelPendingSend = useCallback(() => {
@@ -4585,6 +4661,9 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     abortRef.current?.abort();
     void streamReaderRef.current?.cancel().catch(() => {});
     streamReaderRef.current = null;
+    streamActiveRef.current = false;
+    outboundQueueRef.current = [];
+    setQueuedSends([]);
     for (const timer of pollTimersRef.current.values()) clearTimeout(timer);
     pollTimersRef.current.clear();
     pollAttemptsRef.current.clear();
@@ -5060,8 +5139,8 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     composerDragCounterRef.current = 0;
     setComposerDragOver(false);
     const files = Array.from(e.dataTransfer.files ?? []);
-    if (files.length) setAttachments(prev => [...prev, ...files]);
-  }, []);
+    if (files.length) replaceAttachments([...attachmentsRef.current, ...files]);
+  }, [replaceAttachments]);
 
   const browseDocuments = useCallback(() => {
     docFileRef.current?.click();
@@ -5153,15 +5232,15 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   const onFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     if (files.length) {
-      setAttachments(p => [...p, ...files]);
+      replaceAttachments([...attachmentsRef.current, ...files]);
       // Reset so same file can be re-selected
       e.target.value = "";
     }
-  }, []);
+  }, [replaceAttachments]);
 
   const removeAttachment = useCallback((name: string) => {
-    setAttachments(p => p.filter(f => f.name !== name));
-  }, []);
+    replaceAttachments(attachmentsRef.current.filter(f => f.name !== name));
+  }, [replaceAttachments]);
 
   // ── bookmarks ────────────────────────────────────────────────────────────────
   const toggleBookmark = useCallback((messageId: string) => {
@@ -7272,6 +7351,30 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                     >
                       ✕
                     </button>
+                  </div>
+                )}
+
+                {queuedSends.length > 0 && (
+                  <div className="mb-2 rounded-xl border border-foreground/10 bg-foreground/5 px-3 py-2 text-xs text-foreground/70">
+                    <p className="mb-1.5 text-[0.7rem] text-foreground/50">
+                      {queuedSends.length === 1
+                        ? "1 message will send when this reply finishes"
+                        : `${queuedSends.length} messages will send when each reply finishes`}
+                    </p>
+                    <ul className="space-y-1">
+                      {queuedSends.map(item => (
+                        <li key={item.id} className="flex items-center gap-2">
+                          <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeQueuedSend(item.id)}
+                            className="shrink-0 text-foreground/35 hover:text-foreground/70"
+                          >
+                            Remove
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
 
