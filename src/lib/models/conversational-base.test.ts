@@ -9,6 +9,7 @@ describe("buildConversationalBase honesty", () => {
     expect(prompt).toMatch(/\[category redacted\]/);
     expect(prompt).toMatch(/that was wrong/i);
     expect(prompt).toMatch(/test fixture is not a reason to withhold/i);
+    expect(prompt).toMatch(/Never tell the user that Knowledge/i);
     expect(prompt).not.toMatch(/unable to view or access any attachments due to privacy/i);
   });
 });

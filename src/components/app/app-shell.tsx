@@ -1078,6 +1078,22 @@ function writeCachedMessages(workspaceId: string, msgs: ChatMessage[]) {
   } catch { /* quota / private browsing */ }
 }
 
+/** One line for the Home chat card. Skips empty and failed turns. */
+function latestThreadLine(msgs: ChatMessage[]): string {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const text = msgs[i].content?.replace(/\s+/g, " ").trim();
+    if (!text || msgs[i].error) continue;
+    return text.length > 96 ? `${text.slice(0, 93).trimEnd()}…` : text;
+  }
+  return "No messages yet.";
+}
+
+function homeCountLine(n: number | null, singular: string, plural: string, empty: string): string {
+  if (n == null) return "Loading…";
+  if (n === 0) return empty;
+  return `${n} ${n === 1 ? singular : plural}`;
+}
+
 async function persistMessage(
   sessionId: string,
   role: "user" | "assistant",
@@ -1639,46 +1655,8 @@ const MessageBubble = memo(function MessageBubble({
             )}
           </div>
         )}
-        {(message.citations?.length || message.evidenceStatus === "insufficient" || (message.showGroundingBadge !== false && message.citationAudit)) && !message.error && (
+        {message.citations && message.citations.length > 0 && !message.error && (
           <div className="mt-2.5 space-y-1.5">
-            {message.evidenceStatus === "insufficient" && !message.citations?.length && (
-              <p className="text-meta flex items-center gap-1.5 text-amber-200/70">
-                <ShieldAlert className="size-3 shrink-0" aria-hidden />
-                No relevant workspace Knowledge for this question
-              </p>
-            )}
-            {message.showGroundingBadge !== false && message.citationAudit && message.citationAudit.status !== "n/a" && message.citationAudit.status !== "not_applicable" && (
-              <p
-                className={cn(
-                  "text-meta flex items-center gap-1.5",
-                  message.citationAudit.status === "grounded" || message.citationAudit.status === "declined"
-                    ? "text-emerald-300/70"
-                    : message.citationAudit.status === "partial"
-                      ? "text-amber-200/70"
-                      : "text-red-300/75",
-                )}
-              >
-                {message.citationAudit.status === "grounded" && (
-                  <><ShieldCheck className="size-3 shrink-0" aria-hidden /> Claims cited against retrieved evidence</>
-                )}
-                {message.citationAudit.status === "declined" && (
-                  <><ShieldCheck className="size-3 shrink-0" aria-hidden /> Answer declined — evidence gap acknowledged</>
-                )}
-                {message.citationAudit.status === "partial" && (
-                  <><ShieldAlert className="size-3 shrink-0" aria-hidden />
-                    Partial citations — {message.citationAudit.citedClaimCount} of {message.citationAudit.claimCount} claims cited</>
-                )}
-                {message.citationAudit.status === "uncited" && (
-                  <><ShieldAlert className="size-3 shrink-0" aria-hidden /> Retrieved evidence was available but not cited</>
-                )}
-                {message.citationAudit.status === "invalid" && (
-                  <><ShieldAlert className="size-3 shrink-0" aria-hidden />
-                    Invalid citation{message.citationAudit.invalidIndices.length === 1 ? "" : "s"}{" "}
-                    {message.citationAudit.invalidIndices.map(n => `[${n}]`).join(", ")} — not in retrieved set</>
-                )}
-              </p>
-            )}
-            {message.citations && message.citations.length > 0 && (
               <div className="rounded-xl border border-foreground/[0.07] bg-foreground/[0.02] px-3 py-2 space-y-1.5">
                 <p className="text-[0.58rem] uppercase tracking-wider text-foreground/30 font-semibold">
                   Sources
@@ -1699,7 +1677,6 @@ const MessageBubble = memo(function MessageBubble({
                   ))}
                 </ul>
               </div>
-            )}
           </div>
         )}
         {showTimestamp && message.createdAt && !message.error && (
@@ -3180,6 +3157,12 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
 
   // ── document library state ───────────────────────────────────────────────────
   const [documents,          setDocuments]          = useState<DocRecord[]>([]);
+  const [homeStatus, setHomeStatus] = useState<{
+    workspaceId: string;
+    docs: number | null;
+    facts: number | null;
+    saved: number | null;
+  } | null>(null);
   const [docLoading,         setDocLoading]         = useState(false);
   const [docUploading,       setDocUploading]       = useState(false);
   const [docError,           setDocError]           = useState<string | null>(null);
@@ -4843,6 +4826,49 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     };
   }, [viewWorkspaceId, activeNav, fetchDocuments]);
 
+  // Home counts for the workspace on screen. Does not open a chat session.
+  useEffect(() => {
+    if (activeNav !== "home" || !viewWorkspaceId) return;
+    const id = viewWorkspaceId;
+    const ac = new AbortController();
+    setHomeStatus({ workspaceId: id, docs: null, facts: null, saved: null });
+    void (async () => {
+      try {
+        const [docsRes, memRes, savedRes] = await Promise.all([
+          sessionApiFetch(`/api/documents?workspaceId=${id}`, { signal: ac.signal }),
+          fetch(`/api/memory?workspaceId=${id}`, { signal: ac.signal }),
+          fetch(`/api/bookmarks?workspaceId=${id}`, { signal: ac.signal }),
+        ]);
+        if (ac.signal.aborted) return;
+        const docs = docsRes.ok ? await docsRes.json() as DocRecord[] : [];
+        const memory = memRes.ok
+          ? await memRes.json() as {
+              workspaceFacts?: WorkspaceFactRecord[];
+              sessionSummaries?: SessionSummaryRecord[];
+              stats?: { semanticFragmentCount: number; documentFragmentCount: number } | null;
+            }
+          : {};
+        const saved = savedRes.ok
+          ? await savedRes.json() as { items?: BookmarkEntry[] }
+          : { items: [] };
+        const facts = memory.workspaceFacts ?? [];
+        const items = saved.items ?? [];
+        setDocuments(docs);
+        setWorkspaceFacts(facts);
+        setAllSessionSummaries(memory.sessionSummaries ?? []);
+        setMemoryStats(memory.stats ?? null);
+        setViewBookmarks(items);
+        setHomeStatus({ workspaceId: id, docs: docs.length, facts: facts.length, saved: items.length });
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (!ac.signal.aborted) {
+          setHomeStatus({ workspaceId: id, docs: 0, facts: 0, saved: 0 });
+        }
+      }
+    })();
+    return () => ac.abort();
+  }, [activeNav, viewWorkspaceId]);
+
   // Switch which companion's content is shown in the current section
   const selectViewWorkspace = useCallback((workspaceId: string) => {
     setViewWorkspaceId(workspaceId);
@@ -5822,7 +5848,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                             .filter(t => t.kind === "domain" && isShippedDefaultSafeTerm(t))
                             .map(t => t.value)
                             .join(", ") || "none"}
-                          . Not real people — listed in Settings → Workspace.
+                          . Not real people — listed in Settings → Detection.
                         </p>
                       </div>
                       <button
@@ -6574,7 +6600,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                     onClick={backToAdminFromInsights}
                     className="text-foreground/55 hover:text-foreground/85 truncate cursor-pointer"
                   >
-                    Admin console
+                    Admin
                   </button>
                   <ChevronRight className="size-3.5 text-foreground/25 shrink-0" aria-hidden />
                   <span className="text-[var(--warning)] truncate font-medium">{insightsSubject.label}</span>
@@ -6628,7 +6654,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                   className="w-full text-left rounded-lg px-3 py-2 text-[0.75rem] text-foreground/80 hover:bg-secondary cursor-pointer"
                   onClick={() => openSettings("profile")}
                 >
-                  My Profile
+                  Profile
                 </button>
                 {authSession && (
                   <button
@@ -7137,25 +7163,25 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                   {
                     id: "thread" as const,
                     label: "Chat",
-                    hint: "Investigate with citations from Knowledge",
+                    hint: "Continue this workspace’s thread.",
                     icon: MessageSquare,
                   },
                   {
                     id: "documents" as const,
                     label: "Knowledge",
-                    hint: "Upload and search workspace documents",
+                    hint: "Documents in this workspace.",
                     icon: FileText,
                   },
                   {
                     id: "memory" as const,
                     label: "Memory",
-                    hint: "Facts and summaries you authored",
+                    hint: "Facts you stated. Not a second copy of your files.",
                     icon: Brain,
                   },
                   {
                     id: "bookmarks" as const,
                     label: "Saved",
-                    hint: "Pinned conclusions from the thread",
+                    hint: "Lines you pinned from chat.",
                     icon: Bookmark,
                   },
                 ]).map(item => {
@@ -7163,6 +7189,20 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                   const agent =
                     workspaces.find(w => w.id === (viewWorkspaceId || activeWorkspaceId))
                     ?? workspaces[0];
+                  const counts = homeStatus?.workspaceId === agent?.id ? homeStatus : null;
+                  const sameThread = !agent || agent.id === activeWorkspaceId;
+                  const thread = sameThread
+                    ? messages
+                    : (agent ? readCachedMessages(agent.id) ?? [] : []);
+                  const status = item.id === "thread"
+                    ? (sameThread && sessionLoading && messages.length === 0
+                      ? "Loading…"
+                      : latestThreadLine(thread))
+                    : item.id === "documents"
+                      ? homeCountLine(counts?.docs ?? null, "document", "documents", "No documents yet.")
+                      : item.id === "memory"
+                        ? homeCountLine(counts?.facts ?? null, "fact", "facts", "No facts yet.")
+                        : homeCountLine(counts?.saved ?? null, "saved line", "saved lines", "Nothing saved yet.");
                   return (
                     <button
                       key={item.id}
@@ -7183,16 +7223,12 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                       <p className="mt-1 text-[0.72rem] text-muted-foreground leading-relaxed">
                         {item.hint}
                       </p>
+                      <p className="mt-2 text-[0.72rem] text-foreground/70 leading-relaxed line-clamp-2">
+                        {status}
+                      </p>
                     </button>
                   );
                 })}
-              </div>
-
-              <div className="rounded-xl border border-border bg-secondary/70 px-4 py-3">
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Insights (Models, Security, Cost) stay in the right rail. Open Settings anytime from the
-                  sidebar for appearance, providers, and workspace preferences.
-                </p>
               </div>
             </div>
           </div>
@@ -7627,7 +7663,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       {!isAnalytics && (
       <aside
         className={cn(
-          "hidden lg:flex shrink-0 flex-col bg-secondary border-l border-[var(--border-strong)] dark:bg-sidebar dark:border-transparent overflow-hidden",
+          "hidden lg:flex shrink-0 flex-col bg-sidebar border-l border-foreground/6 overflow-hidden",
           !rightSidebar.dragging && "transition-[width,opacity] duration-300 ease-in-out",
           isIntelOpen ? "opacity-100" : "opacity-0",
         )}

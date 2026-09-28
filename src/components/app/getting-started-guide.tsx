@@ -107,12 +107,13 @@ export function GettingStartedGuide({ edition: editionProp }: { edition: "local"
             <Step n={1} title="Open Settings → Models">
               <p className="text-ui text-[var(--text-muted)] leading-[var(--leading-body)]">
                 Bottom of the left sidebar: <strong className="text-foreground">Settings</strong>, then{" "}
+                <strong className="text-foreground">Setup</strong>, then{" "}
                 <strong className="text-foreground">Models</strong>. Connections is open at the top. Or use the button above — it opens that page and highlights the Bedrock box you must check.
               </p>
               <ScreenshotFrame title="SecureMind · Settings" caption="Open Models. Connections is the first section.">
                 <div className="flex gap-3 text-[0.72rem]">
                   <div className="w-28 shrink-0 space-y-1 rounded-lg bg-black/30 p-2 text-white/50">
-                    {["Overview", "Models", "My Profile"].map(label => (
+                    {["Overview", "Setup", "Models"].map(label => (
                       <div
                         key={label}
                         className={cn(

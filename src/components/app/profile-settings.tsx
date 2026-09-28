@@ -532,7 +532,7 @@ export function ProfileSettings() {
         </dl>
         {(role === "super_admin" || role === "admin") && (
           <p className="text-[0.65rem] text-foreground/35 pt-1">
-            You have elevated access. User management lives in Settings → Admin console, not here.
+            You have elevated access. User management lives in Settings → Admin, not here.
           </p>
         )}
         {workspaces.length > 0 && (
@@ -570,7 +570,7 @@ export function ProfileSettings() {
           </select>
         </label>
         <p className="text-[0.65rem] text-foreground/30">
-          Appearance also has a quick toggle. Workspace detection policy is Admin-owned under Settings → Workspace.
+          Appearance also has a quick toggle. Detection policy is Admin-owned under Settings → Detection.
         </p>
       </section>
 

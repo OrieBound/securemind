@@ -187,7 +187,7 @@ export function packageCurrentAttachments(docs: CurrentAttachmentDoc[]): string 
     `- You received these files this turn. Say so, by filename, and answer from this text.\n` +
     `- Sensitive values may already appear as [category redacted]. Skip those fields and summarize the rest. ` +
     `Do not guess the redacted values. Never say you cannot view or access the file.\n` +
-    `- If a block is empty or unreadable, say you received the file but the extract is empty.`
+    `- If a block is empty or unreadable, say so in one short clause only when they asked about that file, then answer the rest of their message. Do not ask if they are testing.`
   );
 }
 
@@ -200,22 +200,13 @@ export function insufficientEvidenceBlock(opts: {
   requiresWorkspaceEvidence: boolean;
 }): string {
   if (!opts.soughtEvidence) return "";
-  if (opts.requiresWorkspaceEvidence) {
-    return (
-      `\n\nNo sufficiently relevant workspace Knowledge was found for this turn.\n` +
-      `Say that the available workspace Knowledge does not support a confident answer, ` +
-      `name what would help (document, log, or detail), and do not invent a cause.\n` +
-      `Never say you cannot view attachments due to privacy or security.\n` +
-      `You may offer clearly labeled general guidance separately from workspace facts.\n` +
-      `Do not cite unrelated material.`
-    );
-  }
   return (
-    `\n\nNo sufficiently relevant workspace Knowledge was retrieved for this turn.\n` +
-    `You were not given document excerpts this turn. Say that plainly if they asked about a file.\n` +
+    `\n\nNo document excerpts were included for this turn.\n` +
+    `Answer the person directly. Use general knowledge when it helps.\n` +
+    `Do not say that Knowledge, a search, or the workspace failed to find something.\n` +
+    `Do not invent that a file or document stated a fact you were not given.\n` +
     `Never say you cannot view attachments due to privacy or security.\n` +
-    `You may answer with general guidance when appropriate, but do not imply it ` +
-    `came from this workspace's documents. Do not invent workspace-specific facts.`
+    `Do not cite material you were not given.`
   );
 }
 

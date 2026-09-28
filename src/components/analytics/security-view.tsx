@@ -363,7 +363,7 @@ export function SecurityAnalyticsView({
             <h3 className="text-sm font-semibold text-foreground/90">Detection policy</h3>
             <p className="text-xs text-foreground/40 mt-1 max-w-2xl leading-relaxed">
               {onSelectPolicyTier
-                ? "Click a tier column to change sensitivity going forward. Safe terms (exemptions) are edited in Settings → Workspace."
+                ? "Click a tier column to change sensitivity going forward. Safe terms (exemptions) are edited in Settings → Detection."
                 : "What each sensitivity tier includes. Insights counts findings that already happened; this table is the rule that runs on the next chat send or Knowledge ingest."}
             </p>
           </div>
