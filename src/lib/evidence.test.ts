@@ -123,7 +123,7 @@ describe("insufficientEvidenceBlock", () => {
       soughtEvidence: true,
       requiresWorkspaceEvidence: true,
     });
-    expect(block).toMatch(/does not support a confident answer/i);
+    expect(block).toMatch(/Do not say that Knowledge/i);
     expect(block).toMatch(/Do not invent/i);
     expect(block).toMatch(/cannot view attachments/i);
   });

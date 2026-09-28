@@ -54,15 +54,30 @@ export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
   "insights-context": "Usage",
   "insights-savings": "Cost",
   "insights-security":"Security",
-  profile:            "My Profile",
+  profile:            "Profile",
   appearance:         "Appearance",
-  workspace:          "Workspace",
+  /** Detection sensitivity and safe terms. The id stays `workspace` for saved links. */
+  workspace:          "Detection",
   /** Connections, catalog, and complexity tiers. Keep this id: Insights and localStorage already use it. */
   inference:          "Models",
   /** Older deep links. Renders the Models page; Connections opens at the top. */
   providers:          "Models",
-  admin:              "Admin console",
+  /** Directory, roles, and spend caps. The id stays `admin` for saved links. */
+  admin:              "Admin",
 };
+
+/** Mobile picker order. Matches the sidebar: account, reports, then setup. */
+const MOBILE_SECTION_ORDER: SettingsSection[] = [
+  "overview",
+  "profile",
+  "appearance",
+  "insights-context",
+  "insights-savings",
+  "insights-security",
+  "inference",
+  "workspace",
+  "admin",
+];
 
 const SETTINGS_NAV_GROUP_KEY = "sm_settings_nav_groups";
 
@@ -461,8 +476,12 @@ export function SettingsSidebarNav({
     section === "insights-context" ||
     section === "insights-savings" ||
     section === "insights-security";
-  const preferencesActive =
-    section === "profile" || section === "appearance" || section === "workspace";
+  const preferencesActive = section === "profile" || section === "appearance";
+  const setupActive =
+    section === "inference" ||
+    section === "providers" ||
+    section === "workspace" ||
+    (section === "admin" && !activeInsightsDashboard);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -478,15 +497,22 @@ export function SettingsSidebarNav({
         compact
       />
 
-      <NavGroup id="ai" label="AI" forceOpen={section === "inference" || section === "providers"}>
+      <NavGroup id="preferences" label="Preferences" forceOpen={preferencesActive}>
         <NavItem
-          active={section === "inference" || section === "providers"}
-          onClick={() => onSectionChange("inference")}
-          icon={Cpu}
-          label="Models"
+          active={section === "profile"}
+          onClick={() => onSectionChange("profile")}
+          icon={UserCircle}
+          label="Profile"
           indent
           compact
-          emphasize
+        />
+        <NavItem
+          active={section === "appearance"}
+          onClick={() => onSectionChange("appearance")}
+          icon={Palette}
+          label="Appearance"
+          indent
+          compact
         />
       </NavGroup>
 
@@ -517,20 +543,12 @@ export function SettingsSidebarNav({
         />
       </NavGroup>
 
-      <NavGroup id="preferences" label="Preferences" forceOpen={preferencesActive}>
+      <NavGroup id="setup" label="Setup" forceOpen={setupActive}>
         <NavItem
-          active={section === "profile"}
-          onClick={() => onSectionChange("profile")}
-          icon={UserCircle}
-          label="My Profile"
-          indent
-          compact
-        />
-        <NavItem
-          active={section === "appearance"}
-          onClick={() => onSectionChange("appearance")}
-          icon={Palette}
-          label="Appearance"
+          active={section === "inference" || section === "providers"}
+          onClick={() => onSectionChange("inference")}
+          icon={Cpu}
+          label="Models"
           indent
           compact
         />
@@ -538,24 +556,21 @@ export function SettingsSidebarNav({
           active={section === "workspace"}
           onClick={() => onSectionChange("workspace")}
           icon={SlidersHorizontal}
-          label="Workspace"
+          label="Detection"
           indent
           compact
         />
-      </NavGroup>
-
-      {isAdmin && (
-        <NavGroup id="admin" label="Admin" forceOpen={section === "admin" && !activeInsightsDashboard}>
+        {isAdmin && (
           <NavItem
             active={section === "admin" && !activeInsightsDashboard}
             onClick={() => onSectionChange("admin")}
             icon={Users}
-            label="Admin console"
+            label="Admin"
             indent
             compact
           />
-        </NavGroup>
-      )}
+        )}
+      </NavGroup>
       </nav>
       {onSignOut && (
         <div className="shrink-0 border-t border-foreground/8 px-1 pt-1.5 pb-0.5">
@@ -691,9 +706,7 @@ export function SettingsHub({
     }
   }, [section, isAdmin, onSectionChange]);
 
-  const mobileSections = (Object.keys(SETTINGS_SECTION_LABELS) as SettingsSection[]).filter(
-    id => id !== "providers" && (id !== "admin" || isAdmin),
-  );
+  const mobileSections = MOBILE_SECTION_ORDER.filter(id => id !== "admin" || isAdmin);
 
   return (
     <div className="flex flex-1 min-h-0 flex-col">
@@ -732,6 +745,11 @@ export function SettingsHub({
                 Connect a model source, then review the models it can run and how chat routes them.
               </p>
             )}
+            {section === "workspace" && (
+              <p className="text-ui text-[var(--text-muted)] mt-1.5 leading-[var(--leading-body)]">
+                Which pattern families run before a message is sent or a file is stored. Risk reduction, not a guarantee.
+              </p>
+            )}
             {section === "admin" && (
               <p className="text-ui text-[var(--text-muted)] mt-1.5 leading-[var(--leading-body)]">
                 Directory, roles, and monthly cost caps.
@@ -742,13 +760,19 @@ export function SettingsHub({
           {section === "overview" && (
             <div className="grid gap-2">
               <p className="text-[0.58rem] uppercase tracking-wider text-foreground/30 font-semibold">
-                AI
+                Preferences
               </p>
               <OverviewCard
-                title="Models"
-                description="Connections, the catalog of chat models, and complexity tiers."
+                title="Profile"
+                description="Display name, avatar preset, and account preferences."
                 accent="indigo"
-                onClick={() => onSectionChange("inference")}
+                onClick={() => onSectionChange("profile")}
+              />
+              <OverviewCard
+                title="Appearance"
+                description="Dark or light theme for the whole application."
+                accent="indigo"
+                onClick={() => onSectionChange("appearance")}
               />
               <p className="text-[0.58rem] uppercase tracking-wider text-foreground/30 font-semibold pt-3">
                 Insights
@@ -775,44 +799,33 @@ export function SettingsHub({
               />
               <OverviewCard
                 title="Security"
-                description="Detection log (Dismiss / Delete), sensitivity, and safe terms. Risk reduction, not a guarantee."
+                description="What the scanner flagged. The rules live under Setup → Detection."
                 stat={totalPiiActive > 0 ? `${totalPiiActive} active detections` : "No detections"}
                 accent="amber"
                 onClick={() => onOpenInsightsDashboard("security")}
               />
               <p className="text-[0.58rem] uppercase tracking-wider text-foreground/30 font-semibold pt-3">
-                Preferences
+                Setup
               </p>
               <OverviewCard
-                title="My Profile"
-                description="Display name, avatar preset, and account preferences."
+                title="Models"
+                description="Connections, the catalog of chat models, and complexity tiers."
                 accent="indigo"
-                onClick={() => onSectionChange("profile")}
+                onClick={() => onSectionChange("inference")}
               />
               <OverviewCard
-                title="Appearance"
-                description="Dark or light theme for the whole application."
-                accent="indigo"
-                onClick={() => onSectionChange("appearance")}
-              />
-              <OverviewCard
-                title="Workspace"
-                description="Admin-owned detection sensitivity and safe terms (instance policy)."
+                title="Detection"
+                description="Admin-owned detection sensitivity and safe terms for this install."
                 accent="indigo"
                 onClick={() => onSectionChange("workspace")}
               />
               {isAdmin && (
-                <>
-                  <p className="text-[0.58rem] uppercase tracking-wider text-foreground/30 font-semibold pt-3">
-                    Console
-                  </p>
-                  <OverviewCard
-                    title="Admin console"
-                    description="Centralized dashboards, create users, spend limits, and Operator roles."
-                    accent="amber"
-                    onClick={() => onSectionChange("admin")}
-                  />
-                </>
+                <OverviewCard
+                  title="Admin"
+                  description="Directory, roles, and monthly cost caps."
+                  accent="amber"
+                  onClick={() => onSectionChange("admin")}
+                />
               )}
             </div>
           )}
@@ -823,16 +836,6 @@ export function SettingsHub({
 
           {section === "workspace" && (
             <div className="space-y-6">
-              <div className="rounded-2xl bg-foreground/[0.04] border border-foreground/[0.07] px-5 py-4 space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm text-foreground/70">Active routing</p>
-                    <p className="text-xs text-foreground/35 mt-0.5">{lastRouteLabel || "Auto-routed via router.ts"}</p>
-                  </div>
-                  <span className="text-[0.7rem] text-indigo-400/60 bg-indigo-400/10 rounded-lg px-2.5 py-1">{activeMode}</span>
-                </div>
-              </div>
-
               <div>
                 <h3 className="text-section mb-1.5">Detection sensitivity</h3>
                 <p className="text-xs text-foreground/35 mb-3">
@@ -915,10 +918,21 @@ export function SettingsHub({
           )}
 
           {(section === "inference" || section === "providers") && (
-            <InferenceSettings
-              complexityTiers={complexityTiers}
-              onProvidersChanged={onProvidersChanged}
-            />
+            <div className="space-y-6">
+              <div className="rounded-2xl bg-foreground/[0.04] border border-foreground/[0.07] px-5 py-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm text-foreground/70">Active routing</p>
+                    <p className="text-xs text-foreground/35 mt-0.5">{lastRouteLabel || "The router chooses a complexity tier."}</p>
+                  </div>
+                  <span className="text-[0.7rem] text-indigo-400/60 bg-indigo-400/10 rounded-lg px-2.5 py-1">{activeMode}</span>
+                </div>
+              </div>
+              <InferenceSettings
+                complexityTiers={complexityTiers}
+                onProvidersChanged={onProvidersChanged}
+              />
+            </div>
           )}
 
           {section === "admin" && isAdmin && (

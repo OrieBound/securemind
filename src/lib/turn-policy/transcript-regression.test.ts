@@ -41,6 +41,14 @@ describe("transcript regression — natural conversation", () => {
     expect(d.showSourcesUi).toBe(false);
   });
 
+  it("why are you still talking about that — drop the subject, no retrieval", () => {
+    const d = decideTurn({ message: "Why are you still talking about that" });
+    expect(d.mode).toBe("social");
+    expect(d.reasonCode).toBe("drop-topic");
+    expect(d.shouldRetrieve).toBe(false);
+    expect(d.showSourcesUi).toBe(false);
+  });
+
   it("you said that, not me — correction, no retrieval", () => {
     const d = decideTurn({ message: "Right, you said that. Not me." });
     expect(d.mode).toBe("social");

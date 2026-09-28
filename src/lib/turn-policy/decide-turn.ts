@@ -18,6 +18,10 @@ const CASUAL_TALK_RE =
 const CORRECTION_RE =
   /\b(?:you\s+said\s+that|not\s+me|i\s+didn'?t\s+say|that\s+was\s+(?:you|your)|shouldn'?t\s+have\s+(?:stored|cited|treated)|wrong(?:\s+memory)?)\b/i;
 
+/** The user is leaving the previous subject. Do not retrieve or recite documents. */
+const DROP_TOPIC_RE =
+  /\b(?:why are you still|still talking about|stop talking about|that(?:'s| is) not who i am|you(?:'re| are) weird|don'?t (?:talk|bring) (?:that|it) up|leave (?:that|it) alone|move on from)\b/i;
+
 const PROVENANCE_ASK_RE =
   /\b(?:where\s+did\s+you\s+(?:learn|get)|where\s+did\s+that\s+come\s+from|how\s+do\s+you\s+know(?:\s+that)?|what'?s\s+your\s+source|where\s+did\s+you\s+hear)\b/i;
 
@@ -148,6 +152,13 @@ export function decideTurn(input: DecideTurnInput): TurnDecision {
 
   if (CASUAL_TALK_RE.test(raw) || CASUAL_TALK_RE.test(body)) {
     return base("social", "casual-talk", {
+      responseStyle: "social",
+      preferMicroTier: true,
+    });
+  }
+
+  if (DROP_TOPIC_RE.test(raw) || DROP_TOPIC_RE.test(body)) {
+    return base("social", "drop-topic", {
       responseStyle: "social",
       preferMicroTier: true,
     });
@@ -377,23 +388,23 @@ export function modePromptInstructions(decision: TurnDecision): string {
   if (decision.reasonCode === "topic-permission" || decision.reasonCode === "casual-talk") {
     return (
       `\n\nResponse mode — casual conversation:\n` +
-      `- Follow the user's topic; do not redirect to cloud operations or the workspace.\n` +
-      `- One or two natural sentences. No headings, Sources, or product pitch.\n` +
-      `- If they want friendship/chat: warm and approachable without claiming to be a human friend or exclusive companion.\n` +
-      `- Good: "Of course. What's on your mind?" / "That's completely fine—we can talk about that without connecting it to the workspace." / "I'm happy to chat with you in a relaxed way. What do you feel like talking about?"`
+      `- Follow what they want to talk about. Stay with it.\n` +
+      `- Warm and easy. A few sentences is fine. No headings, Sources, or product talk.\n` +
+      `- Do not mention files, Knowledge, their job, or earlier topics unless this message does.\n` +
+      `- Good: "Yeah, it can feel like that. What's the part that got to you?"`
     );
   }
 
   switch (decision.responseStyle) {
     case "social":
       return (
-        `\n\nResponse mode — conversational greeting or acknowledgement:\n` +
-        `- Reply like a calm colleague: one short, natural sentence (two max).\n` +
-        `- Do NOT narrate or diagnose the user's message.\n` +
-        `- Do NOT mention documents, Knowledge, sources, cloud operations, or security topics unless they asked.\n` +
-        `- Do not end with a forced "How can I help?" or workspace pitch.\n` +
+        `\n\nResponse mode — conversation:\n` +
+        `- Reply like someone who is glad to talk. Follow their subject.\n` +
+        `- Do not narrate or diagnose their message.\n` +
+        `- Do not mention documents, Knowledge, sources, or the product unless they asked.\n` +
+        `- If they are leaving the last subject, leave it. Do not recap it.\n` +
         `- No headings, lists, or citations.\n` +
-        `- Good: "Hey." / "You're welcome." / "Sounds good." / "Of course. What's on your mind?"`
+        `- Good: "Hey." / "Yeah, I hear you." / "Alright — what's on your mind?"`
       );
     case "clarify":
       if (decision.mode === "attachment") {
@@ -422,12 +433,11 @@ export function modePromptInstructions(decision: TurnDecision): string {
       if (decision.mode === "general") {
         return (
           `\n\nResponse mode — general knowledge:\n` +
-          `- Answer the user's question directly from general model knowledge.\n` +
-          `- Do not mention the workspace, cloud operations mission, or Knowledge unless asked.\n` +
-          `- Do not imply the answer came from uploaded documents or user memory.\n` +
-          `- If no Sources or attachment text were provided this turn, you were not given excerpts. Say that. Never say you cannot view attachments.\n` +
-          `- Keep it to one to three short paragraphs unless they ask for more.\n` +
-          `- Sometimes answer and stop — do not force a follow-up question.`
+          `- Answer the question directly, the way you would for anyone.\n` +
+          `- Do not mention the workspace, a search, or Knowledge unless they asked about their files.\n` +
+          `- Do not imply the answer came from uploaded documents.\n` +
+          `- Never say you cannot view attachments, and never say a search missed.\n` +
+          `- Match the length to the question. Do not force a follow-up.`
         );
       }
       if (decision.mode === "app_help") {
@@ -444,7 +454,7 @@ export function modePromptInstructions(decision: TurnDecision): string {
           `- Acknowledge the file by name. Answer from that text, including a short summary of what remains after [category redacted] placeholders.\n` +
           `- Cite attachment indices [n] when making claims from the file.\n` +
           `- Never say you cannot view or access the file. Do not mention privacy or security guidelines.\n` +
-          `- Do not invent contents. If the extract is empty, say you received the file but the extract is empty.`
+          `- Do not invent contents. If the extract is empty and they asked about the file, say that in one short clause, then respond to the rest of their message. Do not ask if they are testing.`
         );
       }
       return (

@@ -571,13 +571,13 @@ export function MemoryDashboard({
         <div className="flex items-center gap-2 mb-3">
           <User className="size-4 text-foreground/40" aria-hidden />
           <h3 className="text-[0.65rem] uppercase tracking-[0.22em] text-foreground/35 font-semibold">
-            From My Profile
+            From Profile
           </h3>
         </div>
         <div className="rounded-2xl border border-foreground/[0.07] bg-foreground/[0.03] px-4 py-4">
           {accountLines.length === 0 ? (
             <p className="text-sm text-foreground/35 leading-relaxed">
-              No display name, title, or bio yet. That lives in Settings → My Profile and is
+              No display name, title, or bio yet. That lives in Settings → Profile and is
               account-wide — it is not copied into this workspace’s learned facts.
             </p>
           ) : (
