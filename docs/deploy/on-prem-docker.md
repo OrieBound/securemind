@@ -6,9 +6,19 @@ Cloud hosting uses `infra/` (Amplify + Lambda). This path is the **on-prem produ
 
 ---
 
+## Prerequisites
+
+- [Git](https://git-scm.com/downloads)
+- [Docker](https://docs.docker.com/get-docker/) with Compose v2 (`docker compose`, with a space)
+- About 8 GB of free disk for images plus `llama3.2:3b` and `nomic-embed-text`
+- 8 GB of RAM is a practical floor for the 3B chat model
+- Free ports: `3000`, `5432`, `4566`, `11434`
+
+No AWS account and no model API key. Node.js is only for the host-dev workflow later on this page.
+
 ## Quick start
 
-Install Docker. Pull the published app image:
+Pull the published app image:
 
 ```bash
 git clone https://github.com/OrieBound/securemind.git
@@ -62,11 +72,13 @@ Internal DNS: app → `db`, `floci`, `ollama` by service name. No Node.js on the
 
 ```bash
 docker compose up -d db floci ollama ollama-init
-cp .env.onprem.example .env.local   # or merge Neon/Groq as needed
-# point DATABASE_URL at localhost:5432, AWS_ENDPOINT_URL at localhost:4566
+cp .env.example .env.local
+# point DATABASE_URL at localhost:5432 and AWS_ENDPOINT_URL at localhost:4566
 # Ollama in Compose publishes localhost:11434 — stop a host Ollama daemon if that port is taken
 npm run dev
 ```
+
+Host dev needs [Node.js 20](https://nodejs.org/) or newer and `npm install`. An optional Groq key goes in `.env.local` or in `.env.onprem` when the app itself runs in Compose.
 
 **Validate the shipping path** before release:
 
@@ -128,9 +140,14 @@ docker compose down -v    # DESTROYS Postgres, Floci, Ollama cache, uploads, enc
 
 ---
 
-## Publishing (optional)
+## Published image
 
-GitHub holds **source + Dockerfile + compose**. For pre-built app images, CI can push to GHCR on release; compose can reference `image: ghcr.io/…` instead of `build:`.
+GitHub Actions publishes the app when `main` changes the image inputs:
+
+- `ghcr.io/oriebound/securemind:latest` — the app
+- `ghcr.io/oriebound/securemind:init` — first-boot schema and local sign-in
+
+`docker-compose.pull.yml` uses those tags. `docker compose up --build` builds from this repo instead. Postgres, Floci, and Ollama stay on their own public images.
 
 ---
 
