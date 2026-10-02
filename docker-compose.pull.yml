@@ -1,0 +1,16 @@
+# Pull the published app instead of building it.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.pull.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.pull.yml up --no-build
+#
+# Forks that publish their own image:
+#   SECUREMIND_APP_IMAGE=ghcr.io/<owner>/securemind:latest
+#   SECUREMIND_INIT_IMAGE=ghcr.io/<owner>/securemind:init
+
+services:
+  init:
+    image: ${SECUREMIND_INIT_IMAGE:-ghcr.io/oriebound/securemind:init}
+    pull_policy: always
+  app:
+    image: ${SECUREMIND_APP_IMAGE:-ghcr.io/oriebound/securemind:latest}
+    pull_policy: always

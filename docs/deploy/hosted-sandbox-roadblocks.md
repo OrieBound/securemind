@@ -1,6 +1,6 @@
 # Hosted sandbox: roadblocks we hit
 
-**Last stamped: 2026-09-21.** First real AWS apply of SecureMind (account `your-aws-profile` / `543828674400`, August 2026). Sandbox stays the automatic `main` pipeline. Production is a **second stack** in `your-aws-profile`, not a retarget of this one.
+**Last stamped: 2026-09-21.** Lab notes from the first hosted apply. The maintainer `main` pipeline stays on its own sandbox stack. Another account is a second bootstrap, not a retarget of that stack.
 
 Use this as an operator log and as interview notes: each item is **symptom → cause → what we did**. Dated chronology is in [Timeline](#timeline) below; README carries a short copy of the same stamp.
 
@@ -14,7 +14,7 @@ Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first r
 
 | Date | # | Hurdle | Outcome |
 |------|---|--------|---------|
-| 2026-08 | 1 | Wrong AWS account (SSO default = management) | Locked target: `--profile your-aws-profile` |
+| 2026-08 | 1 | Wrong AWS account (SSO default = management) | Use an explicit `--profile` for the deploy account. Never use the management account. |
 | 2026-08 | 2 | App Terraform state vs laptop bootstrap state | App state remote S3; bootstrap still local |
 | 2026-08 | 3 | `.gitignore` hid `src/lib/aws-credentials.ts` | Ignore only repo-root `/aws-credentials*` |
 | 2026-08 | 4 | Prisma generate with no hosted Postgres | Dummy `DATABASE_URL` at build; DynamoDB at runtime |
@@ -61,15 +61,15 @@ The `npm warn ERESOLVE` / vite / esbuild lines in Amplify logs are **install war
 
 **Symptom:** CLI/Terraform landed in the org/management account.
 
-**Cause:** Bare `aws` uses the SSO default (management). `.env.deploy` / `AWS_PROFILE` must be `your-aws-profile` (or later `your-aws-profile` / `your-aws-profile`).
+**Cause:** Bare `aws` uses the SSO default, which may be the organization management account. `.env.deploy` / `AWS_PROFILE` must name the account that should own the app.
 
-**Fix:** Always `--profile your-aws-profile`. Never put the app in management.
+**Fix:** Always pass `--profile` for that account. Never put the app in the management account.
 
 ### 2. Terraform state: S3 vs laptop
 
 **Symptom:** Uncertainty whether destroy/apply used local state.
 
-**Cause:** The **app stack** state is remote: bucket `securemind-tfstate-543828674400-us-east-1`, key `securemind/sandbox/terraform.tfstate`, locked by an S3 lock file next to that object. **Bootstrap** (that bucket and the OIDC role) is still local state under `infra/terraform/bootstrap/`.
+**Cause:** The **app stack** state is remote: an S3 bucket named `securemind-tfstate-<account>-<region>`, key `securemind/<env>/terraform.tfstate`, locked by an S3 lock file next to that object. **Bootstrap** (that bucket and the OIDC role) is still local state under `infra/terraform/bootstrap/`.
 
 **Fix:** `infra:down` destroys the app stack via S3 state. It does not delete bootstrap. Laptop apply and Actions apply share the same app state file.
 

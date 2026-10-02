@@ -1,61 +1,55 @@
 # SecureMind IaC (Terraform)
 
-**UAT first** (account `your-aws-profile`). Fill `.env.deploy` → bootstrap in that account → `npm run infra:up`.  
-Do **not** put the app in `your-aws-profile`. Nothing hits AWS until you run bootstrap / `infra:up` / GitHub Actions deploy.
+Use an AWS account and CLI profile that you control. Keep the app out of an organization management account. Nothing is created until you run bootstrap, `npm run infra:up`, or your own GitHub Actions deploy.
 
-**Hosted data plane (ADR 0007):** DynamoDB + native vector search. **On-prem:** `docker compose up --build` (Postgres + Ollama + Floci). Neon and Aurora are **not** in the default cloud stack.
+This repo’s workflow on `main` applies the maintainer sandbox (GitHub environment `aws-sandbox`). A new install does not use that pipeline. Bootstrap your account, then apply from your laptop or from a workflow in your fork.
+
+**Hosted data plane (ADR 0007):** DynamoDB + native vector search. **On-prem:** Docker Compose (Postgres + Ollama + Floci). Neon and Aurora are not in the default cloud stack.
 
 CloudFormation YAML under [`cloudformation/`](cloudformation/) is archived. The DynamoDB vector index is still a nested CloudFormation template called from Terraform until the AWS provider ships `aws_dynamodb_vector_index`.
 
 ## Two editions
 
-| | On-prem | Cloud / UAT |
+| | On-prem | Your AWS account |
 |---|---|---|
 | Command | `docker compose up --build` | Terraform + Amplify + Lambda |
 | Database | Compose Postgres + pgvector | **DynamoDB only** (default) |
 | Auth | Floci Cognito | Real Cognito invite-only |
-| Models | Ollama + optional Groq; Bedrock via **your PC** SSO | Lambda IAM → Bedrock; else Admin BYOK |
+| Models | Ollama from Compose; other providers only after you configure them | Bedrock if that account can invoke it; otherwise a saved vendor key; otherwise no model |
 | UI build | Next in the app container | Amplify builds from GitHub; Actions calls `StartJob` |
 
 Chat/workspaces/settings still use Prisma in application code. That leftover is **not** a second cloud database we provision. A DynamoDB-only deploy of those screens is a follow-up app change.
 
-## AWS accounts
+## Your account (once)
 
-| Profile | Account | Use |
-|---|---|---|
-| `your-aws-profile` | 225989340975 | Org / SSO only — not the app |
-| `your-aws-profile` | 074681445614 | **Current hosted target** |
-| `your-aws-profile` | 543828674400 | Scratch (bootstrap already exists here from an earlier step) |
-| `your-aws-profile` | 070439405038 | Later |
-| `your-aws-profile` | <account-id> | Later |
+Sign in with a named profile so a bare `aws` command cannot land in the wrong account.
 
-Always pass `--profile your-aws-profile` (or set `AWS_PROFILE`) so a bare `aws` command does not land in management.
+```bash
+aws sso login --profile your-profile
+```
 
-## UAT: what you set up (once)
-
-You will need the **UAT** AWS account (`your-aws-profile`) and the GitHub repo. The agent cannot finish Amplify console clicks.
-
-1. **AWS SSO** into UAT: `aws sso login --profile your-aws-profile`
-2. **Bootstrap** (creates the state bucket and GitHub OIDC role **in UAT**). Terraform locks that state with an object in the same bucket.
+1. **Bootstrap** creates the state bucket and the GitHub OIDC role in that account. Terraform locks state with an object in the same bucket.
 
 ```bash
 cd infra/terraform/bootstrap
 terraform init
-terraform workspace select uat || terraform workspace new uat
-terraform apply -var="github_repository=YOUR_ORG/securemind" -var="env_name=uat" -var="github_environment=aws-uat"
+terraform workspace select your-env || terraform workspace new your-env
+terraform apply \
+  -var="github_repository=YOUR_ORG/securemind" \
+  -var="env_name=your-env" \
+  -var="github_environment=aws-your-env"
 ```
 
 Copy the `backend_hcl` output to `infra/terraform/backend.hcl` (gitignored).
 
-3. **GitHub**
-   - Environment **`aws-uat`** (required reviewers recommended)
+2. **GitHub** (on your fork or your repo, not this maintainer pipeline)
+   - Environment name matching `github_environment` above
    - Variables (not secrets): `AWS_ROLE_ARN` (bootstrap `gha_role_arn`), `TF_STATE_BUCKET`, `AWS_REGION`
-   - **No** `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
-4. **Amplify console (UAT account):** connect this GitHub repo (GitHub App). Terraform does not store a PAT. Auto-build stays off; Actions runs `StartJob`.
-5. **Bedrock console (UAT):** enable Titan embed v2 (1024-d) and the chat models you will use. IAM is not enough without model access.
-6. **`.env.deploy`:** `AWS_PROFILE=your-aws-profile` and `ENV_NAME=uat`.
-7. Laptop apply: `npm run infra:up`  
-   Or push `main` after OIDC vars exist (Actions apply + StartJob). After the first Amplify URL: `npm run infra:wire`.
+   - No `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY`
+3. **Amplify console:** connect the GitHub repo with the GitHub App. Terraform does not store a token. Auto-build stays off. Your workflow calls `StartJob` after apply.
+4. **Bedrock console:** enable Titan embed v2 (1024-d) and the chat models you will use. IAM is not enough without model access.
+5. **`.env.deploy`:** `AWS_PROFILE=your-profile` and `ENV_NAME=your-env`.
+6. Laptop apply: `npm run infra:up`. After the first Amplify URL exists, `npm run infra:wire`.
 8. **First admin (hosted):** the pool stays empty. Print the setup code once from the CLI — it is **not** shown on the Amplify page:
 
 ```bash
@@ -130,5 +124,5 @@ Change trust or the GHA deploy policy with **bootstrap apply**, not `infra:up`:
 
 ```bash
 cd infra/terraform/bootstrap
-terraform apply -var="github_repository=OrieBound/securemind" -auto-approve
+terraform apply -var="github_repository=YOUR_ORG/securemind" -auto-approve
 ```

@@ -1,168 +1,89 @@
 # SecureMind
 
-A privacy-aware AI workspace for managing models, knowledge, memory, cost, and sensitive-data risk.
+A privacy-aware AI workspace for models, Knowledge, memory, cost, and sensitive-data risk.
 
-SecureMind helps you detect and reduce sensitive-data exposure before chat and Knowledge ingest, keep workspace memory, and answer from retrieved evidence with citations. It does **not** guarantee complete PII removal, security, or regulatory compliance. You remain responsible for reviewing content, configuring controls, and meeting any obligations that apply to you.
+Detection runs before chat is sent and again when Knowledge is ingested. That reduces exposure. It does not guarantee complete removal of sensitive data, and it is not a compliance program. You review what is sent and what you store.
 
-**Stack:** Next.js 16 · TypeScript · Prisma 7 · Neon Postgres (pgvector) · Groq (primary) · Ollama (embeddings + fallback)
+Two ways to run it:
 
-> **Personal project.** Default identity is a single local user. Optional Floci Cognito login is for local auth experiments only. Do not expose this on a public host.
+- **On this computer.** Docker Compose. Postgres, local sign-in, and Ollama come up together. Chat uses the models Compose installs. Cloud model APIs and Bedrock are optional.
+- **In your AWS account.** You clone this repo and apply Terraform there. The hosted install has no model until you enable Bedrock or save a vendor key. This repository’s GitHub Actions pipeline deploys the maintainer’s sandbox. It does not deploy into your account.
 
----
+![SecureMind on-prem](docs/diagrams/securemind-onprem-diagram.jpg)
 
-## What works today
+![SecureMind on AWS](docs/diagrams/securemind-aws-diagram.jpg)
 
-- **Client-side detection** with pre-send review (detected values are replaced; the scan can miss values)
-- **Safe terms** (CIDR / domain / prefix / literal); SSN, card numbers, and secrets cannot be allowlisted
-- **Workspaces** with Chat, Knowledge, Memory, Saved
-- **Knowledge ingest** for text, PDF, code, and images (images use Groq vision when configured; extracted text is scrubbed)
-- **Chat attachments** land in the same Knowledge library as Knowledge-tab uploads
-- **Citations + citation audit** against retrieved fragments
-- **Prompt-injection fencing** on retrieved evidence
-- **Complexity-tier model routing** (Groq / Ollama; optional Bedrock)
-- **Security / Usage / Cost analytics** at `/analytics/*` (persisted sanitized telemetry; Insights rail for routing, spend, and detection)
-- **CI** on GitHub Actions (`npm ci`, Prisma generate, typecheck, tests)
+Editable sources: [`docs/diagrams/securemind-onprem.drawio`](docs/diagrams/securemind-onprem.drawio) and [`docs/diagrams/securemind-aws.drawio`](docs/diagrams/securemind-aws.drawio). Longer write-ups: [Feature Guide](docs/SecureMind-Feature-Guide.docx) and [Technical Guide](docs/SecureMind-Technical-Guide.docx).
 
-## Requirements
+## On this computer
 
-| | |
-|---|---|
-| Node.js | 20+ |
-| Postgres + pgvector | Neon free tier is the default; Compose Postgres is optional |
-| Groq API key | Recommended for chat and image text extraction |
-| Ollama | Needed for embeddings (`nomic-embed-text`) and offline chat fallback |
-
-## Setup
+Install [Docker](https://docs.docker.com/get-docker/). That is the only host requirement.
 
 ```bash
-git clone <your-fork-url> securemind
+git clone https://github.com/OrieBound/securemind.git
 cd securemind
-npm install
-cp .env.example .env.local   # set DATABASE_URL, DIRECT_URL, GROQ_API_KEY
-npx prisma migrate deploy
-psql "$DIRECT_URL" -f scripts/add-vector-embedding.sql
-ollama pull nomic-embed-text
-npm run dev
+docker compose -f docker-compose.yml -f docker-compose.pull.yml pull
+docker compose -f docker-compose.yml -f docker-compose.pull.yml up --no-build
 ```
 
-Open http://localhost:3000.
+Open http://localhost:3000 and create the first owner with an email and password you choose. There is no demo account.
 
-### On-prem (Docker only — recommended for download-and-run)
+The first start downloads `llama3.2:3b` for chat and `nomic-embed-text` for embeddings. That can take a while. Later starts reuse those models.
 
-Full stack: Postgres + Floci + Ollama + app. **No Node on the host.**
+To build the app image yourself instead of pulling it:
 
 ```bash
 docker compose up --build
 ```
 
-Sign in: create the first Owner in the app (your email + password). There is no demo account.
+Details, tear-down, and optional keys: [docs/deploy/on-prem-docker.md](docs/deploy/on-prem-docker.md).
 
-See **[docs/deploy/on-prem-docker.md](docs/deploy/on-prem-docker.md)** for tear-down, Groq BYOK, and developer vs shipping workflows.
+## In your AWS account
 
-### Optional: Floci + host dev (contributors)
-
-Full internal rundown (what Floci mirrors vs App Runner / Aurora / Bedrock):  
-**[docs/deploy/floci-local.md](docs/deploy/floci-local.md)**
+Cloud is not a container to pull. Clone this repo, create the state bucket and GitHub OIDC role in **your** account, and connect Amplify to **your** copy of the repo.
 
 ```bash
-docker compose up -d          # Postgres + Floci
-npm run floci:cognito         # writes scripts/.floci-cognito.env — merge into .env.local
+git clone https://github.com/OrieBound/securemind.git
+cd securemind
 ```
 
-For a disposable local instance, point `DATABASE_URL` / `DIRECT_URL` at Compose Postgres (see the doc), not your daily Neon.
+Follow [infra/README.md](infra/README.md). You choose the AWS profile, the environment name, and the GitHub environment variables. Do not reuse someone else’s state bucket or role.
 
-The Floci pool starts empty. Open the app and choose your Owner email and password. Public sign-up stays off after that; invite additional users from Admin.
+After the first apply the user pool is empty. The setup code from Terraform is not the password. You choose the email and password on the site.
 
-### Without Ollama
+## Models
 
-The app runs; document text still stores. Semantic retrieval and document embeddings need `nomic-embed-text`.
+| Where | What runs with nothing else configured |
+|---|---|
+| Docker Compose | Ollama (`llama3.2:3b` chat, `nomic-embed-text` embeddings) |
+| Your AWS account | No model, until Bedrock is enabled for that account or an admin saves a vendor key |
 
-### Without Groq
+Groq, Gemini, OpenAI, Anthropic, and Grok run only after a key is saved. Bedrock runs only when that account is allowed to invoke it. A saved key is not selected for you.
 
-Chat falls back to Ollama. Image Knowledge extract falls back to a filename stub (not searchable body text).
+## Contributing on the host
+
+Node.js 20 or newer.
+
+```bash
+npm install
+cp .env.example .env.local
+docker compose up -d db floci ollama ollama-init
+npx prisma migrate deploy
+npm run dev
+```
 
 ## Scripts
 
 | Command | Purpose |
 |---|---|
 | `npm run dev` | Dev server (port 3000) |
-| `npm run build` | Production build |
 | `npm test` | Vitest |
-| `npm run typecheck` | `tsc --noEmit` |
-| `npm run lint` | ESLint |
-| `npm run docker:up` / `docker:down` | Compose infra (db + floci + ollama + default model pull) for host `npm run dev` |
-| `npm run docker:onprem` / `docker:onprem:down` | Full on-prem stack (`docker compose up --build` / `down -v`) |
-| `npm run floci:cognito` | Provision local Cognito pool/client |
-| `npm run infra:up` / `infra:wire` / `infra:down` | Sandbox Terraform apply / URL wiring / destroy — see [infra/README.md](infra/README.md) |
+| `npm run docker:onprem` | Full Compose stack, built from this repo |
+| `npm run infra:up` | Apply Terraform in the account your `.env.deploy` profile points at |
 
-## Architecture (short)
+## What to expect
 
-```
-Browser                     Server                         External
-composer → scrubPII → review
-                      /api/chat → identity → memory retrieve → Groq/Ollama
-                      /api/documents → extract → scrub → chunk → embed (Ollama)
-```
-
-Evidence for answers comes from workspace Knowledge + memory fragments. Retrieved blocks are fenced as untrusted data.
-
-## Security model
-
-These are **risk-reduction** controls, not a security or compliance guarantee. Detection is pattern-based and can miss values.
-
-1. Browser scan before any network call; detected values are replaced  
-2. Pre-send review of the text that would be sent  
-3. Server scan again on document ingest  
-4. No restore path for already-replaced values  
-5. `userId` only from `getIdentity(req)` — never from the client body  
-
-## Limitations
-
-- Not multi-tenant production auth. Floci Cognito is local. Hosted Cognito Sign in works against a real pool; as of 2026-08-29 that pool was empty and first-run claim is **not** on the live Amplify build yet.
-- Regex detection misses free-form names and unusual formats.
-- Image extract needs a vision provider (Bedrock on hosted; optional Groq BYOK). OCR quality varies by screenshot.
-- Citation audit is heuristic (markers / claim units), not an LLM judge.
-- Safe terms, sensitivity, and the detection log still live in `localStorage`.
-- Do not claim Bedrock/KMS/Macie as live product features unless you have configured them.
-
-## Discoveries and roadblocks (dated)
-
-**Last stamped: 2026-09-26.** First AWS sandbox apply (account `your-aws-profile` / `543828674400`). Full symptom → cause → fix notes: [`docs/deploy/hosted-sandbox-roadblocks.md`](docs/deploy/hosted-sandbox-roadblocks.md). Local Docker changes below are not on Amplify until `main` is pushed and the deploy job finishes.
-
-**Not live until GitHub Actions finishes.** First-run Owner claim was pushed to `main` on 2026-08-29 so CI can `terraform apply` (environment `aws-sandbox`) and `amplify start-job`. Until that workflow is green, the live Amplify URL is still the job-12 Sign in build against an **empty** Cognito pool. After a green apply: `terraform output -raw setup_claim_secret` (Actions logs will not print it; use the CLI or the Terraform state output). Local try: empty Floci pool (`docker compose down -v` if old demo users exist) → `npm run dev`.
-
-| When | What we hit | What we learned |
-|------|-------------|-----------------|
-| 2026-08 (sandbox apply) | CLI landed in the org/management account | Always `--profile your-aws-profile`. Never put the app in management. |
-| 2026-08 | Uncertainty about destroy vs laptop state | App stack state is remote S3; bootstrap state is still local. |
-| 2026-08 | CI missing `@/lib/aws-credentials` | `.gitignore` `aws-credentials*` swallowed the source file. |
-| 2026-08 | Prisma generate failed in CI / Amplify | Dummy `DATABASE_URL` is generate-only. Hosted data is DynamoDB — do not provision Neon for Amplify. |
-| 2026-08 | Plan green, apply died on OIDC | GitHub `sub` (immutable repo IDs after 2026-07-15) must `StringLike` in **bootstrap** trust, not `infra:up`. |
-| 2026-08 | Amplify died ~30s after clone | `AMPLIFY_MONOREPO_APP_ROOT=.` on a single-root Next app. |
-| 2026-08 | Build output > 220 MB | Amplify WEB_COMPUTE cap. Chat is on API Gateway; remaining Next `/api/*` still traces Prisma into the UI bundle. |
-| 2026-08-29 | Jobs “SUCCEED” but site HTTP 500 empty HTML | Turbopack NFT traced the whole repo (`process.cwd()`); prune then dropped `@swc/helpers` which Next needs at runtime. CloudWatch was 0 bytes until SSR log IAM. Job 12: HTTP 200 Sign in. |
-| 2026-08-29 | `admin@example.test` / `<demo-password>!` failed on Amplify | Those users exist only on **local Floci**. Hosted pool is invite-only and was **empty**. Public Sign up UI was a lie. |
-| 2026-08-29 | First-run Owner claim designed | Hosted: CLI setup code ≠ password. On-prem: choose email+password, no code. No product demo users. **Shipped to `main` for Actions apply; not live until that job succeeds.** |
-| 2026-08-30 | Documents / Cost / Insights: “Restart the dev server after schema changes” on Amplify | Live UI still ran Prisma against Postgres. Hosted has **no** Postgres. App records (workspaces, Knowledge, Insights, memory, profile) belong on DynamoDB. Laptop code now maps them; **not live until deploy**. Retry does nothing until that build ships. |
-| 2026-08-30 | Wizard offered Neon and Aurora on cloud | Those were preference-only and never a data plane. Cloud is **DynamoDB only** (everything on one store). Local stays Postgres + pgvector. Neon/Aurora parked as a possible later **all-SQL** path — not mixed with Dynamo. |
-| 2026-08-30 | Image Knowledge seemed to need Groq | Groq is optional BYOK. Hosted image extract uses Bedrock (Nova Lite). Original files are not stored on the hosted install — only extracted, scanned text. |
-| 2026-08-30 | “Cloud is Dynamo” applied to keys and (wrongly) to passwords | Dynamo = app data only. Vendor API keys → Secrets Manager. Login passwords stay in Cognito (hashed), not SM or Dynamo. AWS access stays on the IAM role. |
-| 2026-08-30 | Terraform apply failed on Amplify vendor-keys IAM `count` | New Secrets Manager ARN is unknown at plan. Always attach the policy. |
-| 2026-09-21 | Groq tiers shown, “Hello” waited on Ollama, Whisper still worked | A saved Groq key is not a live model list. This install’s primary was Ollama. Groq’s edge refused chat (`403` / check network settings) while Whisper uses a different endpoint. **Check key** now probes the model list. Tiers show Groq only after that list succeeds. A refused Groq call is not swapped for Ollama. Local Docker image rebuilt; not on Amplify until deploy. |
-| 2026-09-26 | After Docker Desktop restarted, only the website came back | The database, local login service, and Ollama now restart with Docker. The one-time setup jobs still run once and then exit. |
-| 2026-09-26 | Opening a vendor jumped straight to the model list | Key setup stays on the vendor row. Reviewing models is a separate step. |
-| 2026-09-26 | A saved key listed models, and chat still could not use them | **Check access** tries each listed chat model once for that key. A model that answers is added to the chat menus. If the account has no quota, or the provider cannot be reached, the check stops and leaves the rest unchecked. |
-| 2026-09-26 | Bedrock showed no AWS profiles inside Docker | The app reads the AWS CLI directory on this computer through a read-only mount. Sign in with `aws sso login`, then choose the profile. The hosted install does not use that list. Chat there uses the deployment’s IAM role. |
-| 2026-09-26 | Workspace icons were a short generic row, and color was seven swatches | Icons are one list matched to privacy, Knowledge, memory, models, evidence, cost, and where the work runs. Color can be any `#rrggbb`. |
-
-Production is a **second stack** in `your-aws-profile`, not a retarget of sandbox.
-
-## Docs
-
-- [`docs/securemind-education-guide.md`](docs/securemind-education-guide.md) — full project walkthrough and dependency guide
-- [`docs/README.md`](docs/README.md) — docs index
-- [`docs/adr/0002-storage-choice.md`](docs/adr/0002-storage-choice.md) — local Postgres + pgvector; hosted AWS superseded by ADR 0007 (DynamoDB)
-- [`docs/adr/0003-local-aws-scaffolding.md`](docs/adr/0003-local-aws-scaffolding.md) — Floci + Compose
-- [`docs/adr/0004-amplify-lambda-hosting.md`](docs/adr/0004-amplify-lambda-hosting.md) — Amplify UI + API Gateway + Lambda
-- [`docs/deploy/hosted-sandbox-roadblocks.md`](docs/deploy/hosted-sandbox-roadblocks.md) — dated timeline: OIDC, Amplify 220 MB, HTTP 500, empty Cognito pool, hosted Dynamo mapping, secrets vs data, Groq tiers vs Ollama chat (2026-09-21)
-- [`AGENTS.md`](AGENTS.md) — rules for agents working in this repo
+- Detection is pattern-based and can miss values. There is no path that restores a replaced value.
+- One operator directory. It is not multi-tenant hosting.
+- Citations come from Knowledge you ingested. Conversation history is not a source.
+- The hosted data store is DynamoDB. Local Docker uses Postgres with pgvector.
