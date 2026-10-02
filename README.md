@@ -9,7 +9,11 @@ Two ways to run it:
 - **On this computer.** Docker Compose. Postgres, local sign-in, and Ollama come up together. Chat uses the models Compose installs. Cloud model APIs and Bedrock are optional.
 - **In your AWS account.** You clone this repo and apply Terraform there. The hosted install has no model until you enable Bedrock or save a vendor key. This repository’s GitHub Actions pipeline deploys the maintainer’s sandbox. It does not deploy into your account.
 
+## On-prem
+
 ![SecureMind on-prem](docs/diagrams/securemind-onprem-diagram.jpg)
+
+## AWS
 
 ![SecureMind on AWS](docs/diagrams/securemind-aws-diagram.jpg)
 
