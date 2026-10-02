@@ -108,6 +108,8 @@ jobs:
         if: vars.AWS_ROLE_ARN == '' || vars.TF_STATE_BUCKET == ''
         run: echo "Set GitHub vars AWS_ROLE_ARN, TF_STATE_BUCKET, and AWS_REGION after bootstrap. Skipping plan."
 
+  # Maintainer sandbox only. A fork deploys its own account by changing
+  # this environment name and the GitHub variables, not by reusing this job.
   deploy:
     name: Terraform apply · Amplify StartJob
     needs: test

@@ -13,6 +13,7 @@ SecureMind is a privacy-aware AI workspace for managing models, knowledge, memor
 - [ADR 0008: Terraform + GitHub Actions OIDC](./adr/0008-terraform-github-oidc.md)
 - [Deploy: Floci Local](./deploy/floci-local.md)
 - [Deploy: On-Prem Docker](./deploy/on-prem-docker.md)
-- [Deploy: Hosted sandbox roadblocks](./deploy/hosted-sandbox-roadblocks.md) — dated timeline (last stamped 2026-09-21; hit 19 = Groq tiers vs Ollama chat vs Whisper)
-- [Architecture diagram (draw.io)](./architecture/securemind-current.drawio)
+- [Diagram: on-prem](./diagrams/securemind-onprem-diagram.jpg) · [source](./diagrams/securemind-onprem.drawio)
+- [Diagram: AWS](./diagrams/securemind-aws-diagram.jpg) · [source](./diagrams/securemind-aws.drawio)
+- [Deploy: Hosted sandbox roadblocks](./deploy/hosted-sandbox-roadblocks.md) — lab notes, not the install guide
 - [Test files (synthetic Knowledge corpus)](./test-files/README.md)

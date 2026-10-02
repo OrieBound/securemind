@@ -8,9 +8,18 @@ Cloud hosting uses `infra/` (Amplify + Lambda). This path is the **on-prem produ
 
 ## Quick start
 
+Install Docker. Pull the published app image:
+
 ```bash
-git clone <repo-url> securemind
+git clone https://github.com/OrieBound/securemind.git
 cd securemind
+docker compose -f docker-compose.yml -f docker-compose.pull.yml pull
+docker compose -f docker-compose.yml -f docker-compose.pull.yml up --no-build
+```
+
+Or build from this repo:
+
+```bash
 docker compose up --build
 ```
 
@@ -27,7 +36,7 @@ Optional Groq (faster chat / vision):
 ```bash
 cp .env.onprem.example .env.onprem
 # edit GROQ_API_KEY=…
-docker compose up --build
+docker compose -f docker-compose.yml -f docker-compose.pull.yml up --no-build
 ```
 
 ---
@@ -36,7 +45,7 @@ docker compose up --build
 
 | Service | Image | Port |
 |---------|-------|------|
-| **app** | Built from repo `Dockerfile` | 3000 |
+| **app** | `ghcr.io/oriebound/securemind` or built from the repo `Dockerfile` | 3000 |
 | **db** | `pgvector/pgvector:pg16` | 5432 |
 | **floci** | `floci/floci:latest` | 4566 |
 | **ollama** | `ollama/ollama:latest` | 11434 |

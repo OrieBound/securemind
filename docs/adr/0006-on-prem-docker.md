@@ -25,7 +25,7 @@ Ship an **on-prem profile** as Docker Compose in the repo root:
 
 **User command:** `docker compose up --build` → http://localhost:3000
 
-**GitHub ships:** source, `Dockerfile`, `docker-compose.yml` — not pre-built images (optional GHCR later).
+**GitHub ships:** source, `Dockerfile`, and Compose. The app image is also published to GHCR (`ghcr.io/<owner>/securemind` and `:init`). `docker-compose.pull.yml` uses those images. `docker compose up --build` still builds from source.
 
 **Developer workflow:** `docker compose up -d db floci ollama ollama-init` + `npm run dev` on the host for fast iteration; full compose before release.
 
@@ -40,6 +40,6 @@ Greenfield Compose databases use **`prisma db push`** in init (not `migrate depl
 
 ### Revisit when
 
-- Pre-built GHCR images and a `docker-compose.release.yml` that uses `image:` instead of `build:`.
+- A one-file Compose release that does not merge over the build file.
 - Migration chain fixed for greenfield `migrate deploy`.
 - Owner/Operator/Member Cognito groups replace Admin/Member in Floci bootstrap.
