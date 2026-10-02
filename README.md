@@ -4,30 +4,36 @@ A privacy-aware AI workspace for models, Knowledge, memory, cost, and sensitive-
 
 Detection runs before chat is sent and again when Knowledge is ingested. That reduces exposure. It does not guarantee complete removal of sensitive data, and it is not a compliance program. You review what is sent and what you store.
 
-Two ways to run it:
+## Where to read
 
-- **On this computer.** Docker Compose. Postgres, local sign-in, and Ollama come up together. Chat uses the models Compose installs. Cloud model APIs and Bedrock are optional.
-- **In your AWS account.** You clone this repo and apply Terraform there. The hosted install has no model until you enable Bedrock or save a vendor key. This repository’s GitHub Actions pipeline deploys the maintainer’s sandbox. It does not deploy into your account.
+| You want | Start |
+|---|---|
+| On this computer | [On-prem](#on-prem) below, then [docs/deploy/on-prem-docker.md](docs/deploy/on-prem-docker.md) |
+| Your own AWS account | [AWS](#aws) below, then [infra/README.md](infra/README.md) |
+| Diagram sources | [on-prem](docs/diagrams/securemind-onprem.drawio) · [AWS](docs/diagrams/securemind-aws.drawio) |
+| Longer write-ups | [Feature Guide](docs/SecureMind-Feature-Guide.docx) · [Technical Guide](docs/SecureMind-Technical-Guide.docx) |
+
+## Models
+
+| Where | What runs with nothing else configured |
+|---|---|
+| Docker Compose | Ollama (`llama3.2:3b` chat, `nomic-embed-text` embeddings) |
+| Your AWS account | No model, until Bedrock is enabled for that account or an admin saves a vendor key |
+
+Groq, Gemini, OpenAI, Anthropic, and Grok run only after a key is saved. Bedrock runs only when that account is allowed to invoke it. A saved key is not selected for you.
+
+## What to expect
+
+- Detection is pattern-based and can miss values. There is no path that restores a replaced value.
+- One operator directory. It is not multi-tenant hosting.
+- Citations come from Knowledge you ingested. Conversation history is not a source.
+- The hosted data store is DynamoDB. Local Docker uses Postgres with pgvector.
 
 ## On-prem
 
 <img src="docs/diagrams/securemind-onprem-diagram.jpg" alt="SecureMind on-prem" width="820">
 
-## AWS
-
-<img src="docs/diagrams/securemind-aws-diagram.jpg" alt="SecureMind on AWS" width="820">
-
-Editable sources: [`docs/diagrams/securemind-onprem.drawio`](docs/diagrams/securemind-onprem.drawio) and [`docs/diagrams/securemind-aws.drawio`](docs/diagrams/securemind-aws.drawio). Longer write-ups: [Feature Guide](docs/SecureMind-Feature-Guide.docx) and [Technical Guide](docs/SecureMind-Technical-Guide.docx).
-
-## Where to read
-
-| You want | Start |
-|---|---|
-| On this computer | The checklist below, then [docs/deploy/on-prem-docker.md](docs/deploy/on-prem-docker.md) |
-| Your own AWS account | The checklist below, then [infra/README.md](infra/README.md) |
-| How the pieces connect | The diagrams above |
-
-## On this computer
+Docker Compose on this computer. Postgres, local sign-in, and Ollama come up together. Chat uses the models Compose installs. Cloud model APIs and Bedrock are optional.
 
 ### Prerequisites
 
@@ -67,7 +73,9 @@ docker compose down -v    # deletes the database, uploads, and models
 
 Ports, backups, and optional keys: [docs/deploy/on-prem-docker.md](docs/deploy/on-prem-docker.md).
 
-## In your AWS account
+## AWS
+
+<img src="docs/diagrams/securemind-aws-diagram.jpg" alt="SecureMind on AWS" width="820">
 
 You clone this repo and apply Terraform in an account you administer. The hosted install has no model until that account can call Bedrock, or you save a vendor key. This repository’s GitHub Actions pipeline deploys the maintainer sandbox. Your install uses your own state bucket, role, and GitHub environment.
 
@@ -99,15 +107,6 @@ Then follow [infra/README.md](infra/README.md): bootstrap the state bucket and d
 
 The user pool starts empty. The setup code from Terraform is not the password. You choose the email and password on the site.
 
-## Models
-
-| Where | What runs with nothing else configured |
-|---|---|
-| Docker Compose | Ollama (`llama3.2:3b` chat, `nomic-embed-text` embeddings) |
-| Your AWS account | No model, until Bedrock is enabled for that account or an admin saves a vendor key |
-
-Groq, Gemini, OpenAI, Anthropic, and Grok run only after a key is saved. Bedrock runs only when that account is allowed to invoke it. A saved key is not selected for you.
-
 ## Contributing on the host
 
 Node.js 20 or newer.
@@ -128,10 +127,3 @@ npm run dev
 | `npm test` | Vitest |
 | `npm run docker:onprem` | Full Compose stack, built from this repo |
 | `npm run infra:up` | Apply Terraform in the account your `.env.deploy` profile points at |
-
-## What to expect
-
-- Detection is pattern-based and can miss values. There is no path that restores a replaced value.
-- One operator directory. It is not multi-tenant hosting.
-- Citations come from Knowledge you ingested. Conversation history is not a source.
-- The hosted data store is DynamoDB. Local Docker uses Postgres with pgvector.
