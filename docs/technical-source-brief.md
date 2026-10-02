@@ -177,7 +177,7 @@ Hosted path:
 
 Browser → Amplify (WEB_COMPUTE) for the UI, sign-in, workspaces, settings, and non-chat APIs. Chat stream and warm go to API Gateway REST stage `prod`, then two Lambdas (arm64; chat is the long streaming function). Amplify and the chat Lambda both use the DynamoDB fragments table (app records on Amplify; vector search on the chat path). Cognito is the user pool. Secrets Manager holds the table name, vendor keys, and an optional bootstrap Groq key. Profile photos are a private S3 bucket. CloudWatch holds Lambda logs (14 days) and a Bedrock metrics dashboard. Prompt and response content logging is not turned on by that dashboard.
 
-CI on `main`: GitHub Actions runs tests, assumes an OIDC role, Terraform-applies the sandbox (when the role and state bucket are configured), and starts an Amplify release job. State is an S3 bucket with a DynamoDB lock table. Pull requests plan only.
+CI on `main`: GitHub Actions runs tests, assumes an OIDC role, Terraform-applies the sandbox (when the role and state bucket are configured), and starts an Amplify release job. State is an S3 bucket. The lock is an object in that same bucket. Pull requests plan only.
 
 There is no custom VPC. These are regional managed services.
 

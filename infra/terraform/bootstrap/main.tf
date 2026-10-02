@@ -23,7 +23,6 @@ locals {
   repo_owner   = split("/", var.github_repository)[0]
   repo_name    = split("/", var.github_repository)[1]
   state_bucket = "securemind-tfstate-${data.aws_caller_identity.current.account_id}-${data.aws_region.current.name}"
-  lock_table   = "securemind-tflock-${var.env_name}"
   deploy_role  = "securemind-gha-${var.env_name}"
 }
 
@@ -58,20 +57,6 @@ resource "aws_s3_bucket_public_access_block" "state" {
   block_public_policy     = true
   ignore_public_acls      = true
   restrict_public_buckets = true
-}
-
-resource "aws_dynamodb_table" "lock" {
-  name         = local.lock_table
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "LockID"
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-  tags = {
-    Project = "SecureMind"
-    Env     = var.env_name
-  }
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
@@ -199,10 +184,6 @@ output "state_bucket" {
   value = aws_s3_bucket.state.bucket
 }
 
-output "lock_table" {
-  value = aws_dynamodb_table.lock.name
-}
-
 output "gha_role_arn" {
   value = aws_iam_role.gha.arn
 }
@@ -213,10 +194,10 @@ output "oidc_provider_arn" {
 
 output "backend_hcl" {
   value = <<-EOT
-    bucket         = "${aws_s3_bucket.state.bucket}"
-    key            = "securemind/${var.env_name}/terraform.tfstate"
-    region         = "${data.aws_region.current.name}"
-    dynamodb_table = "${aws_dynamodb_table.lock.name}"
-    encrypt        = true
+    bucket       = "${aws_s3_bucket.state.bucket}"
+    key          = "securemind/${var.env_name}/terraform.tfstate"
+    region       = "${data.aws_region.current.name}"
+    use_lockfile = true
+    encrypt      = true
   EOT
 }
