@@ -90,11 +90,11 @@ jobs:
         if: vars.TF_STATE_BUCKET != ''
         run: |
           cat > infra/terraform/backend.hcl <<EOF
-          bucket         = "${{ vars.TF_STATE_BUCKET }}"
-          key            = "securemind/sandbox/terraform.tfstate"
-          region         = "${{ env.AWS_REGION }}"
-          dynamodb_table = "${{ vars.TF_LOCK_TABLE }}"
-          encrypt        = true
+          bucket       = "${{ vars.TF_STATE_BUCKET }}"
+          key          = "securemind/sandbox/terraform.tfstate"
+          region       = "${{ env.AWS_REGION }}"
+          use_lockfile = true
+          encrypt      = true
           EOF
 
       - name: Terraform init / plan
@@ -106,7 +106,7 @@ jobs:
 
       - name: Skip plan (OIDC not configured)
         if: vars.AWS_ROLE_ARN == '' || vars.TF_STATE_BUCKET == ''
-        run: echo "Set GitHub vars AWS_ROLE_ARN, TF_STATE_BUCKET, TF_LOCK_TABLE after bootstrap. Skipping plan."
+        run: echo "Set GitHub vars AWS_ROLE_ARN, TF_STATE_BUCKET, and AWS_REGION after bootstrap. Skipping plan."
 
   deploy:
     name: Terraform apply · Amplify StartJob
@@ -157,11 +157,11 @@ jobs:
         if: vars.TF_STATE_BUCKET != ''
         run: |
           cat > infra/terraform/backend.hcl <<EOF
-          bucket         = "${{ vars.TF_STATE_BUCKET }}"
-          key            = "securemind/sandbox/terraform.tfstate"
-          region         = "${{ env.AWS_REGION }}"
-          dynamodb_table = "${{ vars.TF_LOCK_TABLE }}"
-          encrypt        = true
+          bucket       = "${{ vars.TF_STATE_BUCKET }}"
+          key          = "securemind/sandbox/terraform.tfstate"
+          region       = "${{ env.AWS_REGION }}"
+          use_lockfile = true
+          encrypt      = true
           EOF
 
       - name: Terraform apply

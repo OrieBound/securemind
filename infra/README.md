@@ -36,7 +36,7 @@ Always pass `--profile your-aws-profile` (or set `AWS_PROFILE`) so a bare `aws` 
 You will need the **UAT** AWS account (`your-aws-profile`) and the GitHub repo. The agent cannot finish Amplify console clicks.
 
 1. **AWS SSO** into UAT: `aws sso login --profile your-aws-profile`
-2. **Bootstrap** (creates state bucket, lock table, GitHub OIDC role **in UAT**):
+2. **Bootstrap** (creates the state bucket and GitHub OIDC role **in UAT**). Terraform locks that state with an object in the same bucket.
 
 ```bash
 cd infra/terraform/bootstrap
@@ -49,7 +49,7 @@ Copy the `backend_hcl` output to `infra/terraform/backend.hcl` (gitignored).
 
 3. **GitHub**
    - Environment **`aws-uat`** (required reviewers recommended)
-   - Variables (not secrets): `AWS_ROLE_ARN` (bootstrap `gha_role_arn`), `TF_STATE_BUCKET`, `TF_LOCK_TABLE`, `AWS_REGION`
+   - Variables (not secrets): `AWS_ROLE_ARN` (bootstrap `gha_role_arn`), `TF_STATE_BUCKET`, `AWS_REGION`
    - **No** `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
 4. **Amplify console (UAT account):** connect this GitHub repo (GitHub App). Terraform does not store a PAT. Auto-build stays off; Actions runs `StartJob`.
 5. **Bedrock console (UAT):** enable Titan embed v2 (1024-d) and the chat models you will use. IAM is not enough without model access.
@@ -76,7 +76,7 @@ Open the site, enter that code plus the email and password **you** choose. The s
 
 | Module | Creates |
 |---|---|
-| `bootstrap/` | S3 state, DynamoDB lock, GitHub OIDC role |
+| `bootstrap/` | S3 state and lock file, GitHub OIDC role |
 | `modules/bedrock_lab` | Bedrock IAM managed policy + optional dashboard |
 | `modules/auth_cognito` | Invite-only user pool, app client, Owner/Admin/Member |
 | `modules/data_dynamodb` | Fragments table + vector index (1024, immutable) |

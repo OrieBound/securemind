@@ -69,7 +69,7 @@ The `npm warn ERESOLVE` / vite / esbuild lines in Amplify logs are **install war
 
 **Symptom:** Uncertainty whether destroy/apply used local state.
 
-**Cause:** The **app stack** state is remote: bucket `securemind-tfstate-123456789012-us-east-1`, key `securemind/sandbox/terraform.tfstate`, lock table `securemind-tflock-sandbox`. **Bootstrap** (that bucket, lock, OIDC role) is still local state under `infra/terraform/bootstrap/`.
+**Cause:** The **app stack** state is remote: bucket `securemind-tfstate-123456789012-us-east-1`, key `securemind/sandbox/terraform.tfstate`, locked by an S3 lock file next to that object. **Bootstrap** (that bucket and the OIDC role) is still local state under `infra/terraform/bootstrap/`.
 
 **Fix:** `infra:down` destroys the app stack via S3 state. It does not delete bootstrap. Laptop apply and Actions apply share the same app state file.
 
@@ -100,7 +100,7 @@ The `npm warn ERESOLVE` / vite / esbuild lines in Amplify logs are **install war
 
 This is **layer 1** (may this job *become* the role?), not missing `lambda:*` on the deploy policy.
 
-**Fix:** Bootstrap trust `StringLike` for both `repo:ORG/REPO:*` and `repo:ORG@*/REPO@*:*`. Re-apply **bootstrap**, not `infra:up`. Same four GitHub Environment **variable names** (`AWS_ROLE_ARN`, `TF_STATE_BUCKET`, `TF_LOCK_TABLE`, `AWS_REGION`) — values from that account’s bootstrap. No access keys.
+**Fix:** Bootstrap trust `StringLike` for both `repo:ORG/REPO:*` and `repo:ORG@*/REPO@*:*`. Re-apply **bootstrap**, not `infra:up`. Same GitHub Environment **variable names** (`AWS_ROLE_ARN`, `TF_STATE_BUCKET`, `AWS_REGION`) — values from that account’s bootstrap. No access keys. `TF_LOCK_TABLE` is unused.
 
 ### 6. Amplify: “Monorepo spec provided without applications key”
 
