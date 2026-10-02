@@ -20,6 +20,18 @@ CloudFormation YAML under [`cloudformation/`](cloudformation/) is archived. The 
 
 Chat/workspaces/settings still use Prisma in application code. That leftover is **not** a second cloud database we provision. A DynamoDB-only deploy of those screens is a follow-up app change.
 
+## Prerequisites
+
+- An [AWS account](https://aws.amazon.com/) you administer. Keep the app out of an organization management account.
+- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) version 2 and a named profile.
+- [Terraform 1.14](https://developer.hashicorp.com/terraform/install) or newer. The state lock is an S3 lock file.
+- [Node.js 20](https://nodejs.org/) or newer.
+- [Git](https://git-scm.com/downloads), and a GitHub repository you can connect to Amplify.
+- Permission to create IAM, S3, Lambda, API Gateway, Cognito, Amplify, DynamoDB, Secrets Manager, and CloudFormation.
+- Optional, for a model with no vendor key: [Bedrock model access](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-modify.html) for Titan Text Embeddings v2 and a chat model.
+
+Hosted resources can incur AWS charges. Tear the stack down with `npm run infra:down -- --yes`.
+
 ## Your account (once)
 
 Sign in with a named profile so a bare `aws` command cannot land in the wrong account.
@@ -50,7 +62,7 @@ Copy the `backend_hcl` output to `infra/terraform/backend.hcl` (gitignored).
 4. **Bedrock console:** enable Titan embed v2 (1024-d) and the chat models you will use. IAM is not enough without model access.
 5. **`.env.deploy`:** `AWS_PROFILE=your-profile` and `ENV_NAME=your-env`.
 6. Laptop apply: `npm run infra:up`. After the first Amplify URL exists, `npm run infra:wire`.
-8. **First admin (hosted):** the pool stays empty. Print the setup code once from the CLI — it is **not** shown on the Amplify page:
+7. **First admin:** the pool stays empty. Print the setup code once from the CLI. It is not shown on the Amplify page:
 
 ```bash
 terraform -chdir=infra/terraform output -raw setup_claim_secret
