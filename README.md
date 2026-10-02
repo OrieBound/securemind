@@ -11,11 +11,11 @@ Two ways to run it:
 
 ## On-prem
 
-![SecureMind on-prem](docs/diagrams/securemind-onprem-diagram.jpg)
+<img src="docs/diagrams/securemind-onprem-diagram.jpg" alt="SecureMind on-prem" width="820">
 
 ## AWS
 
-![SecureMind on AWS](docs/diagrams/securemind-aws-diagram.jpg)
+<img src="docs/diagrams/securemind-aws-diagram.jpg" alt="SecureMind on AWS" width="820">
 
 Editable sources: [`docs/diagrams/securemind-onprem.drawio`](docs/diagrams/securemind-onprem.drawio) and [`docs/diagrams/securemind-aws.drawio`](docs/diagrams/securemind-aws.drawio). Longer write-ups: [Feature Guide](docs/SecureMind-Feature-Guide.docx) and [Technical Guide](docs/SecureMind-Technical-Guide.docx).
 
