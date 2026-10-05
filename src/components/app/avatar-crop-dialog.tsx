@@ -17,10 +17,17 @@ export function AvatarCropDialog({
   file,
   onCancel,
   onAccept,
+  title = "Choose the part that shows",
+  description = "Drag to reposition, scroll or use the slider to zoom. Accept saves a square photo for your profile and the header.",
+  mask = "circle",
 }: {
   file: File;
   onCancel: () => void;
   onAccept: (blob: Blob) => void | Promise<void>;
+  title?: string;
+  description?: string;
+  /** Circle for profile photos. Rounded matches the sidebar portal slot. */
+  mask?: "circle" | "rounded";
 }) {
   const imgRef = useRef<HTMLImageElement | null>(null);
   const dragRef = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
@@ -104,6 +111,7 @@ export function AvatarCropDialog({
   }
 
   const layout = natural ? displayedSize(natural.w, natural.h, VIEW, zoom) : null;
+  const frameRadius = mask === "circle" ? "9999px" : "40%";
 
   return (
     <div
@@ -115,17 +123,17 @@ export function AvatarCropDialog({
       <div className="w-full max-w-md rounded-2xl bg-popover border border-foreground/10 p-5 shadow-2xl space-y-4">
         <div>
           <h2 id="avatar-crop-title" className="text-section">
-            Choose the part that shows
+            {title}
           </h2>
           <p className="text-sm text-foreground/45 mt-1.5 leading-relaxed">
-            Drag to reposition, scroll or use the slider to zoom. Accept saves a square photo
-            for your profile and the header.
+            {description}
           </p>
         </div>
 
         <div className="flex justify-center">
           <div
-            className="relative size-[280px] overflow-hidden rounded-full border border-foreground/15 bg-foreground/[0.06] touch-none cursor-grab active:cursor-grabbing"
+            className="relative size-[280px] overflow-hidden border border-foreground/15 bg-foreground/[0.06] touch-none cursor-grab active:cursor-grabbing"
+            style={{ borderRadius: frameRadius }}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
@@ -157,7 +165,8 @@ export function AvatarCropDialog({
               />
             )}
             <div
-              className="pointer-events-none absolute inset-0 rounded-full ring-1 ring-white/25"
+              className="pointer-events-none absolute inset-0 ring-1 ring-white/25"
+              style={{ borderRadius: frameRadius }}
               aria-hidden
             />
           </div>

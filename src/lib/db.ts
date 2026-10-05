@@ -6,7 +6,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 import { isHostedRuntime } from "@/lib/runtime-env";
 
-const PRISMA_SCHEMA_EPOCH = "2026-08-23-knowledge-memory";
+const PRISMA_SCHEMA_EPOCH = "2026-10-04-portal-branding";
 
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;

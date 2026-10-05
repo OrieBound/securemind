@@ -122,7 +122,19 @@ Profile avatars are a fourth, unrelated set: preset glyphs, or a cropped JPEG/PN
 
 ## Detection
 
-Detection is a pattern scan, not a model and not a guarantee. Chat runs it in the browser before send. Knowledge ingest runs the same families on the server after text extraction and before the text is stored or embedded (`scrubDocumentText`). Images are extracted first (Groq vision when a key exists, otherwise a filename stub) and that text is scanned the same way.
+Detection is a pattern scan in `scrubPII` (`src/lib/pii.ts`), not a model and not a guarantee. It redacts a span it recognizes. A detail outside those shapes is left as written. That is best effort, not a certification that the text is clear.
+
+Chat runs it in the browser before send. Knowledge ingest runs the same function on the server after text extraction and before the text is stored or embedded (`scrubDocumentText`). The server takes sensitivity and safe terms from the Admin-owned instance policy, never from the upload body. Images are extracted first (Groq vision when a key exists, otherwise a filename stub) and that text is scanned the same way. A voice transcript is scanned at send, the same as typed text. The model’s reply is not scanned.
+
+The procedure, in order:
+
+1. Resolve the tier. Default is balanced. A 0–1 slider maps at 0.25 and 0.60 (`sensitivityTier`). Stored `extreme` maps to `high`.
+2. Keep families whose minimum tier is at or below the active tier. Tiers are cumulative.
+3. Run each family’s expression over the whole text. Skip an empty match.
+4. If the family has a validator, drop the hit when the validator returns false. Card numbers use Luhn on 13–19 digits. Canadian SIN uses a nine-digit check from the left and rejects all-zero and all-identical runs. US SSN is shape only (3-2-4 with a hyphen or space) and does not use a checksum.
+5. If the family is exemptible, test safe terms and drop a covered hit. Record the term id, category, and count. Do not record the value. Non-exemptible families skip this step.
+6. Sort surviving hits by start, then merge overlaps into one span. The category kept is the one that started first.
+7. Replace each span with `[category redacted]`. UI segments carry the category and no original characters. If nothing survived, the original text continues.
 
 Sensitivity selects which families run. Stored `extreme` maps to `high`. Default is balanced.
 
@@ -138,7 +150,9 @@ Sensitivity selects which families run. Stored `extreme` maps to `high`. Default
 | Street address | Balanced | Yes |
 | Passport-like / national-ID shape | High | Yes |
 
-Safe terms are exemptions declared before detection: CIDR, domain, prefix, or literal. They cannot exempt SSN, SIN, card number, or secret. The server never accepts a safe-term list from the browser on ingest. Instance policy is Admin-owned. Members may propose; only an Admin applies it. A tier change applies to new chat and new Knowledge only. Stored messages and documents are not re-scanned. Already-redacted values are not restored.
+Safe terms are exemptions tested after a shape matches and before the hit is kept: CIDR, domain, prefix, or literal. Literal is a case-insensitive exact match. CIDR tests whether the IPv4 address falls inside the block. Domain matches the domain itself or a label boundary (`.acme.com` or `@acme.com`); `notacme.com` does not match `acme.com`. Prefix is a case-insensitive starts-with after trailing asterisks are stripped. They cannot exempt SSN, SIN, card number, or secret. `validateSafeTerm` also rejects a proposed term that itself matches a non-exemptible family, so the list cannot store one. Shipped defaults cover RFC 2606 documentation mail (`example.com`, `example.org`, `example.net`, and the reserved endings `test`, `invalid`, `localhost`, `example`) and non-routable IPv4 (RFC 1918, loopback, link-local, and the RFC 5737 documentation ranges). The server never accepts a safe-term list from the browser on ingest. Instance policy is Admin-owned. Members may propose; only an Admin applies it. A tier change applies to new chat and new Knowledge only. Stored messages and documents are not re-scanned. Already-redacted values are not restored.
+
+Secrets match known forms only: a PEM private-key block, Stripe-style `sk_live_` / `sk_test_` / `rk_live_` / `rk_test_`, GitHub `ghp_` / `gho_` / `ghu_` / `ghs_` / `ghr_` and `github_pat_`, Slack `xox` tokens, AWS access-key prefixes `AKIA` and `ASIA`, a named AWS secret or session-token assignment, OpenAI-style `sk-` / `sk-proj-`, and Google `AIza`. A bare high-entropy string is not enough, for the same reason Luhn exists: log lines and trace IDs would match constantly. Do not paste the detection expressions into a public document. Name the check and the reason.
 
 What is recorded for Insights is the category, the source (chat or document), the outcome, a count, and the sensitivity in force. The matched string is not recorded.
 

@@ -61,6 +61,12 @@ export type InstanceConfigRow = {
   storageBackend: string | null;
   voiceSttChoice: string | null;
   voiceSttAudioAckAt: Date | null;
+  /** Sidebar portal name. Null uses the SecureMind wordmark. */
+  portalName: string | null;
+  /** Sidebar phrase. Null uses the default phrase. Empty string hides the line. */
+  portalTagline: string | null;
+  /** Set when a custom portal logo is stored. Null uses the SecureMind mark. */
+  portalLogoAt: Date | null;
   /** Sparse Admin list-rate overrides. Hosted Dynamo JSON; local file. Not Prisma. */
   pricingRateOverrides?: unknown;
   modelAvailability?: unknown;
