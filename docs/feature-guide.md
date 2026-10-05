@@ -32,7 +32,7 @@ Chat is where you write, review, and receive a reply.
 
 While a reply is still generating, the composer stays open. You can type the next message. It waits, already reviewed, and sends when the current reply finishes. Stop ends the reply that is in progress. Attachments on a queued message stay with that message.
 
-Before a message leaves the browser, a scan looks for sensitive patterns. If something matches, you see it and decide what continues. The text that is stored and sent is the reviewed text. The scan can miss a value.
+Before a message leaves the browser, the draft is reviewed for sensitive details. Details the review finds are redacted, and you see them before anything is sent. The text that is stored and sent is that reviewed text. The review is a best effort: a detail it does not recognize can remain. The next section is how a value is recognized.
 
 The model that answers is chosen in one of two ways, set under Models. Complexity tiers let the message pick Max, Plus, Standard, Light, or Micro, and each tier runs the model you assigned. Fixed model sends every message in that workspace to the one model you picked. Tiers are the main path. Fixed model is there for someone who wants ordinary single-model chat.
 
@@ -40,9 +40,66 @@ A reply can name Knowledge sources when the question is about material in the wo
 
 Why it is there: the conversation is the place the other controls meet. Review happens before send, the workspace limits what can be retrieved, and the tier or the fixed model decides which model runs.
 
+## How a sensitive detail is recognized
+
+The review is a pattern scan. It is not a language model reading the sentence for meaning. It looks for shapes that usually mean a personal detail or a secret. When a shape matches and passes that family’s extra check, the span is replaced before the text is stored or sent. A sentence that describes a person without one of these shapes is not caught. A string that almost matches, but fails the extra check, is left as written.
+
+The same procedure runs in two places. In chat it runs in the browser, on the draft, before the message leaves the page. In Knowledge it runs on the server, after the file’s text is extracted and before that text is saved or made searchable. A picture is turned into text first, then scanned the same way. A voice transcript is scanned when you send it, the same as typed text. The model’s reply is not scanned. Chat is not scanned a second time on the server. Older messages and files are not scanned again when the rule changes, because the original matched text was never kept.
+
+### The steps
+
+1. Read the install’s sensitivity. Balanced is the default. Low runs fewer families. High runs every family. An older stored value of Extreme is treated as High. The administrator owns this setting. A change applies to new messages and new files only.
+
+2. Try only the families turned on for that level. Low includes email, US Social Security numbers, Canadian social insurance numbers, card numbers, and secrets. Balanced adds phone numbers, IPv4 addresses, and street addresses. High adds passport-like and national-ID shapes.
+
+3. Search the whole text for each family’s shape.
+
+4. Drop a hit that has the shape but cannot be a real value of that kind. A card number must pass the Luhn checksum: digits only, 13 to 19 of them, then a weighted sum from the right that must divide by 10. A Canadian social insurance number must be nine digits, must not be all zeros or all the same digit, and must pass the Canadian check digit (the same style of weighted sum, taken from the left). A US Social Security number is recognized only by a 3-2-4 grouping, with a hyphen or a space. It does not use a checksum, and a bare nine-digit run is not treated as one. A secret is recognized only by a known key form, not because a string looks random.
+
+5. If that family allows an exemption, check safe terms before keeping the hit. A safe term is a value the administrator has declared is not personal. A hit covered by a safe term is skipped and counted, so the exemption is visible. The value itself is not written down. Social Security numbers, social insurance numbers, card numbers, and secrets skip this step. They cannot be exempted. A proposed safe term that itself looks like one of those is refused, so the list cannot become a place to store them.
+
+6. Sort the remaining hits by where they start. Merge overlaps into one span. Replace the span with a label such as `[email redacted]`. The label names the category. It does not contain the original characters. That labeled text is what is stored and, for chat, what is sent. There is no way to restore the original characters.
+
+7. If nothing remains, the text continues as written.
+
+### What each family looks for
+
+| Family | From | Extra check | Can a safe term skip it? |
+| --- | --- | --- | --- |
+| Email | Low | An address shape: letters or digits, `@`, a dot, and an ending of at least two letters | Yes |
+| US Social Security number | Low | Three digits, then two, then four, separated by a hyphen or a space | No |
+| Canadian social insurance number | Low | Three-three-three, or a bare nine-digit run, then the Canadian check digit | No |
+| Card number | Low | 13 to 19 digits, spaces or hyphens allowed between them, then Luhn | No |
+| API keys and private keys | Low | A known form only: a private-key block, or a known prefix such as `sk_live_`, `sk_test_`, `ghp_`, `github_pat_`, a Slack `xox` token, an AWS access-key prefix `AKIA` or `ASIA`, a named AWS secret or session-token assignment, an OpenAI-style `sk-` key, or a Google `AIza` key | No |
+| Phone number | Balanced | A North American shape, including a bare ten-digit number that does not start with 0 or 1 | Yes |
+| IPv4 address | Balanced | Four numbers from 0 to 255, separated by dots | Yes |
+| Street address | Balanced | A street number, then words, ending in a street word such as Street, Avenue, Road, or Drive | Yes |
+| Passport or national-ID shape | High | One or two capital letters followed by seven to nine digits. This is a shape, not a check against a government record | Yes |
+
+A long number in a log line is the reason card numbers use Luhn. Without that checksum, ordinary request IDs would be treated as cards. The same idea is why secrets use known prefixes instead of “any long random string.”
+
+### Safe terms
+
+A safe term is one of four kinds.
+
+- **Exact.** The whole matched text equals the term, ignoring case.
+- **Range.** An IPv4 address falls inside a CIDR block, such as `10.0.0.0/8`.
+- **Domain.** The match is that domain, or it ends at a real boundary: `.acme.com` or `@acme.com`. `notacme.com` does not match `acme.com`.
+- **Prefix.** The match starts with the term. A trailing `*` on the term is ignored.
+
+The install ships with a few of these already listed, and they are visible so you can remove them. Documentation mailboxes on `example.com`, `example.org`, `example.net`, and the reserved endings `.test`, `.invalid`, `.localhost`, and `.example` are not treated as a person’s email. Private and non-routable IPv4 space is not treated as a public address: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, loopback `127.0.0.0/8`, link-local `169.254.0.0/16`, and the documentation ranges `192.0.2.0/24`, `198.51.100.0/24`, and `203.0.113.0/24`.
+
+On a file upload, the server uses this install policy. It does not take a safe-term list from the browser.
+
+### What is written down
+
+Insights records the category, whether it was chat or a document, what was done with the finding, a count, and the sensitivity that was in force. The matched characters are not stored. Dismissing or deleting a log row removes the row. It does not put the original text back.
+
+Why it is there: you should be able to see exactly which shapes are reviewed, which extra check a number has to pass, and which values your team has chosen to leave alone.
+
 ## Knowledge
 
-Knowledge is documents you add to the workspace: files you upload, and files you attach in chat. Text is scanned as it is ingested, before it is stored or embedded. A later answer can cite a passage that was actually retrieved. A general question does not pretend a document said something it did not.
+Knowledge is documents you add to the workspace: files you upload, and files you attach in chat. Text is reviewed with the same rules as chat, as it is ingested, before it is stored or embedded. A later answer can cite a passage that was actually retrieved. A general question does not pretend a document said something it did not.
 
 Why it is there: answers about your material should be able to point at that material, and the scan should happen when the file enters, not only when someone pastes a sentence into chat.
 

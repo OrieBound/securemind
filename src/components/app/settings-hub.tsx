@@ -752,7 +752,7 @@ export function SettingsHub({
             )}
             {section === "admin" && (
               <p className="text-ui text-[var(--text-muted)] mt-1.5 leading-[var(--leading-body)]">
-                Directory, roles, and monthly cost caps.
+                Portal name and logo, then directory, roles, and monthly cost caps.
               </p>
             )}
           </div>
@@ -822,7 +822,7 @@ export function SettingsHub({
               {isAdmin && (
                 <OverviewCard
                   title="Admin"
-                  description="Directory, roles, and monthly cost caps."
+                  description="Portal name and logo, directory, roles, and monthly cost caps."
                   accent="amber"
                   onClick={() => onSectionChange("admin")}
                 />

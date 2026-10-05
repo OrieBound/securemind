@@ -184,8 +184,8 @@ import {
   usesRemoteApi,
   warmChatConnection,
 } from "@/lib/client/api-base";
-import { PRODUCT_CHROME_TAGLINE, PRODUCT_POSITIONING } from "@/lib/branding";
-import { ProductMark } from "@/components/app/product-mark";
+import { PRODUCT_POSITIONING } from "@/lib/branding";
+import { PortalBrandMark } from "@/components/app/portal-brand-mark";
 import { themeForRuntime } from "@/lib/provider-theme";
 import { cn } from "@/lib/utils";
 import {
@@ -6040,9 +6040,10 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
 
   const settingsContentShown =
     activeNav === "settings" && !settingsAnimatingOut && !settingsEntering && !onAnalytics;
-  /** Settings / admin Insights own the header — not the workspace Chat breadcrumb. */
+  /** Settings and Insights keep a way back to the open workspace's chat. */
   const settingsHeaderShown =
     (settingsContentShown || onAnalytics) && !settingsAnimatingOut && !settingsEntering;
+  const chatWorkspace = viewWorkspace ?? activeWorkspace ?? workspaces[0] ?? null;
   const workContentShown = onAnalytics || !settingsVisible || settingsAnimatingOut;
   const workNav: NavId = activeNav === "settings" ? lastWorkNavRef.current : activeNav;
   const headerWorkNav: NavId = workNav;
@@ -6213,14 +6214,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                        transition-colors hover:bg-foreground/[0.04]
                        focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <ProductMark
-              size={40}
-              className="size-10 shrink-0 shadow-[0_4px_20px_rgba(99,102,241,0.45)]"
-            />
-            <div className="min-w-0">
-              <p className="text-[length:var(--font-size-body)] font-semibold text-foreground leading-none tracking-[var(--tracking-ui)]">SecureMind</p>
-              <p className="text-meta mt-1 text-[var(--primary-soft-foreground)]">{PRODUCT_CHROME_TAGLINE}</p>
-            </div>
+            <PortalBrandMark />
           </button>
         </div>
 
@@ -6591,6 +6585,21 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                 ? "opacity-100 translate-y-0"
                 : "opacity-0 translate-y-1 pointer-events-none absolute inset-0",
             )}>
+              {chatWorkspace && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => goToWorkspaceNav("thread", chatWorkspace)}
+                    className="flex min-w-0 items-center gap-1 rounded-lg px-1.5 py-0.5 -ml-1.5 cursor-pointer hover:bg-foreground/5"
+                    aria-label={`Back to ${chatWorkspace.name} chat`}
+                  >
+                    <span className="truncate font-semibold text-foreground/90">{chatWorkspace.name}</span>
+                    <ChevronRight className="size-3.5 text-foreground/25 shrink-0" aria-hidden />
+                    <span className="shrink-0 font-medium text-foreground/80">Chat</span>
+                  </button>
+                  <ChevronRight className="size-3.5 text-foreground/25 shrink-0" aria-hidden />
+                </>
+              )}
               <span className="font-semibold text-foreground/85 shrink-0">Settings</span>
               {onAnalytics && insightsSubject ? (
                 <>

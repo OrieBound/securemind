@@ -3,6 +3,7 @@ import {
   createHostedInstanceConfigStore,
   emptyInstanceConfigRow,
 } from "@/lib/instance-config-hosted";
+import { ATTR } from "@/lib/storage/dynamodb-schema";
 import { createMemoryDriver } from "@/lib/workspaces/hosted-dynamo";
 
 describe("hosted instance config", () => {
@@ -53,5 +54,46 @@ describe("hosted instance config", () => {
     const row = await store.get();
     expect(row?.voiceSttChoice).toBe("groq");
     expect(row?.voiceSttAudioAckAt?.toISOString()).toBe("2026-08-30T00:00:00.000Z");
+  });
+
+  it("persists portal name, a cleared phrase, and the logo timestamp", async () => {
+    const store = createHostedInstanceConfigStore(createMemoryDriver());
+    const logoAt = new Date("2026-10-04T18:00:00.000Z");
+    await store.merge({
+      portalName: "Northwind",
+      portalTagline: "",
+      portalLogoAt: logoAt,
+      updatedByUserId: "owner-1",
+    });
+    await store.merge({ allowRealAws: true, updatedByUserId: "owner-1" });
+    const row = await store.get();
+    expect(row?.portalName).toBe("Northwind");
+    expect(row?.portalTagline).toBe("");
+    expect(row?.portalLogoAt?.toISOString()).toBe(logoAt.toISOString());
+    expect(row?.allowRealAws).toBe(true);
+  });
+
+  it("keeps an older config blob on the SecureMind portal defaults", async () => {
+    const driver = createMemoryDriver();
+    const store = createHostedInstanceConfigStore(driver);
+    await driver.put("app#instance", "cfg#singleton", {
+      [ATTR.userId]: { S: "instance" },
+      [ATTR.category]: { S: "instance_config" },
+      [ATTR.content]: {
+        S: JSON.stringify({
+          id: "singleton",
+          primaryProvider: "auto",
+          allowRealAws: false,
+          piiSensitivity: "balanced",
+          defaultMonthlyCostCapUsd: 10,
+          updatedAt: "2026-08-01T00:00:00.000Z",
+        }),
+      },
+    });
+    const row = await store.get();
+    expect(row?.portalName).toBeNull();
+    expect(row?.portalTagline).toBeNull();
+    expect(row?.portalLogoAt).toBeNull();
+    expect(row?.allowRealAws).toBe(false);
   });
 });

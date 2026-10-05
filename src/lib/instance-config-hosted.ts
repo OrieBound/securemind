@@ -42,6 +42,9 @@ type Stored = {
   storageBackend: string | null;
   voiceSttChoice: string | null;
   voiceSttAudioAckAt: string | null;
+  portalName?: string | null;
+  portalTagline?: string | null;
+  portalLogoAt?: string | null;
   pricingRateOverrides?: unknown;
   modelAvailability?: unknown;
   updatedAt: string;
@@ -57,6 +60,14 @@ function asDate(v: string | null | undefined): Date | null {
   if (!v) return null;
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Missing key means "never set" (default phrase). Empty string hides the line. */
+function storedPortalTagline(raw: Stored): string | null {
+  if (!Object.prototype.hasOwnProperty.call(raw, "portalTagline") || raw.portalTagline == null) {
+    return null;
+  }
+  return typeof raw.portalTagline === "string" ? raw.portalTagline : null;
 }
 
 export function emptyInstanceConfigRow(): InstanceConfigRow {
@@ -84,6 +95,9 @@ export function emptyInstanceConfigRow(): InstanceConfigRow {
     storageBackend: "dynamodb",
     voiceSttChoice: null,
     voiceSttAudioAckAt: null,
+    portalName: null,
+    portalTagline: null,
+    portalLogoAt: null,
     pricingRateOverrides: null,
     updatedAt: new Date(),
     updatedByUserId: null,
@@ -115,6 +129,9 @@ function toStored(row: InstanceConfigRow): Stored {
     storageBackend: row.storageBackend,
     voiceSttChoice: row.voiceSttChoice,
     voiceSttAudioAckAt: iso(row.voiceSttAudioAckAt),
+    portalName: row.portalName,
+    portalTagline: row.portalTagline,
+    portalLogoAt: iso(row.portalLogoAt),
     pricingRateOverrides: row.pricingRateOverrides ?? null,
     modelAvailability: row.modelAvailability ?? null,
     updatedAt: iso(row.updatedAt) ?? new Date().toISOString(),
@@ -148,6 +165,9 @@ function fromStored(raw: Stored): InstanceConfigRow {
     storageBackend: raw.storageBackend,
     voiceSttChoice: parseVoiceSttChoice(raw.voiceSttChoice),
     voiceSttAudioAckAt: asDate(raw.voiceSttAudioAckAt),
+    portalName: typeof raw.portalName === "string" && raw.portalName.trim() ? raw.portalName : null,
+    portalTagline: storedPortalTagline(raw),
+    portalLogoAt: asDate(raw.portalLogoAt),
     pricingRateOverrides: raw.pricingRateOverrides ?? null,
     modelAvailability: raw.modelAvailability ?? null,
     updatedAt: asDate(raw.updatedAt) ?? new Date(),

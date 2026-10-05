@@ -1,5 +1,7 @@
 # SecureMind IaC (Terraform)
 
+**New to this?** Start at [docs/deploy/aws-from-zero.md](../docs/deploy/aws-from-zero.md) — a from-nothing walkthrough with every command, assuming you have not installed Terraform, created a GitHub Environment, or signed in to AWS before. The rest of this file is the condensed reference for someone who has already done it once.
+
 Use an AWS account and CLI profile that you control. Keep the app out of an organization management account. Nothing is created until you run bootstrap, `npm run infra:up`, or your own GitHub Actions deploy.
 
 This repo’s workflow on `main` applies the maintainer sandbox (GitHub environment `aws-sandbox`). A new install does not use that pipeline. Bootstrap your account, then apply from your laptop or from a workflow in your fork.

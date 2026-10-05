@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import { apiAuthHeaders, apiUrl, usesRemoteApi } from "@/lib/client/api-base";
 import { markBedrockHighlight } from "@/lib/onboarding";
 import { cn } from "@/lib/utils";
@@ -62,6 +63,8 @@ export type RuntimeStatusPayload = {
   } | null;
 };
 
+const STATUS_BAR_OPEN_KEY = "sm_runtime_status_open";
+
 function Chip({
   ok,
   label,
@@ -104,28 +107,65 @@ export function RuntimeStatusBar({
   inUseLabel?: string | null;
   inUseProvider?: string | null;
 }) {
+  const [open, setOpen] = useState(true);
+
+  useEffect(() => {
+    try {
+      setOpen(localStorage.getItem(STATUS_BAR_OPEN_KEY) !== "0");
+    } catch {
+      setOpen(true);
+    }
+  }, []);
+
   if (!status) return null;
   const providerLabel = inUseLabel
     ?? (status.model.provider
       ? `${status.model.provider}${status.model.model ? ` · ${status.model.model}` : ""}`
       : "No model provider");
   const providerChip = inUseProvider ?? status.model.provider;
+
+  function toggle() {
+    setOpen(current => {
+      const next = !current;
+      try {
+        localStorage.setItem(STATUS_BAR_OPEN_KEY, next ? "1" : "0");
+      } catch {
+        // The row still toggles for this visit.
+      }
+      return next;
+    });
+  }
+
   return (
-    <div className="mb-2 flex flex-wrap items-center gap-1.5 px-0.5">
-      <Chip ok={status.capabilities.detection.ready} label="Detection" />
-      <Chip ok={status.capabilities.documentParsing.ready} label="Document parsing" />
-      <Chip ok={status.chatReady} label={providerLabel} provider={providerChip} />
-      {status.edition === "cloud" && (
-        <Chip ok={status.capabilities.imageOcr.ready} label="Vision extract" />
+    <div className="mb-2 flex items-start gap-1.5 px-0.5">
+      {open && (
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+          <Chip ok={status.capabilities.detection.ready} label="Detection" />
+          <Chip ok={status.capabilities.documentParsing.ready} label="Document parsing" />
+          <Chip ok={status.chatReady} label={providerLabel} provider={providerChip} />
+          {status.edition === "cloud" && (
+            <Chip ok={status.capabilities.imageOcr.ready} label="Vision extract" />
+          )}
+          <Chip
+            ok={status.capabilities.voiceStt?.ready === true}
+            label={
+              parseVoiceSttChoice(status.capabilities.voiceStt?.provider)
+                ? `Voice · ${voiceProviderLabel(parseVoiceSttChoice(status.capabilities.voiceStt?.provider))}`
+                : "Voice"
+            }
+          />
+        </div>
       )}
-      <Chip
-        ok={status.capabilities.voiceStt?.ready === true}
-        label={
-          parseVoiceSttChoice(status.capabilities.voiceStt?.provider)
-            ? `Voice · ${voiceProviderLabel(parseVoiceSttChoice(status.capabilities.voiceStt?.provider))}`
-            : "Voice"
-        }
-      />
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={open}
+        aria-label={open ? "Hide what's running" : "Show what's running"}
+        title={open ? "Hide what's running" : "Show what's running"}
+        className="ml-auto mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md text-foreground/35 hover:bg-foreground/[0.06] hover:text-foreground/70 cursor-pointer"
+      >
+        <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} aria-hidden />
+      </button>
     </div>
   );
 }

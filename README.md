@@ -9,7 +9,8 @@ Detection runs before chat is sent and again when Knowledge is ingested. That re
 | You want | Start |
 |---|---|
 | On this computer | [On-prem](#on-prem) below, then [docs/deploy/on-prem-docker.md](docs/deploy/on-prem-docker.md) |
-| Your own AWS account | [AWS](#aws) below, then [infra/README.md](infra/README.md) |
+| Your own AWS account, from zero | [docs/deploy/aws-from-zero.md](docs/deploy/aws-from-zero.md) |
+| Your own AWS account, condensed reference | [AWS](#aws) below, then [infra/README.md](infra/README.md) |
 | Diagram sources | [on-prem](docs/diagrams/securemind-onprem.drawio) · [AWS](docs/diagrams/securemind-aws.drawio) |
 | Longer write-ups | [Feature Guide](docs/SecureMind-Feature-Guide.docx) · [Technical Guide](docs/SecureMind-Technical-Guide.docx) |
 

@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import type { AppRole, AssignableRole } from "@/lib/roles";
 import type { AnalyticsRange } from "@/lib/analytics/types";
 import type { InsightsSubjectRef } from "@/components/app/settings-hub";
+import { PortalBrandingSettings } from "@/components/app/portal-branding-settings";
 import { fmtUsdLabeled } from "@/lib/analytics/client";
 import { parseMonthlyCostCapInput } from "@/lib/cost-cap-shared";
 import {
@@ -488,6 +489,8 @@ export function AdminConsole({
       <p className="text-sm text-muted-foreground">
         Add people, set how they sign in, and manage roles. Delete removes sign-in; their workspace data stays until a future purge.
       </p>
+
+      <PortalBrandingSettings />
 
       {(error || note) && (
         <p

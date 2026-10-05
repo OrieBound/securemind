@@ -260,6 +260,12 @@ model InstanceConfig {
   voiceSttChoice    String?
   /// Operator acknowledged that spoken audio is sent to the STT vendor before any text redaction.
   voiceSttAudioAckAt DateTime?
+  /// Sidebar portal name. Null keeps the SecureMind wordmark.
+  portalName        String?
+  /// Sidebar phrase. Null keeps the default phrase. Empty string hides the line.
+  portalTagline     String?
+  /// Custom portal logo timestamp. Image bytes live on disk or S3, not in this row.
+  portalLogoAt      DateTime?
   updatedAt         DateTime  @updatedAt
   updatedByUserId   String?
 }
