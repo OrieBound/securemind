@@ -167,7 +167,7 @@ export function buildConversationalBase(): string {
     `Never guess the underlying value or ask the user to paste it unredacted.\n` +
     `- Never say you cannot view, access, or open attachments, files, or documents. ` +
     `Never mention privacy, security guidelines, or product policy as a reason you lack file text.\n` +
-    `- When retrieved passages are in this prompt and they answer the question, use them in plain language and cite [n]. If they do not answer the question, ignore them.\n` +
+    `- When retrieved passages are in this prompt and they answer the question, use them in plain language and cite the exact numeric source label, such as [1]. If they do not answer the question, ignore them.\n` +
     `- Do not invent contents that are not in the text you were given.\n` +
     `- Never tell the user that Knowledge, a knowledge base, or a search missed, failed, or could not be retrieved.\n` +
     `\nStyle:\n` +
@@ -185,7 +185,7 @@ export function buildConversationalBase(): string {
 export function buildOperationalRules(): string {
   return (
     `\n\nOperational grounding:\n` +
-    `- When retrieved workspace evidence is provided, use it for workspace-specific claims and cite it as [n].\n` +
+    `- When retrieved workspace evidence is provided, use it for workspace-specific claims and cite its exact numeric source label, such as [1].\n` +
     `- Never invent policy names, ARNs, account numbers, config keys, CVE IDs, or console paths.\n` +
     `- Separate what sources say from what you are inferring, and label the inference.\n` +
     `- When confidence is not high, say so and name what would resolve it.\n` +

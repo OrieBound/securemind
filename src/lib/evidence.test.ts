@@ -10,6 +10,18 @@ import {
 import type { SemanticHit } from "./memory";
 
 describe("packageEvidence", () => {
+  it("gives concrete numeric labels instead of a literal citation placeholder", () => {
+    const hits: SemanticHit[] = [1, 2].map(index => ({
+      id: `fragment-${index}`, content: `Fictional project detail ${index}.`, category: "document",
+      documentId: `doc-${index}`, documentName: `brief-${index}.txt`, similarity: 0.8,
+    }));
+    const { promptBlock } = packageEvidence(hits);
+    expect(promptBlock).toContain("Allowed citation labels for this answer: [1], [2]");
+    expect(promptBlock).toContain("A supported fact. [1]");
+    expect(promptBlock).not.toContain("[n]");
+    expect(packageCurrentAttachments([{id: "doc-1", name: "brief.txt", content: "Fictional project detail."}])).not.toContain("[n]");
+  });
+
   it("returns empty packaging when there are no hits", () => {
     expect(packageEvidence([])).toEqual({ citations: [], promptBlock: "" });
   });
@@ -44,7 +56,7 @@ describe("packageEvidence", () => {
     });
     expect(promptBlock).toContain('BEGIN_RETRIEVED_EVIDENCE source="document: iam-runbook.md"');
     expect(promptBlock).not.toContain("prior exchange");
-    expect(promptBlock).toContain("cite as [n]");
+    expect(promptBlock).toContain("numbered source labels");
     expect(promptBlock).toMatch(/untrusted data/i);
   });
 
