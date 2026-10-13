@@ -314,7 +314,7 @@ const PATTERNS: PatternDef[] = [
     minTier: "balanced",
     exemptible: true,
     pattern:
-      /\b\d{1,5}\s+[A-Za-z][\w\s]{2,35}(?:street|st|avenue|ave|boulevard|blvd|drive|dr|road|rd|lane|ln|court|ct|place|pl|way|parkway|pkwy)\b/gi,
+      /\b(?<!\.)\d{1,5}[ \t]+[A-Za-z][\w.\x27-]*(?:[ \t]+[\w.\x27-]+){0,5}[ \t]+(?:street|st|avenue|ave|boulevard|blvd|drive|dr|road|rd|lane|ln|court|ct|place|pl|way|parkway|pkwy)\b/gi,
   },
   {
     category: "ID number",
