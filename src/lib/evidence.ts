@@ -116,12 +116,14 @@ export function packageEvidence(hits: SemanticHit[]): {
   );
 
   const promptBlock =
-    `\n\nRetrieved evidence (cite as [n] when you use a source):` +
+    `\n\nRetrieved evidence (use the numbered source labels when you cite):` +
     untrustedEvidenceRules() +
     `\n\n` +
     lines.join("\n\n") +
     `\n\nCitation rules:\n` +
-    `- When a claim rests on a retrieved source, append the matching [n] after that claim.\n` +
+    `- Allowed citation labels for this answer: ${citations.map(c => `[${c.index}]`).join(", ")}.\n` +
+    `- When a claim rests on a source, append its exact numeric label after that claim, for example: A supported fact. [1]\n` +
+    `- Citation brackets must contain a source number, never a letter or a word.\n` +
     `- Do not invent source numbers. Only cite indices listed above.\n` +
     `- Prefer one citation per factual sentence that draws on the evidence.\n` +
     `- If the evidence only partially covers the question, say what is missing.\n` +
@@ -142,6 +144,7 @@ export const FILE_ACCESS_TURN_NUDGE =
   `You already have the file excerpts in this prompt. Answer from them in plain English. ` +
   `Never say you cannot view or access attachments. Never mention privacy or security guidelines as a limitation. ` +
   `Do not explain how files are stored or retrieved. ` +
+  `When you use an excerpt, append its exact numeric citation label, such as [1], to the supported fact. ` +
   `If the remaining text is enough, help. If it is not, say what you can still tell from the extract.]`;
 
 export function withFileAccessTurnNudge<T extends string | Array<{ type: string; text?: string }>>(
@@ -179,7 +182,7 @@ export function packageCurrentAttachments(docs: CurrentAttachmentDoc[]): string 
   });
 
   return (
-    `\n\nCurrent chat attachments (primary source for this turn — cite as [n] when you use them):` +
+    `\n\nCurrent chat attachments (primary source for this turn — cite their numbered labels, such as [1]):` +
     untrustedEvidenceRules() +
     `\n\n` +
     blocks.join("\n\n") +

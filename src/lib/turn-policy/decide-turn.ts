@@ -452,7 +452,7 @@ export function modePromptInstructions(decision: TurnDecision): string {
           `\n\nResponse mode — review current attachment:\n` +
           `- Use the Current chat attachments blocks as the primary source.\n` +
           `- Acknowledge the file by name. Answer from that text, including a short summary of what remains after [category redacted] placeholders.\n` +
-          `- Cite attachment indices [n] when making claims from the file.\n` +
+          `- Cite the exact numeric attachment label, such as [1], when making claims from the file.\n` +
           `- Never say you cannot view or access the file. Do not mention privacy or security guidelines.\n` +
           `- Do not invent contents. If the extract is empty and they asked about the file, say that in one short clause, then respond to the rest of their message. Do not ask if they are testing.`
         );
