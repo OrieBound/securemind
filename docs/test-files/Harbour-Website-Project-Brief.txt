@@ -1,0 +1,18 @@
+HARBOUR WEBSITE PROJECT BRIEF
+Fictional demonstration document - no real customer data.
+
+PROJECT
+Harbour website launch.
+
+LAUNCH DATE
+The Harbour website launches on November 18, 2026.
+
+REQUIRED CHECKS BEFORE LAUNCH
+The team must complete all three checks before launch:
+1. Keyboard navigation testing.
+2. Colour contrast checks.
+3. Mobile layout testing.
+
+SUMMARY
+Launch date: November 18, 2026.
+Required checks: keyboard navigation testing, colour contrast checks, and mobile layout testing.

@@ -52,6 +52,30 @@ describe("runtime-env", () => {
     expect(resolveEmbedProvider()).toBe("ollama");
   });
 
+  it("awaits indexing and uses Bedrock for explicit cloud editions without Lambda markers", () => {
+    snap();
+    delete process.env.AWS_LAMBDA_FUNCTION_NAME;
+    delete process.env.AMPLIFY_HOSTING;
+    delete process.env.DOCUMENT_INGEST_SYNC;
+    delete process.env.EMBED_PROVIDER;
+    for (const edition of ["cloud", "hosted"]) {
+      process.env.SECUREMIND_EDITION = edition;
+      expect(shouldSyncDocumentIngest()).toBe(true);
+      expect(resolveEmbedProvider()).toBe("bedrock");
+    }
+  });
+
+  it("awaits indexing on Amplify even without a Lambda function marker", () => {
+    snap();
+    delete process.env.SECUREMIND_EDITION;
+    delete process.env.AWS_LAMBDA_FUNCTION_NAME;
+    delete process.env.DOCUMENT_INGEST_SYNC;
+    delete process.env.EMBED_PROVIDER;
+    process.env.AMPLIFY_HOSTING = "1";
+    expect(shouldSyncDocumentIngest()).toBe(true);
+    expect(resolveEmbedProvider()).toBe("bedrock");
+  });
+
   it("honors DOCUMENT_INGEST_SYNC and EMBED_PROVIDER overrides", () => {
     snap();
     delete process.env.AWS_LAMBDA_FUNCTION_NAME;

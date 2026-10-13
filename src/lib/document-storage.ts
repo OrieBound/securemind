@@ -27,7 +27,7 @@ export function buildStorageKey(userId: string, documentId: string, filename: st
 }
 
 function resolveKey(storageKey: string): string {
-  const root = storageRoot();
+  const root = resolve(storageRoot());
   const abs = resolve(root, storageKey);
   if (!abs.startsWith(root + sep) && abs !== root) {
     throw new Error("Invalid storage key");

@@ -78,6 +78,25 @@ describe("detection — true positives", () => {
       .toContain("address");
   });
 
+  it("preserves invoice totals and checks across line breaks", () => {
+    const invoice = "Total: CAD 450.00\n\nPROJECT NOTES\nReview keyboard navigation, colour contrast, and form labels.";
+    const result = scrubPII(invoice, { sensitivity: "balanced" });
+    expect(result.sanitized).toBe(invoice);
+    expect(result.hadRedactions).toBe(false);
+  });
+
+  it("does not treat word endings or decimal amounts as street addresses", () => {
+    for (const text of ["Review 30 minute keyboard navigation", "The forecast is 450.00 Review Road", "2026\n\nReview keyboard navigation"]) {
+      expect(categories(text, { sensitivity: "balanced" })).not.toContain("address");
+    }
+  });
+
+  it("still detects street addresses with multiword names and abbreviated suffixes", () => {
+    for (const address of ["742 Evergreen Street", "12 West 42nd St", "75 King's Road"]) {
+      expect(categories(address, { sensitivity: "balanced" })).toContain("address");
+    }
+  });
+
   it("detects an ID-shaped token at high sensitivity", () => {
     expect(categories("passport AB1234567", { sensitivity: "high" }))
       .toContain("ID number");

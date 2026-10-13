@@ -39,7 +39,7 @@ export function shouldSyncDocumentIngest(): boolean {
   if (process.env.DOCUMENT_INGEST_SYNC === "true" || process.env.DOCUMENT_INGEST_SYNC === "1") {
     return true;
   }
-  return isLambdaRuntime();
+  return isLambdaRuntime() || isHostedRuntime();
 }
 
 export type StorageBackendName = "postgres" | "dynamodb";
@@ -63,7 +63,6 @@ export type EmbedProviderName = "ollama" | "bedrock";
 export function resolveEmbedProvider(): EmbedProviderName {
   const raw = (process.env.EMBED_PROVIDER ?? "").toLowerCase().trim();
   if (raw === "ollama" || raw === "bedrock") return raw;
-  if (isLambdaRuntime()) return "bedrock";
-  if (process.env.NODE_ENV === "production" && process.env.AMPLIFY_HOSTING) return "bedrock";
+  if (isLambdaRuntime() || isHostedRuntime()) return "bedrock";
   return "ollama";
 }
