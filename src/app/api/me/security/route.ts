@@ -3,7 +3,7 @@ export const runtime = "nodejs";
 import { NextRequest } from "next/server";
 import { getIdentity, identityErrorResponse } from "@/lib/identity";
 import { ensureUserProfile } from "@/lib/user-profile";
-import { cognitoConfigured } from "@/lib/cognito";
+import { cognitoConfigured, cognitoMfaAvailable } from "@/lib/cognito";
 import { readAccessTokenFromRequest } from "@/lib/auth-cookies";
 import { directoryPasswordPolicy } from "@/lib/auth-password";
 
@@ -33,7 +33,8 @@ export async function GET(req: NextRequest) {
       passwordChangeAvailable: passwordManagedByCognito && hasAccessToken,
       passwordPolicy: directoryPasswordPolicy(),
       passwordManagedExternally: false,
-      mfaStatus: "unavailable" as const,
+      // Per-account on/off is read from /api/auth/mfa; this says whether the install supports it.
+      mfaStatus: cognitoMfaAvailable() ? ("available" as const) : ("unavailable" as const),
       sessions: "unavailable" as const,
       note:
         mode === "local"

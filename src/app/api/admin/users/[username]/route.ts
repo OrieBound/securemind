@@ -3,6 +3,7 @@ import { getIdentity, IdentityError } from "@/lib/identity";
 import { parseAssignableRole, requireAdmin, type AppRole } from "@/lib/roles";
 import {
   CognitoAdminError,
+  adminResetDirectoryUserMfa,
   adminResetDirectoryUserPassword,
   adminSetDirectoryUserPassword,
   cognitoAdminAvailable,
@@ -46,6 +47,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     enabled?: boolean;
     status?: "active" | "suspended" | "deleted";
     sendPasswordReset?: boolean;
+    resetMfa?: boolean;
     password?: string;
     notifyPasswordEmail?: boolean;
     monthlyCostCapUsd?: number | null;
@@ -79,6 +81,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
         || body.status === "suspended"
         || body.status === "active"
         || body.sendPasswordReset === true
+        || body.resetMfa === true
         || typeof body.password === "string"
         || "monthlyCostCapUsd" in body;
       if (mutatingProtected) {
@@ -115,6 +118,16 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
         mailConfigured: isMailConfigured(),
         message:
           "Password updated. Share it with the user separately — it is never emailed.",
+      });
+    }
+
+    if (body.resetMfa === true) {
+      await adminResetDirectoryUserMfa(username, actorOpts);
+      console.info("[admin/users] two-step verification reset");
+      return Response.json({
+        ok: true,
+        message:
+          "Two-step verification was turned off for this user. They can sign in with their password and set it up again.",
       });
     }
 
@@ -175,7 +188,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
     if (!user) {
       return Response.json(
-        { error: "Provide role, enabled, status, monthlyCostCapUsd, password, and/or sendPasswordReset." },
+        { error: "Provide role, enabled, status, monthlyCostCapUsd, password, resetMfa, and/or sendPasswordReset." },
         { status: 422 },
       );
     }

@@ -1,29 +1,8 @@
 import { NextRequest } from "next/server";
-import { cognitoLogin, cognitoConfigured } from "@/lib/cognito";
-import { accessCookieHeader } from "@/lib/auth-cookies";
-import { cognitoIssuerCandidates } from "@/lib/identity";
-import { ensureUserProfile } from "@/lib/user-profile";
-import { createRemoteJWKSet, jwtVerify } from "jose";
+import { cognitoLoginStart, cognitoConfigured } from "@/lib/cognito";
+import { completeLogin } from "@/lib/auth-login";
 
 export const runtime = "nodejs";
-
-async function subFromAccessToken(accessToken: string): Promise<string | null> {
-  try {
-    const region = process.env.COGNITO_REGION || process.env.AWS_REGION || "us-east-1";
-    const pool = process.env.COGNITO_USER_POOL_ID;
-    const iss =
-      process.env.COGNITO_ISSUER ||
-      (pool ? `https://cognito-idp.${region}.amazonaws.com/${pool}` : null);
-    if (!iss) return null;
-    const jwksUrl = process.env.COGNITO_JWKS_URL ?? `${iss.replace(/\/$/, "")}/.well-known/jwks.json`;
-    const { payload } = await jwtVerify(accessToken, createRemoteJWKSet(new URL(jwksUrl)), {
-      issuer: cognitoIssuerCandidates(iss),
-    });
-    return typeof payload.sub === "string" ? payload.sub : null;
-  } catch {
-    return null;
-  }
-}
 
 export async function POST(req: NextRequest) {
   if (!cognitoConfigured()) {
@@ -47,30 +26,16 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const tokens = await cognitoLogin(email, password);
-    const sub = await subFromAccessToken(tokens.accessToken);
-    if (sub) {
-      try {
-        await ensureUserProfile({ userId: sub, email, touchSignIn: true });
-      } catch (err) {
-        console.warn("[auth/login] profile upsert", err instanceof Error ? err.message : err);
-      }
+    const step = await cognitoLoginStart(email, password);
+    if (step.kind === "mfa") {
+      // Password was right and this account has two-step verification on. No session yet:
+      // the browser sends the code, with this session, to /api/auth/login/mfa.
+      return Response.json(
+        { mfaRequired: true, session: step.session },
+        { status: 200, headers: { "Cache-Control": "no-store" } },
+      );
     }
-    // Cookie for same-origin localhost; accessToken in body for remote API Gateway Bearer use.
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        expiresIn: tokens.expiresIn,
-        accessToken: tokens.accessToken,
-      }),
-      {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Set-Cookie": accessCookieHeader(tokens.accessToken, tokens.expiresIn),
-        },
-      },
-    );
+    return await completeLogin(email, step.tokens);
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Login failed";
     console.warn("[auth/login]", msg.slice(0, 160));

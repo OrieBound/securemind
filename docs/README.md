@@ -12,6 +12,7 @@ SecureMind is a privacy-aware AI workspace for managing models, knowledge, memor
 - [ADR 0007: Hosted DynamoDB vectors](./adr/0007-hosted-dynamodb-vectors.md)
 - [ADR 0008: Terraform + GitHub Actions OIDC](./adr/0008-terraform-github-oidc.md)
 - [Deploy: Your own AWS account, from zero](./deploy/aws-from-zero.md)
+- [Two-step verification (authenticator-app codes)](./mfa.md)
 - [Deploy: Floci Local](./deploy/floci-local.md)
 - [Deploy: On-Prem Docker](./deploy/on-prem-docker.md)
 - [Diagram: on-prem](./diagrams/securemind-onprem-diagram.jpg) · [source](./diagrams/securemind-onprem.drawio)

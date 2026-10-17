@@ -9,6 +9,7 @@ import type { UserProfilePublic } from "@/lib/user-profile";
 import { useAuthSession } from "@/components/app/auth-session";
 import { notifyAvatarChanged, UserAvatarFace } from "@/components/app/user-avatar";
 import { AvatarCropDialog } from "@/components/app/avatar-crop-dialog";
+import { MfaSettings } from "@/components/app/mfa-settings";
 import type { DirectoryPasswordPolicy } from "@/lib/auth-password";
 
 type WorkspaceBrief = { id: string; name: string; emoji: string; isDefault: boolean };
@@ -624,9 +625,10 @@ export function ProfileSettings() {
           </form>
         ) : (
           <p className="text-[0.7rem] text-foreground/35">
-            MFA and multi-device session lists are not available from Cognito in this build.
+            A multi-device session list is not available from Cognito in this build.
           </p>
         )}
+        <MfaSettings />
         {authSession && (
           <button
             type="button"

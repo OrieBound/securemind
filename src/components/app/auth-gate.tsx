@@ -36,7 +36,7 @@ type Props = {
   children: React.ReactNode;
 };
 
-type GateMode = "login" | "claim" | "forgot" | "reset";
+type GateMode = "login" | "claim" | "forgot" | "reset" | "mfa";
 
 /**
  * When the server is in Cognito mode, require a session before showing the app.
@@ -53,6 +53,9 @@ export function AuthGate({ children }: Props) {
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [setupCode, setSetupCode] = useState("");
   const [code, setCode] = useState("");
+  // Two-step verification: the session from the password step, and the code the user types.
+  const [mfaSession, setMfaSession] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -167,6 +170,35 @@ export function AuthGate({ children }: Props) {
         return;
       }
 
+      if (mode === "mfa") {
+        const res = await fetch("/api/auth/login/mfa", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, session: mfaSession, code: mfaCode }),
+        });
+        const data = await res.json() as {
+          error?: string;
+          accessToken?: string;
+          restart?: boolean;
+        };
+        if (!res.ok) {
+          setError(data.error ?? "Request failed");
+          setMfaCode("");
+          // The sign-in attempt expired: go back and ask for the password again.
+          if (data.restart) {
+            setMfaSession("");
+            setMode("login");
+          }
+          return;
+        }
+        setMfaSession("");
+        setMfaCode("");
+        if (data.accessToken) storeClientAccessToken(data.accessToken);
+        await Promise.all([refreshMe(), refreshSetup()]);
+        return;
+      }
+
       if (mode === "claim") {
         const res = await fetch("/api/setup/claim", {
           method: "POST",
@@ -199,9 +231,19 @@ export function AuthGate({ children }: Props) {
       const data = await res.json() as {
         error?: string;
         accessToken?: string;
+        mfaRequired?: boolean;
+        session?: string;
       };
       if (!res.ok) {
         setError(data.error ?? "Request failed");
+        return;
+      }
+      if (data.mfaRequired && data.session) {
+        // Right password, and this account uses an authenticator app: ask for the code.
+        setMfaSession(data.session);
+        setMfaCode("");
+        setPassword("");
+        setMode("mfa");
         return;
       }
       if (data.accessToken) storeClientAccessToken(data.accessToken);
@@ -300,6 +342,7 @@ export function AuthGate({ children }: Props) {
     mode === "login" ? "Sign in"
     : mode === "claim" ? "Create the first owner"
     : mode === "forgot" ? "Forgot password"
+    : mode === "mfa" ? "Two-step verification"
     : "Reset password";
 
   const minPw = setup?.minPasswordLength ?? 8;
@@ -318,7 +361,9 @@ export function AuthGate({ children }: Props) {
             </div>
           </div>
           <p className="text-ui text-[var(--text-muted)] leading-[var(--leading-body)]">
-            {mode === "forgot" || mode === "reset"
+            {mode === "mfa"
+              ? "Enter the 6-digit code from your authenticator app."
+              : mode === "forgot" || mode === "reset"
               ? "We will never confirm whether an email is registered."
               : mode === "claim"
                 ? setup?.claimRequiresCode
@@ -335,6 +380,30 @@ export function AuthGate({ children }: Props) {
         )}
 
         <form onSubmit={submit} className="space-y-3.5">
+          {mode === "mfa" ? (
+            <>
+              <p className="text-meta text-[var(--text-muted)]">
+                Signing in as <span className="text-foreground/80">{email}</span>
+              </p>
+              <label className="block space-y-1.5">
+                <span className="text-label uppercase tracking-wider text-[var(--text-muted)]">Authentication code</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9 ]*"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  maxLength={7}
+                  value={mfaCode}
+                  onChange={e => setMfaCode(e.target.value.replace(/[^0-9 ]/g, ""))}
+                  placeholder="123456"
+                  aria-label="6-digit authentication code"
+                  className="w-full h-11 rounded-lg border border-foreground/10 bg-foreground/[0.04] px-3 text-center text-lg tracking-[0.35em] font-mono text-[var(--text-body)] focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
+                  required
+                />
+              </label>
+            </>
+          ) : (
           <label className="block space-y-1.5">
             <span className="text-label uppercase tracking-wider text-[var(--text-muted)]">Email</span>
             <input
@@ -346,6 +415,7 @@ export function AuthGate({ children }: Props) {
               required
             />
           </label>
+          )}
 
           {mode === "claim" && (
             <label className="block space-y-1.5">
@@ -456,6 +526,7 @@ export function AuthGate({ children }: Props) {
               : mode === "login" ? "Sign in"
               : mode === "claim" ? "Create owner account"
               : mode === "forgot" ? "Send reset code"
+              : mode === "mfa" ? "Verify and sign in"
               : "Set new password"}
           </Button>
         </form>
@@ -468,6 +539,15 @@ export function AuthGate({ children }: Props) {
               className={cn("text-ui text-[var(--text-muted)] hover:text-foreground/70 w-full text-center")}
             >
               Forgot password?
+            </button>
+          )}
+          {mode === "mfa" && (
+            <button
+              type="button"
+              onClick={() => { setMode("login"); setMfaSession(""); setMfaCode(""); setError(null); setNotice(null); }}
+              className={cn("text-ui text-[var(--text-muted)] hover:text-foreground/70 w-full text-center")}
+            >
+              Back to sign in
             </button>
           )}
           {(mode === "forgot" || mode === "reset") && (
