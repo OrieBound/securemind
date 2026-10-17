@@ -1,0 +1,23 @@
+{
+  "document": "docs/test-files/SecureMind_Synthetic_Residential_Tenancy_Agreement.docx",
+  "answerable": [
+    { "q": "What is the monthly rent?", "expect": "$2,475.00 CAD per month" },
+    { "q": "How much is parking per month and which stall?", "expect": "P2-117" },
+    { "q": "Which utilities are included in the rent?", "expect": "Water and building heating" },
+    { "q": "How much personal liability insurance must the tenants carry?", "expect": "$1,000,000" },
+    { "q": "What is the fixed term of the lease?", "expect": "1 September 2026 through 31 August 2027" },
+    { "q": "Can the tenants sublet the unit?", "expect": "may not assign, sublet" },
+    { "q": "How much is the storage locker?", "expect": "$35.00" },
+    { "q": "Who is the landlord's property manager?", "expect": "Ava Richardson" },
+    { "q": "late fee", "expect": "LATE-FEE-DEMO-25" },
+    { "q": "parking", "expect": "P2-117" },
+    { "q": "deposit amount", "expect": "Security deposit" },
+    { "q": "notice before landlord enters", "expect": "give any required notice before entry" }
+  ],
+  "offTopic": [
+    { "q": "What is the capital of Australia?" },
+    { "q": "Write me a poem about autumn" },
+    { "q": "how do I boil an egg" },
+    { "q": "Explain how photosynthesis works" }
+  ]
+}

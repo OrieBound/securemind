@@ -14,7 +14,12 @@
  */
 
 import { db } from "@/lib/db";
-import { embedText } from "@/lib/models/embed";
+import { embedQueryVariants, embedText } from "@/lib/models/embed";
+import {
+  CANDIDATE_OVERFETCH,
+  CANDIDATE_VECTOR_FLOOR,
+  rankHits,
+} from "@/lib/retrieval-rank";
 import { isHostedRuntime, resolveStorageBackend } from "@/lib/runtime-env";
 import { hostedAppStore } from "@/lib/workspaces/hosted-dynamo";
 
@@ -24,20 +29,26 @@ export type SemanticHit = {
   id:           string;
   content:      string;
   category:     string;
-  similarity:   number;   // 0–1, higher = more relevant
+  similarity:   number;   // 0–1 raw vector similarity, higher = more relevant
+  /** Share (0–1) of the question's key words found in the chunk. */
+  lexical?:     number;
+  /** Vector similarity plus the keyword bonus; what retrieval ranks and filters on. */
+  score?:       number;
   documentId?:  string | null;
   documentName?: string | null;
   provenance?:  ChunkProvenance | null;
 };
 
 /**
- * Similarity floor (not K). Ranked hits are already highest-first; this drops
- * weak matches so the model is not fed unrelated chunks. Do not raise it to
- * “get better matches” — that only hides more of the ranked list.
+ * Evidence thresholds live in `retrieval-rank.ts`: a noise floor for candidates, a lower
+ * floor for turns already about the workspace, and a higher one before a general question
+ * is upgraded to Knowledge-grounded. A single fixed 0.5 floor dropped correct passages.
  */
-export const EVIDENCE_MIN_SIMILARITY = 0.5;
-/** @deprecated use EVIDENCE_MIN_SIMILARITY */
-const MIN_SIMILARITY = EVIDENCE_MIN_SIMILARITY;
+export {
+  CANDIDATE_VECTOR_FLOOR,
+  GROUNDED_MIN_SCORE,
+  SPECULATIVE_MIN_SCORE,
+} from "@/lib/retrieval-rank";
 
 /** Max fragments fetched from pgvector before evidence selection. */
 export const RETRIEVAL_CANDIDATE_LIMIT = 10;
@@ -86,15 +97,16 @@ export async function storeMemoryFragment(opts: {
 const RETRIEVAL_TIMEOUT_MS = 3000;
 
 /**
- * Finds the top-k MemoryFragments most semantically similar to `query`.
+ * Finds the best Knowledge chunks for `query` in one workspace.
  *
- * Searches only the requesting workspace's fragments (episodic, semantic, and
- * document chunks). Documents uploaded into a workspace are stamped with that
- * workspaceId when processed, so a single workspaceId filter covers all memory
- * types — full per-workspace isolation.
+ * Fetches a wider candidate set by vector similarity, adds a keyword bonus, then keeps
+ * the best `limit` that clear the grounded floor. Only document chunks are searched, and
+ * every row is scoped by userId and workspaceId. On a nomic install the question is
+ * embedded both raw and with the query prefix, and each chunk keeps its better score,
+ * so chunks stored before task prefixes existed still match.
  *
- * Returns an empty array on any error or timeout — semantic retrieval must
- * never block or break the main chat path.
+ * Returns an empty array on any error or timeout — retrieval must never block or break
+ * the main chat path.
  */
 export async function retrieveSemanticMemory(
   query:       string,
@@ -104,47 +116,51 @@ export async function retrieveSemanticMemory(
 ): Promise<SemanticHit[]> {
   try {
     // Race against a timeout so a slow Ollama embed never delays the chat response
-    const vectorResult = await Promise.race([
-      embedText(query),
+    const vectors = await Promise.race([
+      embedQueryVariants(query),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), RETRIEVAL_TIMEOUT_MS)),
     ]);
 
-    if (!vectorResult) {
+    if (!vectors) {
       console.warn("[memory] Retrieval timed out — skipping semantic context this turn.");
       return [];
     }
 
-    const vectorStr = `[${vectorResult.join(",")}]`;
+    // $1 userId, $2 workspaceId, $3 candidate count, $4.. one parameter per query vector.
+    const distances = vectors.map((_, i) => `(mf.embedding <=> $${i + 4}::vector)`);
+    const nearest = distances.length === 1 ? distances[0] : `LEAST(${distances.join(", ")})`;
 
     // Citeable Knowledge only: approved document chunks. Episodic/assistant
     // fragments must never surface as Sources or prompt evidence.
-    const hits = await db.$queryRawUnsafe<(SemanticHit & { provenance: unknown })[]>(
+    const rows = await db.$queryRawUnsafe<(SemanticHit & { provenance: unknown })[]>(
       `SELECT mf.id, mf.content, mf.category, mf."documentId",
               d.name AS "documentName",
               mf.provenance,
-              1 - (mf.embedding <=> $1::vector) AS similarity
+              1 - ${nearest} AS similarity
        FROM   "MemoryFragment" mf
        INNER JOIN "Document" d ON d.id = mf."documentId"
-       WHERE  mf."userId"      = $2
-         AND  mf."workspaceId" = $3
+       WHERE  mf."userId"      = $1
+         AND  mf."workspaceId" = $2
          AND  mf.category      = 'document'
          AND  mf.embedding     IS NOT NULL
-       ORDER BY mf.embedding <=> $1::vector
-       LIMIT  $4`,
-      vectorStr,
+       ORDER BY ${nearest}
+       LIMIT  $3`,
       userId,
       workspaceId,
-      limit,
+      Math.max(1, limit) * CANDIDATE_OVERFETCH,
+      ...vectors.map(v => `[${v.join(",")}]`),
     );
 
-    return hits
-      .filter(h => Number(h.similarity) >= MIN_SIMILARITY)
+    const candidates = rows
       .map(h => ({
         ...h,
+        similarity: Number(h.similarity),
         provenance: (h.provenance && typeof h.provenance === "object")
           ? h.provenance as ChunkProvenance
           : null,
-      }));
+      }))
+      .filter(h => h.similarity >= CANDIDATE_VECTOR_FLOOR);
+    return rankHits(candidates, query, limit);
   } catch (err) {
     // Semantic retrieval failure must never break the main chat path
     console.warn("[memory] Retrieval failed — continuing without semantic context:", String(err));

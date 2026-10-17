@@ -12,6 +12,8 @@
     "corpus:write": "npx tsx scripts/write-regression-corpus.ts",
     "typecheck": "tsc --noEmit",
     "route-eval": "npx tsx scripts/route-eval.ts",
+    "knowledge:reindex": "npx tsx scripts/reindex-knowledge.ts",
+    "rag:eval": "npx tsx scripts/rag-eval.ts",
     "pricing:check": "node scripts/check-pricing.mjs",
     "docker:up": "docker compose up -d db floci ollama ollama-init",
     "docker:down": "docker compose down",

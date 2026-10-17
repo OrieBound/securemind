@@ -27,6 +27,7 @@ import { probeHardware } from "@/lib/models/local-recommendations";
 import { runtimeEdition } from "@/lib/runtime-env";
 import { estimateChatUsage, selectWorkingMemory } from "@/lib/tokens";
 import { RETRIEVAL_CANDIDATE_LIMIT, retrieveCombinedContext } from "@/lib/memory";
+import { strongHits } from "@/lib/retrieval-rank";
 import {
   insufficientEvidenceBlock,
   packageCurrentAttachments,
@@ -332,8 +333,11 @@ export async function prepareChatTurn(
   ]);
   const candidateHits = searchKnowledge ? combined.documentHits : [];
   const retrievalMs = searchKnowledge ? Date.now() - retrievalStarted : null;
+  // When the user did not point at their documents (a general question or a terse
+  // fragment), only a strong match counts as evidence. A turn already about the
+  // workspace accepts anything that cleared the grounded floor in retrieval.
   const evidenceHits = searchKnowledge
-    ? selectEvidenceForPrompt(candidateHits)
+    ? selectEvidenceForPrompt(turn.shouldRetrieve ? candidateHits : strongHits(candidateHits))
     : [];
   turn = applySpeculativeKnowledgeHits(turn, evidenceHits.length);
   const candidateCount = candidateHits.length;

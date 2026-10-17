@@ -15,7 +15,7 @@
 
 import { db } from "@/lib/db";
 import { originalExists, readOriginal } from "@/lib/document-storage";
-import { embedText } from "@/lib/models/embed";
+import { embedDocumentText } from "@/lib/models/embed";
 import { mirrorDocumentChunkToDynamo } from "@/lib/storage/dynamodb-ingest";
 import { usesHostedAppStore } from "@/lib/workspaces/store";
 import { getPersistedDocument, updatePersistedDocument } from "@/lib/documents/persist";
@@ -371,7 +371,7 @@ export async function processDocument(
 
     for (const chunk of chunks) {
       try {
-        const vector = await embedText(chunk.content);
+        const vector = await embedDocumentText(chunk.content);
 
         // Create the MemoryFragment record first (gets a Prisma-managed cuid).
         // workspaceId scopes these chunks to the workspace that owns the document.
@@ -481,7 +481,7 @@ async function processHostedDocument(
 
     for (const chunk of chunks) {
       try {
-        const vector = await embedText(chunk.content);
+        const vector = await embedDocumentText(chunk.content);
         const fragmentId = crypto.randomUUID();
         await mirrorDocumentChunkToDynamo({
           fragmentId,

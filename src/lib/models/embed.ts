@@ -69,6 +69,32 @@ export async function embedText(text: string): Promise<number[]> {
   return embedOllama(text);
 }
 
+/** nomic-embed-text is trained with task prefixes. Titan and other models take none. */
+export const NOMIC_DOCUMENT_PREFIX = "search_document: ";
+export const NOMIC_QUERY_PREFIX = "search_query: ";
+
+/** True when the active embedder is a nomic model that expects task prefixes. */
+export function embedderUsesTaskPrefixes(): boolean {
+  if (resolveEmbedProvider() === "bedrock") return false;
+  return /nomic-embed/i.test(process.env.OLLAMA_EMBED_MODEL ?? "nomic-embed-text");
+}
+
+/** Embed a chunk of a document that is being stored for retrieval. */
+export async function embedDocumentText(text: string): Promise<number[]> {
+  return embedText(embedderUsesTaskPrefixes() ? NOMIC_DOCUMENT_PREFIX + text : text);
+}
+
+/**
+ * Query vectors to search with. Chunks stored before task prefixes were added were
+ * embedded as raw text, so a nomic install searches with both the raw and the
+ * prefixed query and keeps each chunk's better score. Old and new chunks therefore
+ * work side by side with no migration. Other embedders return a single vector.
+ */
+export async function embedQueryVariants(text: string): Promise<number[][]> {
+  if (!embedderUsesTaskPrefixes()) return [await embedText(text)];
+  return Promise.all([embedText(text), embedText(NOMIC_QUERY_PREFIX + text)]);
+}
+
 export function expectedEmbedDimensions(): number {
   return embedDimensions();
 }

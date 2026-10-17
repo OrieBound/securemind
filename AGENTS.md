@@ -24,8 +24,10 @@ It is a **single-user personal project**. Default auth is `AUTH_MODE=local`. Opt
 - Retrieval, citation UI, and response style are decided by `src/lib/turn-policy/decide-turn.ts` — not by scattered greeting regexes in the chat route.
 - Follow the user's topic. The workspace scopes Knowledge access; it is not a conversational boundary.
 - Social / app-help / provenance / correction / ambiguous-clarify turns must not search workspace Knowledge or show Sources. Grounding is `not_applicable`.
-- General questions may silent-search Knowledge. Hits at `EVIDENCE_MIN_SIMILARITY` (0.5) upgrade the turn to workspace-grounded and show Sources; a miss stays general with no Sources.
-- Workspace-grounded and investigation turns retrieve, apply `EVIDENCE_MIN_SIMILARITY` (0.5), and show only sources actually cited.
+- General questions and terse fragments (`short-unclear`) silent-search Knowledge. Hits whose fused score reaches `SPECULATIVE_MIN_SCORE` (0.55) upgrade the turn to workspace-grounded and show Sources; a miss stays general (or asks to clarify, for a terse fragment) with no Sources.
+- Workspace-grounded and investigation turns retrieve, accept hits at `GROUNDED_MIN_SCORE` (0.40), and show only sources actually cited. A short question straight after a grounded answer is a follow-up even without a cue word.
+- Retrieval ranks by a fused score: vector similarity plus a keyword bonus (`src/lib/retrieval-rank.ts`). Do not reintroduce a single fixed similarity floor; it dropped correct passages. Thresholds live only in that module and are covered by `tests/knowledge-golden.test.ts` (needs local Ollama; `npm run rag:eval` prints the report).
+- Local embeddings use the nomic task prefixes: `embedDocumentText()` at ingest, `embedQueryVariants()` at search (raw and prefixed, best score per chunk, so chunks stored before prefixes still match). `npm run knowledge:reindex` re-embeds old chunks. Never call `embedText` directly for ingest.
 - The **workspace name** is the assistant speaker identity in chat (Companion-style). Product chrome stays SecureMind; default seed workspace is **Mindy Locke**.
 - `reasonCode` is telemetry only — never put it in assistant-visible text.
 
@@ -152,6 +154,8 @@ src/
     citation-audit.ts         ← post-answer [n] coverage / invalid-index checks
     prompt-guard.ts           ← injection neutralization + evidence fencing
     memory.ts                 ← fragment storage + semantic retrieval
+    retrieval-rank.ts         ← fused vector+keyword score and the evidence thresholds
+    knowledge-reindex.ts      ← re-embed stored chunks with the nomic document prefix (local)
     documents.ts              ← extraction, server-side scrub, chunking
     image-extract.ts          ← Groq vision → searchable text for image Knowledge
     tokens.ts                 ← token estimation + working memory selection

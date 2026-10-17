@@ -13,11 +13,14 @@ import { assertEmbeddingDimensions } from "./dynamodb-schema";
 import { createDynamoDbVectorEngine } from "./dynamodb-client-engine";
 import { createInMemoryVectorEngine, type VectorEngine } from "./vector-engine";
 import { clampTopK } from "./vector-math";
+import {
+  CANDIDATE_OVERFETCH,
+  CANDIDATE_VECTOR_FLOOR,
+  rankHits,
+} from "@/lib/retrieval-rank";
 
 const DOCUMENT_CATEGORY = "document";
 const RETRIEVAL_TIMEOUT_MS = 3000;
-/** Cosine floor, same meaning as EVIDENCE_MIN_SIMILARITY — not a K (top-N) cap. */
-const DEFAULT_MIN_SIMILARITY = 0.5;
 
 export type VectorFragmentWrite = {
   id: string;
@@ -43,7 +46,10 @@ export interface VectorFragmentRepository extends VectorSearchRepository {
 export type DynamoVectorRepoDeps = {
   engine: VectorEngine;
   embed: (text: string) => Promise<number[]>;
+  /** Query vectors to search with; defaults to the single `embed` vector. */
+  embedQueries?: (text: string) => Promise<number[][]>;
   dimensions: number;
+  /** Candidate noise floor on raw vector similarity. Final filtering is in rankHits. */
   minSimilarity?: number;
 };
 
@@ -59,7 +65,8 @@ function parseProvenance(raw: string | null): ChunkProvenance | null {
 }
 
 export function createDynamoVectorRepository(deps: DynamoVectorRepoDeps): VectorFragmentRepository {
-  const minSimilarity = deps.minSimilarity ?? DEFAULT_MIN_SIMILARITY;
+  const minSimilarity = deps.minSimilarity ?? CANDIDATE_VECTOR_FLOOR;
+  const embedQueries = deps.embedQueries ?? (async (text: string) => [await deps.embed(text)]);
 
   return {
     async put(item) {
@@ -93,30 +100,41 @@ export function createDynamoVectorRepository(deps: DynamoVectorRepoDeps): Vector
 
     async retrieve({ query, workspaceId, userId, limit }) {
       try {
-        const vectorResult = await Promise.race([
-          deps.embed(query),
+        const vectors = await Promise.race([
+          embedQueries(query),
           new Promise<null>((resolve) => setTimeout(() => resolve(null), RETRIEVAL_TIMEOUT_MS)),
         ]);
-        if (!vectorResult) return [];
-        assertEmbeddingDimensions(vectorResult, deps.dimensions);
-        const hits = await deps.engine.search({
-          vector: vectorResult,
-          workspaceId,
-          userId,
-          category: DOCUMENT_CATEGORY,
-          topK: clampTopK(limit),
-        });
-        return hits
-          .filter((h) => h.similarity >= minSimilarity)
-          .map((h): VectorHit => ({
-            id: h.record.fragmentId,
-            content: h.record.content,
-            category: h.record.category,
-            similarity: h.similarity,
-            documentId: h.record.documentId,
-            documentName: h.record.documentName,
-            provenance: parseProvenance(h.record.provenanceJson),
-          }));
+        if (!vectors || vectors.length === 0) return [];
+        const wanted = limit ?? 10;
+        const topK = clampTopK(wanted * CANDIDATE_OVERFETCH);
+        // Each chunk keeps its best similarity across the query vectors.
+        const best = new Map<string, VectorHit>();
+        for (const vector of vectors) {
+          assertEmbeddingDimensions(vector, deps.dimensions);
+          const hits = await deps.engine.search({
+            vector,
+            workspaceId,
+            userId,
+            category: DOCUMENT_CATEGORY,
+            topK,
+          });
+          for (const h of hits) {
+            if (h.similarity < minSimilarity) continue;
+            const id = h.record.fragmentId;
+            const seen = best.get(id);
+            if (seen && seen.similarity >= h.similarity) continue;
+            best.set(id, {
+              id,
+              content: h.record.content,
+              category: h.record.category,
+              similarity: h.similarity,
+              documentId: h.record.documentId,
+              documentName: h.record.documentName,
+              provenance: parseProvenance(h.record.provenanceJson),
+            });
+          }
+        }
+        return rankHits([...best.values()], query, wanted);
       } catch (err) {
         console.warn("[dynamodb-vectors] Retrieval failed — continuing without semantic context:", String(err));
         return [];
@@ -134,6 +152,7 @@ export function dynamoVectorsFromEnv(): VectorFragmentRepository {
   return createDynamoVectorRepository({
     engine,
     embed: (text) => import("@/lib/models/embed").then((m) => m.embedText(text)),
+    embedQueries: (text) => import("@/lib/models/embed").then((m) => m.embedQueryVariants(text)),
     dimensions: expectedEmbedDimensions(),
   });
 }
