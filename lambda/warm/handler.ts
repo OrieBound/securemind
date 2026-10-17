@@ -2,6 +2,8 @@
  * Lightweight warm Lambda — hit before chat to reduce cold-start latency.
  */
 
+import { API_SECURITY_HEADERS } from "../../src/lib/security-headers";
+
 type ApiGwEvent = {
   httpMethod?: string;
   headers?: Record<string, string | undefined>;
@@ -24,6 +26,7 @@ function corsHeaders(event: ApiGwEvent): Record<string, string> {
     "Content-Type": "application/json",
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type,Authorization",
+    ...API_SECURITY_HEADERS,
   };
   if (origin) {
     headers["Access-Control-Allow-Origin"] = origin;

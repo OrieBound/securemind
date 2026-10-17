@@ -1,3 +1,5 @@
+import { API_SECURITY_HEADERS } from "@/lib/security-headers";
+
 /** Encode one SSE `data:` frame (UTF-8). */
 export function sseDataFrame(payload: unknown): Uint8Array {
   const encoder = new TextEncoder();
@@ -18,6 +20,7 @@ export function apigwStreamPreamble(opts: {
   const headers: Record<string, string> = {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache",
+    ...API_SECURITY_HEADERS,
     ...(opts.headers ?? {}),
   };
   if (opts.origin) {
