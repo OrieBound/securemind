@@ -4,7 +4,11 @@
 
 import type { ChatMessage } from "./types";
 import { resolveVendorApiKey } from "./vendor-secrets";
-import { fetchWithTimeout } from "./vendor-stream";
+import {
+  createAnthropicUsageTracker,
+  fetchWithTimeout,
+  type VendorUsageCallback,
+} from "./vendor-stream";
 import type { CatalogModel } from "./catalog";
 
 function splitAnthropicMessages(messages: ChatMessage[]): {
@@ -56,6 +60,7 @@ export async function* streamAnthropicChat(
   messages: ChatMessage[],
   model: string,
   signal?: AbortSignal,
+  onUsage?: VendorUsageCallback,
 ): AsyncGenerator<string> {
   const apiKey = await resolveVendorApiKey("anthropic");
   if (!apiKey) {
@@ -88,6 +93,7 @@ export async function* streamAnthropicChat(
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
+  const usageTracker = createAnthropicUsageTracker();
   let buffer = "";
 
   try {
@@ -108,6 +114,8 @@ export async function* streamAnthropicChat(
             type?: string;
             delta?: { type?: string; text?: string };
           };
+          const usage = usageTracker.push(json);
+          if (usage) onUsage?.(usage);
           if (json.type === "content_block_delta" && json.delta?.text) {
             yield json.delta.text;
           }

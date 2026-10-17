@@ -137,7 +137,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
     if (!(await hasOpenAIRuntime())) {
       throw new Error("OpenAI is not configured. Add an API key in Settings → Models.");
     }
-    for await (const delta of streamOpenAIChat(messages, model)) {
+    for await (const delta of streamOpenAIChat(messages, model, undefined, onUsage)) {
       yield delta;
     }
     return;
@@ -147,7 +147,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
     if (!(await hasAnthropicRuntime())) {
       throw new Error("Anthropic is not configured. Add an API key in Settings → Models.");
     }
-    for await (const delta of streamAnthropicChat(messages, model)) {
+    for await (const delta of streamAnthropicChat(messages, model, undefined, onUsage)) {
       yield delta;
     }
     return;
@@ -157,7 +157,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
     if (!(await hasGoogleRuntime())) {
       throw new Error("Gemini is not configured. Add an API key in Settings → Models.");
     }
-    for await (const delta of streamGoogleChat(messages, model)) {
+    for await (const delta of streamGoogleChat(messages, model, undefined, onUsage)) {
       yield delta;
     }
     return;
@@ -167,7 +167,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
     if (!(await hasXaiRuntime())) {
       throw new Error("Grok is not configured. Add an API key in Settings → Models.");
     }
-    for await (const delta of streamXaiChat(messages, model)) {
+    for await (const delta of streamXaiChat(messages, model, undefined, onUsage)) {
       yield delta;
     }
     return;

@@ -11,20 +11,16 @@ import {
 } from "@/lib/pricing";
 import { getModelCatalogCached } from "@/lib/models/catalog";
 import {
+  isRateProvider,
   listEditableRates,
   overridesFromEditedRows,
   parseTokenRate,
   type EditableRateRow,
-  type RateProvider,
 } from "@/lib/pricing/rate-overrides";
 import {
   getPricingRateOverrides,
   savePricingRateOverrides,
 } from "@/lib/pricing/rate-overrides-store";
-
-function isRateProvider(value: unknown): value is RateProvider {
-  return value === "groq" || value === "bedrock";
-}
 
 function parseEditedRows(raw: unknown): { rows?: EditableRateRow[]; error?: string } {
   if (!Array.isArray(raw)) return { error: "rates must be an array." };
@@ -35,7 +31,7 @@ function parseEditedRows(raw: unknown): { rows?: EditableRateRow[]; error?: stri
     }
     const rec = item as Record<string, unknown>;
     if (!isRateProvider(rec.provider)) {
-      return { error: "Provider must be groq or bedrock." };
+      return { error: "Provider must be groq, bedrock, google, openai, anthropic or xai." };
     }
     const model = typeof rec.model === "string" ? rec.model.trim() : "";
     if (!model || model.length > 200) {

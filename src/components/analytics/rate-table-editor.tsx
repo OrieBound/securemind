@@ -79,6 +79,8 @@ export function RateTableEditor() {
 
   const bedrock = rows.map((row, i) => ({ row, i })).filter(x => x.row.provider === "bedrock");
   const groq = rows.map((row, i) => ({ row, i })).filter(x => x.row.provider === "groq");
+  const byProvider = (provider: string) =>
+    rows.map((row, i) => ({ row, i })).filter(x => x.row.provider === provider);
   const canEdit = payload.canEdit;
 
   return (
@@ -91,14 +93,21 @@ export function RateTableEditor() {
         </p>
       </div>
       <p className="text-[0.7rem] text-muted-foreground">
-        USD per million tokens. These are published on-demand list rates, not your invoice.
-        Saving here updates estimates for new chat turns only — local Ollama stays $0.
+        USD per million tokens. Groq and Bedrock are published on-demand list rates. Gemini,
+        OpenAI, Anthropic and Grok rows are approximate and matched by model family (a row
+        applies to every model id that starts with it), so check them against the vendor&apos;s
+        pricing page. None of this is your invoice. Saving here updates estimates for new
+        chat turns only — local Ollama stays $0.
       </p>
       {error && <p className="text-sm text-destructive">{error}</p>}
       {saved && <p className="text-[0.7rem] text-emerald-300/80">Rates saved for new turns.</p>}
 
       <RateGroup title="Amazon Bedrock" entries={bedrock} canEdit={canEdit} onChange={updateRow} />
       <RateGroup title="Groq" entries={groq} canEdit={canEdit} onChange={updateRow} />
+      <RateGroup title="Gemini (approximate)" entries={byProvider("google")} canEdit={canEdit} onChange={updateRow} />
+      <RateGroup title="OpenAI (approximate)" entries={byProvider("openai")} canEdit={canEdit} onChange={updateRow} />
+      <RateGroup title="Anthropic (approximate)" entries={byProvider("anthropic")} canEdit={canEdit} onChange={updateRow} />
+      <RateGroup title="Grok (approximate)" entries={byProvider("xai")} canEdit={canEdit} onChange={updateRow} />
 
       {canEdit && (
         <div className="flex flex-wrap gap-2">

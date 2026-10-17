@@ -38,21 +38,28 @@ function extractModelKeys(src, tableName) {
 
 const groqSrc = readFileSync(resolve(root, "src/lib/pricing/groq.ts"), "utf8");
 const bedrockSrc = readFileSync(resolve(root, "src/lib/pricing/bedrock.ts"), "utf8");
+const vendorSrc = readFileSync(resolve(root, "src/lib/pricing/vendors.ts"), "utf8");
 
 const groqVersion = extractVersion(groqSrc, "GROQ_PRICING_VERSION");
 const bedrockVersion = extractVersion(bedrockSrc, "BEDROCK_PRICING_VERSION");
+const vendorVersion = extractVersion(vendorSrc, "VENDOR_PRICING_VERSION");
+const vendorPrefixes = [...vendorSrc.matchAll(/prefix:\s*"([^"]+)"/g)].map(m => m[1]);
 const groqModels = extractModelKeys(groqSrc, "GROQ_MODEL_PRICING");
 const bedrockModels = extractModelKeys(bedrockSrc, "BEDROCK_MODEL_PRICING");
 
 console.log("SecureMind pricing freshness check (estimates — not invoices)\n");
 console.log(`  Groq table:    ${groqVersion}  (${groqModels.length} models)`);
 console.log(`  Bedrock table: ${bedrockVersion}  (${bedrockModels.length} models)`);
+console.log(`  Vendors:       ${vendorVersion}  (${vendorPrefixes.length} model families, APPROXIMATE)`);
 console.log(`  Ollama:        priced as $0 local (ollama-local-zero)\n`);
 
 console.log("Manual refresh checklist:");
 console.log(`  1. Groq:    ${GROQ_DOCS}`);
 console.log(`  2. Bedrock: ${BEDROCK_PRICING}`);
 console.log("  3. Update rates in src/lib/pricing/groq.ts and bedrock.ts");
+console.log("     Gemini/OpenAI/Anthropic/Grok live in vendors.ts (prefix-matched, approximate):");
+console.log("     ai.google.dev/gemini-api/docs/pricing · openai.com/api/pricing ·");
+console.log("     docs.anthropic.com/en/docs/about-claude/pricing · docs.x.ai (models)");
 console.log("  4. Bump GROQ_PRICING_VERSION / BEDROCK_PRICING_VERSION + EFFECTIVE dates");
 console.log("  5. Re-run npm test / this script\n");
 
