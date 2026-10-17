@@ -173,7 +173,6 @@ data "aws_iam_policy_document" "amplify_dynamodb" {
 }
 
 resource "aws_iam_role_policy" "amplify_dynamodb" {
-  count  = var.fragments_table_arn != "" ? 1 : 0
   name   = "securemind-amplify-dynamodb-${var.env_name}"
   role   = aws_iam_role.amplify.id
   policy = data.aws_iam_policy_document.amplify_dynamodb.json

@@ -57,12 +57,27 @@ export function commonArgsFromEnv() {
   };
 }
 
+// On Windows, spawnSync's shell:true re-parses the joined command line through
+// cmd.exe. An arg containing a space (e.g. a human-readable --description) gets
+// word-split back into multiple args unless it's quoted here first. Linux/macOS
+// (shell:false) pass the args array straight through to execve and never hit this.
+function quoteForWindowsShell(args) {
+  return args.map((a) => {
+    const s = String(a);
+    if (/[\s"]/.test(s)) {
+      return `"${s.replace(/"/g, '""')}"`;
+    }
+    return s;
+  });
+}
+
 export function run(cmd, args, opts = {}) {
   console.log(`\n> ${cmd} ${args.join(" ")}\n`);
-  const r = spawnSync(cmd, args, {
+  const isWin = process.platform === "win32";
+  const r = spawnSync(cmd, isWin ? quoteForWindowsShell(args) : args, {
     stdio: opts.stdio ?? "inherit",
     encoding: opts.encoding,
-    shell: process.platform === "win32",
+    shell: isWin,
     cwd: opts.cwd || ROOT,
     env: { ...process.env, ...opts.env },
   });

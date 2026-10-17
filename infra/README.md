@@ -63,7 +63,7 @@ Copy the `backend_hcl` output to `infra/terraform/backend.hcl` (gitignored).
 3. **Amplify console:** connect the GitHub repo with the GitHub App. Terraform does not store a token. Auto-build stays off. Your workflow calls `StartJob` after apply.
 4. **Bedrock console:** enable Titan embed v2 (1024-d) and the chat models you will use. IAM is not enough without model access.
 5. **`.env.deploy`:** `AWS_PROFILE=your-profile` and `ENV_NAME=your-env`.
-6. Laptop apply: `npm run infra:up`. After the first Amplify URL exists, `npm run infra:wire`.
+6. Laptop apply: `npm run infra:up`. After the first Amplify URL exists, `npm run infra:wire`. **Standing rule, not a one-time step:** every later `terraform apply` — drift fixes, a module change, anything — must be followed immediately by another `npm run infra:wire`. `terraform apply` alone only knows `http://localhost:3000` for CORS/callback URLs and resets them back to that on its own; `infra:wire` is what extends them to the live Amplify domain. `infra:up` already runs them as that pair — a bare `terraform apply` run by hand does not.
 7. **First admin:** the pool stays empty. Print the setup code once from the CLI. It is not shown on the Amplify page:
 
 ```bash
@@ -108,7 +108,7 @@ Open the site, enter that code plus the email and password **you** choose. The s
 
 Amplify clones GitHub and runs [`amplify.yml`](../amplify.yml). Actions does not upload a UI zip.
 
-Sandbox apply hits (OIDC, Amplify monorepo env, 220 MB compute cap, Actions vs Amplify): [docs/deploy/hosted-sandbox-roadblocks.md](../docs/deploy/hosted-sandbox-roadblocks.md).
+Sandbox apply hits (OIDC, Amplify monorepo env, 220 MB compute cap, Actions vs Amplify, Windows-laptop apply quirks, Amplify console env-var wipe): [docs/deploy/hosted-sandbox-roadblocks.md](../docs/deploy/hosted-sandbox-roadblocks.md).
 
 ## IAM layers (what failed vs what is next)
 

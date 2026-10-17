@@ -166,6 +166,16 @@ function updateApiGatewayChatCors(apiBaseUrl, allowedOrigin) {
   console.log(`API Gateway /chat OPTIONS Allow-Origin=${allowedOrigin}`);
 }
 
+/** Amplify's API requires every environment variable value to be a plain string. */
+function stringifyEnvValues(obj) {
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === undefined || v === null) continue;
+    out[k] = typeof v === "string" ? v : JSON.stringify(v);
+  }
+  return out;
+}
+
 function updateAmplifyEnv({ appId, branch, apiBaseUrl, authOut, region, avatarBucket }) {
   if (!appId) return;
 
@@ -184,11 +194,17 @@ function updateAmplifyEnv({ appId, branch, apiBaseUrl, authOut, region, avatarBu
     ...(avatarBucket ? { AVATAR_S3_BUCKET: avatarBucket } : {}),
   };
 
-  const map = Object.entries(envVars)
-    .filter(([, v]) => v !== undefined && v !== null)
-    .map(([k, v]) => `${k}=${v}`)
-    .join(",");
-  aws(["amplify", "update-app", "--app-id", appId, "--environment-variables", map]);
+  // Not --environment-variables KEY=VAL,KEY=VAL: Amplify itself writes app-level
+  // vars with JSON-array values (e.g. _LIVE_UPDATES, from the console's "Live
+  // package updates" setting). Commas/quotes inside those break that flat CSV
+  // format before any of our real values get applied. --cli-input-json has no
+  // such ambiguity — every value is a JSON string, however it's shaped.
+  const appInputPath = path.join(ROOT, "infra/terraform/.build/amplify-app-env.json");
+  writeFileSync(
+    appInputPath,
+    JSON.stringify({ appId, environmentVariables: stringifyEnvValues(envVars) }),
+  );
+  aws(["amplify", "update-app", "--cli-input-json", `file://${appInputPath}`]);
 
   if (branch) {
     const listed = awsJson(["amplify", "list-branches", "--app-id", appId]);
@@ -215,20 +231,16 @@ function updateAmplifyEnv({ appId, branch, apiBaseUrl, authOut, region, avatarBu
         ...(branchDesc?.branch?.environmentVariables || {}),
         ...envVars,
       };
-      const branchMap = Object.entries(branchEnv)
-        .filter(([, v]) => v !== undefined && v !== null)
-        .map(([k, v]) => `${k}=${v}`)
-        .join(",");
-      aws([
-        "amplify",
-        "update-branch",
-        "--app-id",
-        appId,
-        "--branch-name",
-        branch,
-        "--environment-variables",
-        branchMap,
-      ]);
+      const branchInputPath = path.join(ROOT, "infra/terraform/.build/amplify-branch-env.json");
+      writeFileSync(
+        branchInputPath,
+        JSON.stringify({
+          appId,
+          branchName: branch,
+          environmentVariables: stringifyEnvValues(branchEnv),
+        }),
+      );
+      aws(["amplify", "update-branch", "--cli-input-json", `file://${branchInputPath}`]);
     }
   }
   console.log(`Amplify app ${appId} env updated (API + Cognito; existing secrets kept).`);

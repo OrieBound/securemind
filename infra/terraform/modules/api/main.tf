@@ -5,6 +5,10 @@ terraform {
       source  = "hashicorp/aws"
       version = ">= 6.25.0, < 7.0.0"
     }
+    time = {
+      source  = "hashicorp/time"
+      version = ">= 0.11.0"
+    }
   }
 }
 
@@ -109,16 +113,16 @@ resource "aws_iam_role_policy" "gha_avatars" {
   policy = data.aws_iam_policy_document.gha_avatars.json
 }
 
-resource "terraform_data" "gha_avatars_wait" {
-  input = aws_iam_role_policy.gha_avatars.id
-  provisioner "local-exec" {
-    command = "sleep 20"
+resource "time_sleep" "gha_avatars_wait" {
+  create_duration = "20s"
+  triggers = {
+    gha_avatars_policy_id = aws_iam_role_policy.gha_avatars.id
   }
 }
 
 resource "aws_s3_bucket" "avatars" {
   bucket     = var.avatar_bucket_name
-  depends_on = [terraform_data.gha_avatars_wait]
+  depends_on = [time_sleep.gha_avatars_wait]
   tags = {
     Project = "SecureMind"
     Env     = var.env_name

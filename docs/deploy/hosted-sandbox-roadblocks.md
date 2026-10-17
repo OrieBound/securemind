@@ -1,6 +1,6 @@
 # Hosted sandbox: roadblocks we hit
 
-**Last stamped: 2026-09-21.** Lab notes from the first hosted apply. The maintainer `main` pipeline stays on its own sandbox stack. Another account is a second bootstrap, not a retarget of that stack.
+**Last stamped: 2026-10-04.** Lab notes from the first hosted apply. The maintainer `main` pipeline stays on its own sandbox stack. Another account is a second bootstrap, not a retarget of that stack.
 
 Use this as an operator log and as interview notes: each item is **symptom → cause → what we did**. Dated chronology is in [Timeline](#timeline) below; README carries a short copy of the same stamp.
 
@@ -10,7 +10,7 @@ IaC and IAM layers: [infra/README.md](../../infra/README.md). Hosting decision: 
 
 ## Timeline
 
-Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first returned the error. Items 1–7 were the August 2026 apply campaign (jobs 1–7 failed). Items 8–10 are 2026-08-29. Items 11–13 are 2026-08-30 (hosted Dynamo mapping). Item 14 is secrets vs Dynamo. Item 15 is Terraform `count` on a new Secrets Manager ARN. Items 16–18 are 2026-08-31 (Knowledge cookie vs chat Bearer, and retrieval never running). Item 19 is 2026-09-21 (Groq key saved, chat still on Ollama, Whisper still working). The 2026-09-21 fix is in the working tree and the local Docker image. It is **not** on the live Amplify site until that build is deployed.
+Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first returned the error. Items 1–7 were the August 2026 apply campaign (jobs 1–7 failed). Items 8–10 are 2026-08-29. Items 11–13 are 2026-08-30 (hosted Dynamo mapping). Item 14 is secrets vs Dynamo. Item 15 is Terraform `count` on a new Secrets Manager ARN. Items 16–18 are 2026-08-31 (Knowledge cookie vs chat Bearer, and retrieval never running). Item 19 is 2026-09-21 (Groq key saved, chat still on Ollama, Whisper still working). Items 20–24 are 2026-10-04 (found during the first prod-account bootstrap, applied from a Windows laptop instead of the Linux Actions runner sandbox always used; #23 and #24 are independent of OS). The 2026-09-21 fix is in the working tree and the local Docker image. It is **not** on the live Amplify site until that build is deployed.
 
 | Date | # | Hurdle | Outcome |
 |------|---|--------|---------|
@@ -33,6 +33,11 @@ Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first r
 | 2026-08-31 | 17 | Uploaded lease, model said it has no RAG / cannot see files | Turn-policy regex skipped retrieval. The model never “calls” Knowledge. |
 | 2026-08-31 | 18 | Security detections on an upload, still no citations | Detections prove extract + scrub, not embeddings. Empty embed → `EMBED_FAILED`. |
 | 2026-09-21 | 19 | Groq tiers shown, chat waited on Ollama, Whisper still worked | Saved key ≠ a live model list. Instance primary was Ollama. Groq’s edge refused chat from this server. Check key is now a real probe. |
+| 2026-10-04 | 20 | `terraform plan` on a brand-new account: `Invalid count argument` on `module.amplify.aws_iam_role_policy.amplify_dynamodb` | Same bug as #15, never ported to the DynamoDB policy. Removed the `count`; policy is always attached, like `amplify_vendor_keys`. |
+| 2026-10-04 | 21 | `terraform apply` from a Windows laptop: `local-exec provisioner error` — `'sleep' is not recognized` | `terraform_data` + `local-exec { command = "sleep 20" }` only works on a shell that has `sleep`. Sandbox always applied from the Linux Actions runner, so this never surfaced. Replaced with `time_sleep` (no shell, cross-platform). |
+| 2026-10-04 | 22 | `npm run infra:wire` from a Windows laptop: `aws: Unknown options` on `apigateway create-deployment` | `--description "CORS origin <url>"` has a space. `shell:true` on Windows word-splits it back into separate args before `aws.exe` sees them. Fixed centrally in `run()`, not per call site. |
+| 2026-10-04 | 23 | First-run claim screen showed plain Sign in, not "Create the first owner" — `/api/setup/status` returned `authMode:""`, `cognitoConfigured:false` | Two stacked causes: (a) `wire.mjs` only pushes env vars to the Amplify **branch** if that branch already exists, and the branch didn't exist on the first `infra:wire` run; (b) once the branch existed, Amplify's own console had added an app-level `_LIVE_UPDATES` var with a JSON-array value, and the flat `KEY=VAL,KEY=VAL` CSV format `update-app --environment-variables` used couldn't represent commas/quotes inside it — so re-running `wire` after connecting GitHub still failed, silently, before any real value was set. |
+| 2026-10-04 | 24 | After fixing #23, claim screen worked (`claimAvailable:true`), but `codeConfigured:false` — `SETUP_CLAIM_SECRET` missing from both Amplify app and branch env | The "Add branch" console wizard doesn't just fail to merge new vars (#23) — on save it can **replace** the app's entire `environmentVariables` map with just its own `_LIVE_UPDATES` bookkeeping var, deleting everything Terraform had set, including three values `wire.mjs` never re-asserts itself (`SETUP_CLAIM_SECRET`, `VENDOR_KEYS_SECRET_ARN`, `DYNAMODB_FRAGMENTS_TABLE` — it only preserves them via a `...current` spread, which was already empty). `terraform apply` self-heals this (that attribute isn't in `aws_amplify_app.this`'s `ignore_changes`), but doing so also *reverts* the broadened CORS/callback/`ALLOWED_ORIGIN` values `wire.mjs` had set, back to localhost-only — so the real fix is `terraform apply` immediately followed by another `npm run infra:wire`, every time, not either one alone. |
 
 **As of 2026-08-31:** `b68400f` is on `main` (silent Knowledge search + Knowledge Bearer). Live UI is the previous Amplify job until this is pushed and that workflow is green.
 
@@ -241,6 +246,72 @@ Pushed on `main` (`dc18b17`). Live site still writes keys to Dynamo until Terraf
 - A refused Groq chat call is shown to the user. It is not replaced with Ollama.
 
 Allow `api.groq.com` from this server (VPN or firewall), then use Check key. When the list loads, the next message uses those Groq models. The app cannot clear a Groq edge refusal by itself. Tests: Groq connectivity, tier assignment, runtime decision, and `streamChat` (refusal does not call Ollama; a successful Groq stream stays on Groq).
+
+### 20. `Invalid count argument` on Amplify's DynamoDB policy, first apply only (2026-10-04)
+
+**Symptom:** `terraform plan` against a **brand-new** account (sandbox already had state; a second account did not) failed after printing most of the plan:
+
+```
+Error: Invalid count argument
+  on modules/amplify/main.tf line 176, in resource "aws_iam_role_policy" "amplify_dynamodb":
+ 176:   count  = var.fragments_table_arn != "" ? 1 : 0
+```
+
+**Cause:** Exactly the same shape as #15, on a different resource. `fragments_table_arn` comes from `module.data_dynamodb`, created in the same apply — so on a stack that has never been applied before, it is `(known after apply)`, and Terraform `count` must be known at plan time. Sandbox's existing state already had this ARN recorded, so sandbox never hit it. Any second bootstrap would.
+
+**Fix:** Same as #15 — do not gate the policy on the ARN. `aws_iam_role_policy.amplify_dynamodb` is now unconditional, matching `amplify_vendor_keys`.
+
+### 21. `local-exec sleep 20` fails on a Windows apply (2026-10-04)
+
+**Symptom:** The same `terraform apply` continued past #20, created most of the stack (Cognito, DynamoDB, secrets, API Gateway resources, all five Amplify IAM policies), then stopped:
+
+```
+Error: local-exec provisioner error
+  with module.api.terraform_data.gha_avatars_wait
+Error running command 'sleep 20': exit status 1. Output: 'sleep' is not
+recognized as an internal or external command, operable program or batch file.
+```
+
+**Cause:** `gha_avatars_wait` exists to let the `securemind-gha-avatars-<env>` IAM policy propagate before `aws_s3_bucket.avatars` is created and used. It used a `local-exec` provisioner running the literal shell command `sleep 20`. Every sandbox apply ran on the GitHub Actions Linux runner, where that's a real binary. A laptop apply on Windows has no `sleep` on `PATH`.
+
+**Fix:** Replaced `terraform_data` + `local-exec` with `hashicorp/time`'s `time_sleep` resource (`create_duration = "20s"`). No shell, no provisioner, same 20-second wait on Windows, macOS, Linux, or any CI runner. `terraform init` picks up the new provider automatically.
+
+### 22. `infra:wire` fails on Windows: AWS CLI sees `--description` split into three args (2026-10-04)
+
+**Symptom:** `npm run infra:wire` got through Cognito callbacks and both Lambda env-var updates, then failed on the API Gateway CORS deployment step:
+
+```
+> aws apigateway create-deployment --rest-api-id ... --stage-name prod --description CORS origin https://main.<app-id>.amplifyapp.com
+
+aws: [ERROR]: Unknown options: https://main.<app-id>.amplifyapp.com, origin
+```
+
+**Cause:** `infra/scripts/lib.mjs`'s `run()` calls `spawnSync(cmd, args, { shell: true })` on Windows (needed so `aws`/`terraform`/`node` resolve from `PATH` the same as a normal shell session would). With `shell: true`, Node hands the joined command line to `cmd.exe`, which re-tokenizes on whitespace — an arg like `"CORS origin https://…"` becomes three separate arguments unless it was quoted *before* that join. The Linux Actions runner never uses `shell: true`, so it never hit this.
+
+**Fix:** `run()` now quotes any argument containing whitespace or a double quote before the Windows-only `shell: true` spawn, centrally — not by rewriting individual `--description`-style call sites one at a time as they're found.
+
+### 23. First-run claim screen never appeared — Amplify env vars silently never applied (2026-10-04)
+
+**Symptom:** After a clean `terraform apply`, a successful first Amplify build, and `npm run infra:wire`, the deployed site showed a plain **Sign in** screen with no "Create the first owner" option. `GET /api/setup/status` returned `{"authMode":"","cognitoConfigured":false,"claimAvailable":false,...}` — every Cognito/Amplify value was empty, even though `aws amplify get-app` clearly showed them all set correctly at the app level.
+
+**Cause:** Two causes stacked:
+
+1. `wire.mjs` only calls `update-branch --environment-variables` inside `if (hasBranch)`. The first `infra:wire` run happens as part of `infra:up`, **before** Phase 4's Amplify↔GitHub connection — so on a true first run, no branch exists yet, and only the app-level vars get set. Amplify's build for a newly-connected branch did not pick those up (confirmed: none of the Cognito pool/client ID strings appeared anywhere in the build log).
+2. Re-running `wire.mjs` after connecting GitHub (branch now exists) hit a second, independent bug: Amplify's console wizard had itself added an app-level var, `_LIVE_UPDATES`, with a JSON-array value (from the "Live package updates" setting shown during branch setup). The script's flat `KEY=VAL,KEY=VAL` string format for `aws amplify update-app --environment-variables` can't represent commas or quotes inside a value, so the whole `update-app` call failed with a `ParamValidation` error — silently, since the script didn't check that call's exit status before moving on, and the error looked like a side detail rather than the actual blocker.
+
+**Fix:** Both `update-app` and `update-branch` calls in `wire.mjs` now build a JSON file and call `--cli-input-json file://...` instead of the flat CSV format — immune to commas, quotes, or anything else inside a value, including `_LIVE_UPDATES`. **`npm run infra:wire` must be re-run after Phase 4's Amplify↔GitHub connection**, not only as part of `infra:up` — added explicitly as a step in `docs/deploy/aws-from-zero.md` Phase 4, not left implicit.
+
+### 24. Amplify console silently replaces Terraform-managed app env vars (2026-10-04)
+
+**Symptom:** After fixing #23, the claim screen correctly showed "Create the first owner" (`claimAvailable:true`), but entering the setup code failed with *"SETUP_CLAIM_SECRET is not configured on this host."* `aws amplify get-app ... SETUP_CLAIM_SECRET` and `aws amplify get-branch ... SETUP_CLAIM_SECRET` both returned `None` — even though an earlier `update-app` response in the same session had shown that exact value set correctly.
+
+**Cause:** `aws_amplify_app.this` in `modules/amplify/main.tf` sets 14 app-level environment variables directly, including three that `wire.mjs` does not independently know how to re-derive: `SETUP_CLAIM_SECRET` (a `random_password` resource), `VENDOR_KEYS_SECRET_ARN`, and `DYNAMODB_FRAGMENTS_TABLE`. `wire.mjs`'s own `update-app` call only explicitly sets Cognito/API values and preserves everything else via a `...current` spread off a fresh `get-app` call — it was never the owner of those three.
+
+The Amplify console's "Add branch" wizard call (`UpdateApp`, to add its own `_LIVE_UPDATES` bookkeeping var for the "Live package updates" setting) does not merge — it **replaces** `environmentVariables` wholesale. One click through that wizard wiped the entire Terraform-managed set down to just `_LIVE_UPDATES`. Any `wire.mjs` run *after* that point inherits the already-empty state through its `...current` spread, so it looked like `wire.mjs`'s own fix for #23 hadn't taken, when actually the console had undone it again in between runs.
+
+**Fix:** `environment_variables` on `aws_amplify_app.this` is a plain tracked attribute, not in that resource's `lifecycle { ignore_changes }` list — so Terraform already knows the correct values and will self-heal this on the next `terraform apply` (confirmed: `terraform plan` after the console wizard showed exactly the three missing keys being re-added, plus a dropped SPA `custom_rule` the wizard also removed). The complication: re-running `terraform apply` *also* reverts `ALLOWED_ORIGIN`, Cognito `callback_urls`/`logout_urls`, and the API Gateway CORS header back to `http://localhost:3000` only — because those are things `wire.mjs`, not Terraform, extends to the live Amplify domain, and Terraform has no idea that extension happened.
+
+**The actual rule going forward: `terraform apply` and `npm run infra:wire` are not independent — run them as a pair, always in that order, every time either one runs.** Never apply without re-wiring after, and never assume a wire-only fix survives a later apply. `docs/deploy/aws-from-zero.md` now states this as a standing rule in Phase 4, not a one-time step.
 
 ---
 
