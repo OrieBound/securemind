@@ -94,6 +94,8 @@ It is a **single-user personal project**. Default auth is `AUTH_MODE=local`. Opt
 - API keys must never appear in code or commits. They live in `.env.local` only.
 - `.env.local` is in `.gitignore`. `.env.example` is the one env file that is committed, and it contains no values.
 - All API routes must use `export const runtime = "nodejs"` (never edge — Ollama needs localhost).
+- **Two-step verification** is optional authenticator-app (TOTP) sign-in through real Cognito only (`docs/mfa.md`). Cognito makes the secret and checks every code; `src/lib/totp.ts` is for tests, teaching and `npm run totp`, never for deciding whether someone may sign in. The signed-in routes under `src/app/api/auth/mfa/**` act only on the caller's own access token (via `requireMfaSession`) and take no user identifier from the request. Turning it off needs the password again. Admin reset goes through `adminResetDirectoryUserMfa`, which respects the Super Admin protection. The local Floci sign-in does not support it, so it is hidden there, not faked. Never log a code, a secret or a session string.
+- **Security headers** come from `src/lib/security-headers.ts` (CSP, HSTS on the cloud edition, frame, sniff, referrer and permissions policies), applied by `next.config.ts` and the Lambdas. The browser may connect only to itself and the chat API origin (`NEXT_PUBLIC_API_BASE_URL`). Do not add a third-party script, font or frame source without changing that module and its tests.
 
 ### Cost efficiency
 - Most user-facing chat routes to mid or high tiers; trivial messages route to Micro.
@@ -135,6 +137,9 @@ src/
       setup/status/route.ts   ← public first-run status (no secrets)
       setup/claim/route.ts    ← empty-pool Owner claim (hosted setup code; local email+password)
       setup/complete/route.ts ← authenticated wizard persist (storage preference + risk ack)
+      auth/login/mfa/route.ts ← public second step of sign-in (6-digit code + sign-in session)
+      auth/mfa/route.ts       ← two-step verification status (+ recommendation for admins)
+      auth/mfa/{setup,verify,disable}/route.ts ← enrol, confirm, turn off (password required)
   lib/
     db.ts                     ← Prisma singleton (PrismaPg adapter)
     identity.ts               ← getIdentity(req) — the only source of userId
@@ -146,6 +151,9 @@ src/
     aws-credentials.ts        ← AWS SDK credential chain + ALLOW_REAL_AWS gate
     instance-config.ts        ← Admin provider settings (never AWS creds; vendor keys encrypted at rest)
     secret-at-rest.ts         ← AES-256-GCM for UI-entered vendor keys
+    aws-secrets.ts            ← hosted: load the encryption key + setup code from Secrets Manager at startup
+    security-headers.ts       ← CSP and the other security headers (UI and API)
+    totp.ts                   ← RFC 6238 codes, readable and tested; not used to authenticate
     document-storage.ts       ← local original-file store (not Postgres)
     spreadsheet/              ← xlsx/csv extract, sheet provenance, constrained query
     storage/                  ← Knowledge / Memory / Vector contracts; Postgres + DynamoDB vector adapters

@@ -27,12 +27,48 @@ variable "create_domain" {
   default = false
 }
 
+# Authenticator-app codes (TOTP). OPTIONAL lets each person turn it on for their own account,
+# which the app does under My Profile, without forcing anyone and without locking anyone out.
+# Use "ON" only after every user has enrolled, and note the app's own sign-in handles the
+# code step for either setting. SMS is deliberately not offered: it needs SNS and is weaker.
+variable "mfa_configuration" {
+  type        = string
+  default     = "OPTIONAL"
+  description = "OFF, OPTIONAL or ON. Authenticator-app (software token) codes only."
+
+  validation {
+    condition     = contains(["OFF", "OPTIONAL", "ON"], var.mfa_configuration)
+    error_message = "mfa_configuration must be OFF, OPTIONAL or ON."
+  }
+}
+
+# Deleting a pool deletes every user. ACTIVE makes Terraform and the console refuse until it is
+# switched off. Left INACTIVE by default so sandbox teardown still works; set ACTIVE in production.
+variable "deletion_protection" {
+  type        = string
+  default     = "INACTIVE"
+  description = "ACTIVE or INACTIVE."
+
+  validation {
+    condition     = contains(["ACTIVE", "INACTIVE"], var.deletion_protection)
+    error_message = "deletion_protection must be ACTIVE or INACTIVE."
+  }
+}
+
 resource "aws_cognito_user_pool" "this" {
   name = "securemind-${var.env_name}"
 
   username_attributes      = ["email"]
   auto_verified_attributes = ["email"]
-  mfa_configuration        = "OFF"
+  mfa_configuration        = var.mfa_configuration
+  deletion_protection      = var.deletion_protection
+
+  dynamic "software_token_mfa_configuration" {
+    for_each = var.mfa_configuration == "OFF" ? [] : [1]
+    content {
+      enabled = true
+    }
+  }
 
   password_policy {
     minimum_length    = 12

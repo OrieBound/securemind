@@ -433,6 +433,7 @@ export function AdminConsole({
       enabled?: boolean;
       status?: "active" | "suspended" | "deleted";
       sendPasswordReset?: boolean;
+      resetMfa?: boolean;
       password?: string;
       notifyPasswordEmail?: boolean;
       monthlyCostCapUsd?: number | null;
@@ -1045,6 +1046,32 @@ export function AdminConsole({
                             className="rounded-md border border-border bg-card px-2 py-1 text-[0.65rem] font-medium hover:bg-[var(--surface-hover)] cursor-pointer disabled:opacity-40"
                           >
                             {u.enabled ? "Suspend" : "Reactivate"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy || !mutable}
+                            title="Turn off their authenticator-app second step, for example after a lost phone"
+                            onClick={() =>
+                              setConfirm({
+                                title: "Reset two-step verification?",
+                                identity: u.email ?? u.username,
+                                currentRole: "Authenticator app on",
+                                newRole: "Password only until they set it up again",
+                                impact:
+                                  `${u.email ?? u.username} will sign in with just their password until they set up an authenticator app again. Only do this once you are sure the request really comes from them.`,
+                                confirmLabel: "Reset",
+                                destructive: false,
+                                run: () =>
+                                  patchUser(
+                                    u.username,
+                                    { resetMfa: true },
+                                    `Two-step verification reset for ${u.email}`,
+                                  ),
+                              })
+                            }
+                            className="rounded-md border border-border bg-card px-2 py-1 text-[0.65rem] font-medium hover:bg-[var(--surface-hover)] cursor-pointer disabled:opacity-40"
+                          >
+                            Reset 2-step
                           </button>
                           {u.profileStatus !== "deleted" && (
                             <button

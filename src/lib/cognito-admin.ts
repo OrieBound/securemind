@@ -17,6 +17,7 @@ import {
   AdminRemoveUserFromGroupCommand,
   AdminSetUserPasswordCommand,
   AdminResetUserPasswordCommand,
+  AdminSetUserMFAPreferenceCommand,
   ListUsersCommand,
   type UserType,
 } from "@aws-sdk/client-cognito-identity-provider";
@@ -576,6 +577,40 @@ export async function adminResetDirectoryUserPassword(
     new AdminResetUserPasswordCommand({
       UserPoolId: pool,
       Username: target.username,
+    }),
+  );
+}
+
+/**
+ * Turns two-step verification off for a user who lost their device, so they can sign in with
+ * just their password and set it up again. Needs real Cognito; the local stand-in has no
+ * authenticator codes to reset.
+ */
+export async function adminResetDirectoryUserMfa(
+  username: string,
+  opts?: { actorRole?: AppRole; actorUserId?: string | null },
+): Promise<void> {
+  if (useFlociStub()) {
+    throw new CognitoAdminError(
+      "Two-step verification is not available with the local sign-in used by Docker.",
+      501,
+    );
+  }
+  const pool = requirePoolId();
+  const users = await listDirectoryUsers();
+  const target = users.find(u => u.username === username || u.email === username);
+  if (!target) throw new CognitoAdminError("User not found.", 404);
+
+  assertCanMutateOwner(target, {
+    role: opts?.actorRole ?? "member",
+    userId: opts?.actorUserId,
+  });
+
+  await cip().send(
+    new AdminSetUserMFAPreferenceCommand({
+      UserPoolId: pool,
+      Username: target.username,
+      SoftwareTokenMfaSettings: { Enabled: false, PreferredMfa: false },
     }),
   );
 }
