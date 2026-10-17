@@ -9,6 +9,7 @@ import { getIdentity, IdentityError } from "../../src/lib/identity";
 import type { ChatRequestBody } from "../../src/lib/chat/types";
 import { apigwStreamPreamble } from "../../src/lib/chat/sse";
 import { ensureRuntimeEnvFromSecrets } from "../../src/lib/aws-secrets";
+import { API_SECURITY_HEADERS } from "../../src/lib/security-headers";
 
 type ApiGwEvent = {
   httpMethod?: string;
@@ -60,6 +61,7 @@ async function writeJsonError(
 ) {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    ...API_SECURITY_HEADERS,
   };
   if (origin) {
     headers["Access-Control-Allow-Origin"] = origin;
@@ -80,6 +82,7 @@ export const handler = awslambda.streamifyResponse(
         "Content-Type": "application/json",
         "Access-Control-Allow-Methods": "POST,OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type,Authorization",
+        ...API_SECURITY_HEADERS,
       };
       if (origin) headers["Access-Control-Allow-Origin"] = origin;
       const meta = JSON.stringify({ statusCode: 204, headers });

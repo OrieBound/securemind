@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { securityHeaders, securityOptionsFromEnv } from "./src/lib/security-headers";
 
 const nextConfig: NextConfig = {
   // Standalone for Docker and Amplify WEB_COMPUTE. Skipping it got under
@@ -65,6 +66,14 @@ const nextConfig: NextConfig = {
 
   experimental: {
     turbopackFileSystemCacheForDev: false,
+  },
+
+  // Security headers on every response: a Content-Security-Policy that limits what the
+  // page can load and connect to, clickjacking and sniffing protection, a strict referrer
+  // policy, and HSTS on the cloud edition. See src/lib/security-headers.ts for what the
+  // policy does and does not cover.
+  async headers() {
+    return [{ source: "/:path*", headers: securityHeaders(securityOptionsFromEnv()) }];
   },
 };
 
