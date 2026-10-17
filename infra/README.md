@@ -149,3 +149,11 @@ The instance encryption key and the first-run setup code live in one Secrets Man
 - **Moving an existing install:** `terraform apply` creates the secret from the *same* random values and removes the two plain variables, so nothing is rotated and stored keys stay readable. Run `npm run infra:wire` straight after, then deploy.
 - **Rotating the encryption key:** change `random_id.instance_encryption` and apply. Anything encrypted with the old key becomes unreadable, so re-enter provider keys in Settings afterwards.
 - **If startup cannot reach Secrets Manager** it retries three times, then logs the error name and carries on. The app then fails closed: no stored keys can be read and nobody can claim the instance until the next restart.
+
+## Custom domain
+
+The hosted edition can serve the app and the chat API from your own domain while the registrar stays where it is. It is off until `domain_name` is set, and staged so a half-finished setup cannot break a running install. Stage 1 creates a Route53 zone and prints the nameservers to give your registrar. Stage 2 adds the Amplify app domain, the optional API domain and their certificates, and moves CORS and the sign-in URLs to the new address. Full runbook: [docs/deploy/custom-domain.md](../docs/deploy/custom-domain.md). Variables are in `domain.tfvars.example`.
+
+## Two-step verification
+
+The user pool allows authenticator-app codes as an optional second step (`mfa_configuration = "OPTIONAL"`, no SMS). Applying it changes nothing for existing users. Each person turns it on under My Profile. Details and lost-phone recovery: [docs/mfa.md](../docs/mfa.md).
