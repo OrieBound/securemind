@@ -90,7 +90,7 @@ Open the site, enter that code plus the email and password **you** choose. The s
 | `modules/data_dynamodb` | Fragments table + vector index (1024, immutable) |
 | `modules/secrets` | fragments-table secret; vendor-keys; optional bootstrap Groq |
 | `modules/api` | API Gateway + streaming `/chat` + `/warm` |
-| `modules/amplify` | Amplify app (no GitHub token); first-run `SETUP_CLAIM_SECRET` |
+| `modules/amplify` | Amplify app (no GitHub token); the `app-secrets` Secrets Manager secret (instance encryption key and first-run setup code) |
 
 ## Secrets model
 
@@ -140,3 +140,12 @@ Change trust or the GHA deploy policy with **bootstrap apply**, not `infra:up`:
 cd infra/terraform/bootstrap
 terraform apply -var="github_repository=YOUR_ORG/securemind" -auto-approve
 ```
+
+## Secrets on the hosted edition
+
+The instance encryption key and the first-run setup code live in one Secrets Manager secret, `securemind/<env>/app-secrets` (about $0.40 a month). The Amplify compute role can read that one secret and nothing else. The only variable on the Amplify app is `APP_SECRETS_ARN`; the server loads the secret once at startup (`src/instrumentation.ts`). Nothing secret is written to `.env.production` or the build output.
+
+- **Read the setup code:** `terraform -chdir=infra/terraform output -raw setup_claim_secret` (unchanged).
+- **Moving an existing install:** `terraform apply` creates the secret from the *same* random values and removes the two plain variables, so nothing is rotated and stored keys stay readable. Run `npm run infra:wire` straight after, then deploy.
+- **Rotating the encryption key:** change `random_id.instance_encryption` and apply. Anything encrypted with the old key becomes unreadable, so re-enter provider keys in Settings afterwards.
+- **If startup cannot reach Secrets Manager** it retries three times, then logs the error name and carries on. The app then fails closed: no stored keys can be read and nobody can claim the instance until the next restart.

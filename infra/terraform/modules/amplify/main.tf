@@ -255,6 +255,43 @@ resource "random_password" "setup_claim" {
   special = false
 }
 
+# The instance encryption key and the first-run setup code used to be plain Amplify
+# environment variables, readable by anyone with console access. They now live in one
+# Secrets Manager secret (about $0.40 a month) that only the Amplify compute role can read.
+# The values are the same random resources as before, so nothing is rotated and stored
+# vendor keys stay readable. The app loads the secret at startup (src/instrumentation.ts).
+resource "aws_secretsmanager_secret" "app_secrets" {
+  name                    = "securemind/${var.env_name}/app-secrets"
+  description             = "Instance encryption key and first-run setup code. Read by the Amplify compute role only."
+  recovery_window_in_days = 7
+  tags = {
+    Project = "SecureMind"
+    Env     = var.env_name
+  }
+}
+
+resource "aws_secretsmanager_secret_version" "app_secrets" {
+  secret_id = aws_secretsmanager_secret.app_secrets.id
+  secret_string = jsonencode({
+    instanceEncryptionKey = random_id.instance_encryption.hex
+    setupClaimSecret      = random_password.setup_claim.result
+  })
+}
+
+data "aws_iam_policy_document" "amplify_app_secrets" {
+  statement {
+    sid       = "ReadAppSecrets"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [aws_secretsmanager_secret.app_secrets.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "amplify_app_secrets" {
+  name   = "securemind-amplify-app-secrets-${var.env_name}"
+  role   = aws_iam_role.amplify.id
+  policy = data.aws_iam_policy_document.amplify_app_secrets.json
+}
+
 resource "aws_amplify_app" "this" {
   name                 = "${var.app_name}-${var.env_name}"
   description          = "SecureMind UI (API stays on API Gateway + Lambda)"
@@ -300,8 +337,7 @@ resource "aws_amplify_app" "this" {
     NEXT_PUBLIC_API_BASE_URL  = var.api_base_url
     SECUREMIND_EDITION        = "cloud"
     STORAGE_BACKEND           = "dynamodb"
-    INSTANCE_ENCRYPTION_KEY   = random_id.instance_encryption.hex
-    SETUP_CLAIM_SECRET        = random_password.setup_claim.result
+    APP_SECRETS_ARN           = aws_secretsmanager_secret.app_secrets.arn
     DYNAMODB_FRAGMENTS_TABLE  = var.fragments_table_name
     VENDOR_KEYS_SECRET_ARN    = var.vendor_keys_secret_arn
     AVATAR_S3_BUCKET          = var.avatar_s3_bucket_name
@@ -332,6 +368,10 @@ output "console_url" {
 
 output "branch_name" {
   value = var.branch_name
+}
+
+output "app_secrets_arn" {
+  value = aws_secretsmanager_secret.app_secrets.arn
 }
 
 output "setup_claim_secret" {
