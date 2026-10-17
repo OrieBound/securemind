@@ -189,6 +189,8 @@ import { PortalBrandMark } from "@/components/app/portal-brand-mark";
 import { themeForRuntime } from "@/lib/provider-theme";
 import { cn } from "@/lib/utils";
 import { shortProcessingError } from "@/lib/documents/stale-processing";
+import type { RouteScoreCard } from "@/lib/models/route-scorecard";
+import { RouteWhy } from "@/components/app/route-why";
 import {
   scrubPII,
   allScannedCategories,
@@ -217,6 +219,7 @@ import {
 import {
   ATTACHMENT_LIMITS_HINT,
   attachedDocumentNamesFromText,
+  DEFAULT_ATTACHMENT_ASK,
   formatAttachmentsForHistory,
   MAX_ATTACHMENT_PROMPT_CHARS,
   MAX_ATTACHMENTS_PER_TURN,
@@ -235,6 +238,8 @@ type RouteInfo = {
   latencyMs?: number;  // time-to-first-token from send
   costUsd?: number;    // list-rate estimate from token usage (undefined if unpriced)
   savedUsd?: number;   // estimated savings vs baseline model
+  /** Why this tier ran (signals, floors, tie-break cost). */
+  scoreCard?: RouteScoreCard;
 };
 
 type CitationRef = {
@@ -1654,6 +1659,11 @@ const MessageBubble = memo(function MessageBubble({
                   : `${(message.routeInfo.latencyMs / 1000).toFixed(1)}s`}
               </span>
             )}
+          </div>
+        )}
+        {message.routeInfo?.scoreCard && !message.error && (
+          <div className="mt-1">
+            <RouteWhy card={message.routeInfo.scoreCard} />
           </div>
         )}
         {message.citations && message.citations.length > 0 && !message.error && (
@@ -4092,9 +4102,9 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       : sanitized;
     // History must retain attachment text so follow-ups ("what is it about?") still work.
     const messageToSend = attachmentHistoryBlock
-      ? `${baseText || "Please review the attached file(s)."}\n\n${attachmentHistoryBlock}`
+      ? `${baseText || DEFAULT_ATTACHMENT_ASK}\n\n${attachmentHistoryBlock}`
       : (baseText || (imageDataUrls.length > 0 || attachmentDocumentIds.length > 0
-        ? "Please review the attached file(s)."
+        ? DEFAULT_ATTACHMENT_ASK
         : ""));
 
     const userId = crypto.randomUUID();
@@ -4163,7 +4173,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
         credentials: usesRemoteApi() ? "omit" : "same-origin",
         body: JSON.stringify({
           // Plain user ask for this turn; attachment bodies load via IDs server-side.
-          message:           baseText || "Please review the attached file(s).",
+          message:           baseText || DEFAULT_ATTACHMENT_ASK,
           mode,
           workspaceId:       activeWorkspaceId ?? "",
           images:            imageDataUrls,
@@ -5699,6 +5709,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                           </span>
                         </p>
                       )}
+                      {lastRouteInfo.scoreCard && <RouteWhy card={lastRouteInfo.scoreCard} compact />}
                     </div>
                   ) : null,
                 },

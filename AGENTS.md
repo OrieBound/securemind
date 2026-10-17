@@ -57,7 +57,9 @@ It is a **single-user personal project**. Default auth is `AUTH_MODE=local`. Opt
 - A model id from the browser is a **preference, not an instruction**. `resolveAllowedModel()` in `src/lib/models/allowlist.ts` validates it against the router's own models plus the live text catalog; anything else is ignored and the router's choice stands. Never infer a provider from substrings in a client-supplied model id.
 - Routing is by **complexity tier**, not by conversation topic. The five tiers are:
   **Max, Plus, Standard, Light, Micro** (most → least capable). `DEFAULT_TIER` is `Standard`. Legacy stored events map High → Max and Fast → Light.
-- Tier selection is deterministic first (`src/lib/models/route-message.ts` scores the message), with an LLM tiebreak in `classifyMode()` in `groq.ts`. The tier list in that function's `VALID` array must stay in sync with `COMPLEXITY_TIERS` in `router.ts`.
+- Tier selection is deterministic first. `src/lib/models/route-message.ts` scores the message from a table of named signals (`SIGNAL_RULES`), maps the score to a tier, carries a short follow-up's tier one level lower per turn (only Plus and Max carry, never below Standard), and never runs real conversation on Micro. A small-model tie-break (`classifyComplexityLlm()` in `groq.ts`, Groq only) runs just for an ambiguous score with no clear intent signal. Its cost is recorded on the turn (`extraCostUsd`), not as a separate event.
+- After retrieval, `applyEvidenceFloors()` raises (never lowers) the tier: a turn answered from documents or an attachment is at least Standard, analysis or summary of documents and answers drawing on three or more documents are at least Plus. The model is re-resolved for the new tier; if that tier has no usable model or would breach the cost cap, the first-pass model stands and the card says so.
+- Every turn carries a score card (`route-scorecard.ts`): baseline, each signal with its points, every adjustment, tie-break use and cost. It holds no message text and is shown to the user as "Why this tier?". Do not add a routing rule that is not a named signal or adjustment. Plain-language tier meanings live only in `tier-definitions.ts` and feed the UI and the tie-break prompt; the tiers there must match `COMPLEXITY_TIERS` in `router.ts` (a test enforces it). Add a fixture to `route-fixtures.ts` when a message lands on the wrong tier.
 - Tier controls **which model** handles a request. Workspace context shapes operational prompts only when the turn needs them — independent of tier.
 - Vision requests auto-route to `meta-llama/llama-4-scout-17b-16e-instruct` via Groq.
 - The Bedrock model list is **queried live** (`ListFoundationModels` + `ListInferenceProfiles` in `catalog.ts`), filtered to streaming-capable TEXT models with an `ACTIVE` lifecycle. Do not reintroduce a hardcoded catalog: Bedrock retires model versions, and a stale list offers models that fail at invoke time. `BEDROCK_TEXT_MODELS` is a minimal fallback for when the IAM list call is denied.
@@ -164,7 +166,10 @@ src/
       router.ts               ← complexity-tier model routing
       allowlist.ts            ← server-side allowlist for client model preferences
       catalog.ts              ← text model catalog per configured credential
-      route-message.ts        ← deterministic complexity scoring
+      route-message.ts        ← deterministic complexity scoring, carry-over, evidence floors
+      route-scorecard.ts      ← score card types: why a turn landed on a tier
+      tier-definitions.ts     ← plain-language tier meanings (single source for UI + tie-break)
+      route-fixtures.ts       ← routing fixtures run in CI and by npm run route-eval
       resolve-chat-runtime.ts ← first-run / no-LLM gate (no silent pull, no product Groq)
       local-recommendations.ts ← Ollama tag suggestions from installed models + hardware
       runtime-status.ts       ← detection/parsing/provider status payload
