@@ -1,0 +1,19 @@
+# Copy to domain.auto.tfvars (git-ignored) to put the hosted edition on your own domain.
+# Walkthrough: docs/deploy/custom-domain.md
+#
+# Stage 1: set only domain_name, apply, and point your registrar's nameservers at the
+#          route53_name_servers output. Wait until they take effect.
+# Stage 2: add the lines below, apply, run `npm run infra:wire`, then deploy the app again.
+
+domain_name = "example.com"
+
+# enable_custom_domains = true
+# app_subdomain         = "app"     # https://app.example.com
+# api_subdomain         = "api"     # https://api.example.com (optional)
+
+# Records for sites hosted elsewhere, and any you copy over from the registrar.
+# Key is the host without the domain, or "@" for the apex ("@/MX" adds a second type at the apex).
+# extra_dns_records = {
+#   "www"    = { type = "CNAME", values = ["d111111abcdef8.cloudfront.net"] }
+#   "sample" = { type = "A", alias = { name = "d222222abcdef8.cloudfront.net", zone_id = "Z2FDTNDATAQYW2" } }
+# }

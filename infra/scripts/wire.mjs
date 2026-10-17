@@ -11,6 +11,7 @@ import {
   assertAwsIdentity,
   aws,
   awsJson,
+  chooseSiteUrl,
   commonArgsFromEnv,
   fail,
   loadDeployEnv,
@@ -263,9 +264,13 @@ function main() {
   }
 
   const branch = process.env.AMPLIFY_BRANCH || "main";
-  const siteUrl =
-    process.env.AMPLIFY_SITE_URL?.replace(/\/$/, "") ||
-    amplifySiteUrl(amplifyOut, branch);
+  // AMPLIFY_SITE_URL wins, then the custom domain from Terraform (app_url), then Amplify's own.
+  // Existing callback and CORS entries are kept, so moving to a domain never drops the old one.
+  const siteUrl = chooseSiteUrl({
+    envUrl: process.env.AMPLIFY_SITE_URL,
+    customUrl: amplifyOut.AppUrl,
+    amplifyUrl: amplifySiteUrl(amplifyOut, branch),
+  });
 
   if (!siteUrl) {
     console.log(`
@@ -286,7 +291,8 @@ API: ${apiOut.ApiBaseUrl}
     const envName = args.envName;
     updateLambdaCors(`securemind-chat-${envName}`, siteUrl);
     updateLambdaCors(`securemind-warm-${envName}`, siteUrl);
-    updateApiGatewayChatCors(apiOut.ApiBaseUrl, siteUrl);
+    // The REST API id comes from the execute-api host, which a custom API domain does not have.
+    updateApiGatewayChatCors(apiOut.ApiExecuteUrl || apiOut.ApiBaseUrl, siteUrl);
   }
 
   updateAmplifyEnv({

@@ -421,6 +421,29 @@ resource "aws_lambda_permission" "warm" {
   source_arn    = "${aws_api_gateway_rest_api.this.execution_arn}/*"
 }
 
+# Errors that API Gateway itself returns (throttling, an unknown route, a request it rejects)
+# never reach a Lambda, so they would otherwise carry none of the security headers the
+# Lambdas add. These apply to every 4xx and 5xx it generates.
+locals {
+  gateway_error_headers = {
+    "gatewayresponse.header.X-Content-Type-Options"    = "'nosniff'"
+    "gatewayresponse.header.Strict-Transport-Security" = "'max-age=31536000; includeSubDomains'"
+    "gatewayresponse.header.Referrer-Policy"           = "'no-referrer'"
+  }
+}
+
+resource "aws_api_gateway_gateway_response" "default_4xx" {
+  rest_api_id         = aws_api_gateway_rest_api.this.id
+  response_type       = "DEFAULT_4XX"
+  response_parameters = local.gateway_error_headers
+}
+
+resource "aws_api_gateway_gateway_response" "default_5xx" {
+  rest_api_id         = aws_api_gateway_rest_api.this.id
+  response_type       = "DEFAULT_5XX"
+  response_parameters = local.gateway_error_headers
+}
+
 resource "aws_api_gateway_deployment" "this" {
   rest_api_id = aws_api_gateway_rest_api.this.id
   triggers = {
@@ -434,6 +457,8 @@ resource "aws_api_gateway_deployment" "this" {
       aws_api_gateway_integration.chat_options.id,
       aws_api_gateway_integration_response.chat_options.id,
       aws_api_gateway_integration.warm.id,
+      aws_api_gateway_gateway_response.default_4xx.id,
+      aws_api_gateway_gateway_response.default_5xx.id,
     ]))
   }
   lifecycle {
@@ -454,6 +479,10 @@ resource "aws_api_gateway_stage" "prod" {
 
 output "api_base_url" {
   value = "https://${aws_api_gateway_rest_api.this.id}.execute-api.${data.aws_region.current.name}.amazonaws.com/${aws_api_gateway_stage.prod.stage_name}"
+}
+
+output "rest_api_id" {
+  value = aws_api_gateway_rest_api.this.id
 }
 
 output "chat_function_name" {

@@ -66,7 +66,52 @@ variable "auth_mode" {
   default = "cognito"
 }
 
+# --- Custom domain (off by default; see modules/domain) -------------------------------------
+variable "domain_name" {
+  type        = string
+  default     = ""
+  description = "Apex domain you own, such as example.com. Empty keeps everything on the Amplify and API Gateway addresses."
+}
+
+variable "enable_custom_domains" {
+  type        = bool
+  default     = false
+  description = "Stage 2 of the domain setup. Turn on only after your registrar's nameservers point at the Route53 zone."
+}
+
+variable "app_subdomain" {
+  type    = string
+  default = "app"
+}
+
+variable "api_subdomain" {
+  type        = string
+  default     = ""
+  description = "Serve the chat API at this subdomain. Empty keeps the execute-api address."
+}
+
+variable "extra_dns_records" {
+  type = map(object({
+    type   = string
+    ttl    = optional(number, 300)
+    values = optional(list(string), [])
+    alias = optional(object({
+      name    = string
+      zone_id = string
+    }))
+  }))
+  default     = {}
+  description = "Records for sites hosted elsewhere (marketing site, demo). Key is the host without the domain, or @ for the apex."
+}
+
 locals {
+  # Known from variables alone, so nothing here depends on a resource that is not built yet.
+  custom_domains = var.domain_name != "" && var.enable_custom_domains
+  app_url        = local.custom_domains ? "https://${var.app_subdomain}.${var.domain_name}" : ""
+  api_public_url = local.custom_domains && var.api_subdomain != "" ? "https://${var.api_subdomain}.${var.domain_name}" : module.api.api_base_url
+  allowed_origin = local.app_url != "" ? local.app_url : var.allowed_origin
+  login_urls     = local.app_url != "" ? ["http://localhost:3000/", "http://localhost:3000/login", "${local.app_url}/", "${local.app_url}/login"] : ["http://localhost:3000/", "http://localhost:3000/login"]
+
   chat_zip           = "${path.module}/.build/lambda/chat.zip"
   warm_zip           = "${path.module}/.build/lambda/warm.zip"
   avatar_bucket_name = "securemind-avatars-${var.env_name}-${data.aws_caller_identity.current.account_id}"
@@ -84,6 +129,8 @@ module "auth_cognito" {
   source        = "./modules/auth_cognito"
   env_name      = var.env_name
   create_domain = var.create_cognito_domain
+  callback_urls = local.login_urls
+  logout_urls   = local.login_urls
 }
 
 module "data_dynamodb" {
@@ -102,7 +149,7 @@ module "secrets" {
 module "api" {
   source                 = "./modules/api"
   env_name               = var.env_name
-  allowed_origin         = var.allowed_origin
+  allowed_origin         = local.allowed_origin
   chat_zip_path          = local.chat_zip
   warm_zip_path          = local.warm_zip
   fragments_table_name   = module.data_dynamodb.table_name
@@ -122,7 +169,7 @@ module "api" {
 module "amplify" {
   source                 = "./modules/amplify"
   env_name               = var.env_name
-  api_base_url           = module.api.api_base_url
+  api_base_url           = local.api_public_url
   cognito_user_pool_id   = module.auth_cognito.user_pool_id
   cognito_user_pool_arn  = module.auth_cognito.user_pool_arn
   cognito_client_id      = module.auth_cognito.client_id
@@ -136,8 +183,39 @@ module "amplify" {
   avatar_s3_bucket_name  = local.avatar_bucket_name
 }
 
+# Custom domain. Needs the Amplify app and the API to exist, and never feeds back into them
+# except through the plain variables above, so there is no dependency cycle.
+module "domain" {
+  source                = "./modules/domain"
+  env_name              = var.env_name
+  domain_name           = var.domain_name
+  enable_custom_domains = var.enable_custom_domains
+  app_subdomain         = var.app_subdomain
+  api_subdomain         = var.api_subdomain
+  amplify_app_id        = module.amplify.app_id
+  amplify_branch        = var.amplify_branch
+  api_rest_api_id       = module.api.rest_api_id
+  extra_records         = var.extra_dns_records
+}
+
 output "api_base_url" {
-  value = module.api.api_base_url
+  value       = module.api.api_base_url
+  description = "The execute-api address. Always works, custom domain or not."
+}
+
+output "api_public_url" {
+  value       = local.api_public_url
+  description = "The API address the browser uses: the custom domain once enabled, otherwise api_base_url."
+}
+
+output "app_url" {
+  value       = module.domain.app_url
+  description = "Custom app URL once stage 2 is on. Empty before that."
+}
+
+output "route53_name_servers" {
+  value       = module.domain.name_servers
+  description = "Set these as the custom nameservers at your registrar (stage 1)."
 }
 
 output "user_pool_id" {

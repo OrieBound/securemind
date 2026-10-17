@@ -121,10 +121,16 @@ export function stackOutputs(kind, opts = {}) {
       };
     }
     if (kind === "api") {
-      return { ApiBaseUrl: mapped.api_base_url };
+      return {
+        // What the browser calls: the custom API domain once it exists, else the execute-api address.
+        ApiBaseUrl: mapped.api_public_url || mapped.api_base_url,
+        // Always the execute-api address. CORS is patched on the REST API, found by its id.
+        ApiExecuteUrl: mapped.api_base_url,
+      };
     }
     if (kind === "amplify") {
       return {
+        AppUrl: mapped.app_url || "",
         AmplifyAppId: mapped.amplify_app_id,
         AmplifyDefaultDomain: mapped.amplify_default_domain,
         AmplifyConsoleHint: mapped.amplify_console_url,
@@ -163,6 +169,15 @@ export function terraform(argsList, opts = {}) {
     ...opts,
     env: { ...terraformEnv(), ...opts.env },
   });
+}
+
+/**
+ * The URL the app is served at, for CORS and sign-in callbacks: an explicit override, else the
+ * custom domain once it is live, else Amplify's own address. Trailing slash removed.
+ */
+export function chooseSiteUrl({ envUrl, customUrl, amplifyUrl } = {}) {
+  const pick = [envUrl, customUrl, amplifyUrl].map(v => (v ?? "").trim()).find(Boolean);
+  return pick ? pick.replace(/\/$/, "") : null;
 }
 
 export function terraformOutputsMapped() {
