@@ -100,9 +100,10 @@ describe("root wiring", () => {
     expect(root).toMatch(/custom_domains\s*=\s*var\.domain_name != "" && var\.enable_custom_domains/);
   });
 
-  it("keeps localhost sign-in URLs and adds the app URL only when it exists", () => {
+  it("keeps localhost sign-in URLs and adds the app URL and allowed origin only when they exist", () => {
     expect(root).toContain('"http://localhost:3000/login"');
-    expect(root).toMatch(/\$\{local\.app_url\}\/login/);
+    expect(root).toMatch(/login_origins\s*=\s*distinct\(compact\(\[local\.app_url,/);
+    expect(root).toMatch(/\$\{o\}\/login/);
   });
 
   it("gives the app and API the new addresses through plain variables, not the module", () => {
