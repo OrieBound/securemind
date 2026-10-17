@@ -25,7 +25,7 @@ import { routeMessage } from "@/lib/models/route-message";
 import { decideChatRuntime, MODEL_NOT_ASSIGNED_CODE } from "@/lib/models/resolve-chat-runtime";
 import { probeHardware } from "@/lib/models/local-recommendations";
 import { runtimeEdition } from "@/lib/runtime-env";
-import { estimateChatUsage, selectWorkingMemory } from "@/lib/tokens";
+import { estimateChatUsage, selectWorkingMemory, usageToRecord } from "@/lib/tokens";
 import { RETRIEVAL_CANDIDATE_LIMIT, retrieveCombinedContext } from "@/lib/memory";
 import {
   insufficientEvidenceBlock,
@@ -437,6 +437,8 @@ export async function* iterateChatSseFrames(
   const usageHold: { current: { promptTokens: number; completionTokens: number } | null } = {
     current: null,
   };
+  // Hoisted so the telemetry in `finally` can price a reply cut off by an error or a stop.
+  let fullAnswer = "";
   let groundingStatus: GroundingStatus | null = null;
   let status: "ok" | "error" | "aborted" = "ok";
   let sourcesCited = 0;
@@ -471,7 +473,6 @@ export async function* iterateChatSseFrames(
       groundingStatus = "not_applicable";
     }
 
-    let fullAnswer = "";
     const streamProvider = ctx.provider;
 
     for await (const delta of streamChat({
@@ -575,6 +576,14 @@ export async function* iterateChatSseFrames(
       yield sseDataFrame({ error: clean });
     }
   } finally {
+    // Fallback for turns that errored or were stopped after text streamed: without it
+    // a billable partial reply would be recorded with no cost and skip the monthly cap.
+    usageHold.current = usageToRecord(
+      usageHold.current,
+      actualProvider,
+      ctx.messages,
+      fullAnswer,
+    );
     recordInferenceEvent({
       userId: ctx.userId,
       workspaceId: ctx.workspaceId ?? null,

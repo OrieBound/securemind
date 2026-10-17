@@ -38,6 +38,24 @@ export function estimateChatUsage(
 }
 
 /**
+ * Usage to record for a finished, failed or stopped turn. A provider that returned no
+ * usage is estimated from text length, but only once some reply text was produced:
+ * a call that failed before generating anything (bad key, 4xx) is not billed, while
+ * a reply cut off midway was. Local Ollama is $0 and never needs an estimate.
+ */
+export function usageToRecord(
+  reported: { promptTokens: number; completionTokens: number } | null,
+  provider: string,
+  messages: { content: string | Array<{ type: string; text?: string }> }[],
+  partialAnswer: string,
+): { promptTokens: number; completionTokens: number } | null {
+  if (reported) return reported;
+  if (provider.toLowerCase() === "ollama") return null;
+  if (!partialAnswer.trim()) return null;
+  return estimateChatUsage(messages, partialAnswer);
+}
+
+/**
  * Select the most recent messages that fit within a token budget.
  * Attachment extracts are pinned first so a long first reply cannot drop the file
  * on the next turn (the live message has the extract; history otherwise would not).
