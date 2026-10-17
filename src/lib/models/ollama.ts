@@ -213,7 +213,8 @@ export async function embedText(text: string): Promise<number[]> {
     resp = await fetch(`${OLLAMA_BASE}/api/embeddings`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, prompt: text }),
+      // Keep the embedder resident so a question never waits on a cold model load.
+      body: JSON.stringify({ model, prompt: text, keep_alive: "30m" }),
     });
   } catch (err) {
     throw new Error(`Cannot reach Ollama for embeddings. Original error: ${String(err)}`);

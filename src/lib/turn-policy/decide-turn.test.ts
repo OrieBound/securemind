@@ -226,3 +226,57 @@ describe("decideTurn matrix", () => {
     expect(d.sourceScope).toBe("current_attachment");
   });
 });
+
+describe("terse questions and short follow-ups", () => {
+  it("searches Knowledge for a terse fragment instead of asking to clarify", () => {
+    const d = decideTurn({ message: "notice period?" });
+    expect(d.mode).toBe("ambiguous");
+    expect(d.reasonCode).toBe("short-unclear");
+    expect(d.preferMicroTier).toBe(false);
+    expect(shouldSkipKnowledgeSearch(d)).toBe(false);
+  });
+
+  it("upgrades that fragment to grounded only when a strong hit exists", () => {
+    const d = decideTurn({ message: "late fee" });
+    expect(applySpeculativeKnowledgeHits(d, 0).mode).toBe("ambiguous");
+    const promoted = applySpeculativeKnowledgeHits(d, 1);
+    expect(promoted.shouldRetrieve).toBe(true);
+    expect(promoted.mode).toBe("workspace_grounded");
+    expect(promoted.showSourcesUi).toBe(true);
+  });
+
+  it("still skips search for deictic fragments that point at the last answer", () => {
+    expect(shouldSkipKnowledgeSearch(decideTurn({ message: "this?" }))).toBe(true);
+    expect(shouldSkipKnowledgeSearch(decideTurn({ message: "Is this correct?" }))).toBe(true);
+  });
+
+  it("treats a short question after a grounded answer as a follow-up without a cue word", () => {
+    const d = decideTurn({ message: "who signs it?", priorTurnWasGrounded: true });
+    expect(d.mode).toBe("grounded_follow_up");
+    expect(d.reasonCode).toBe("short-follow-up-prior-grounding");
+    expect(d.shouldRetrieve).toBe(true);
+    expect(d.requiresWorkspaceEvidence).toBe(false);
+  });
+
+  it("does not turn general knowledge, long messages, or acknowledgements into follow-ups", () => {
+    const general = decideTurn({
+      message: "What is the capital of Canada?",
+      priorTurnWasGrounded: true,
+    });
+    expect(general.reasonCode).not.toBe("short-follow-up-prior-grounding");
+
+    const long = decideTurn({
+      message: "Please write me a detailed marketing plan for launching a bakery in a new neighbourhood this spring.",
+      priorTurnWasGrounded: true,
+    });
+    expect(long.reasonCode).not.toBe("short-follow-up-prior-grounding");
+
+    expect(decideTurn({ message: "thanks", priorTurnWasGrounded: true }).mode).toBe("social");
+  });
+
+  it("does not make a short question a follow-up when nothing grounded came before", () => {
+    const d = decideTurn({ message: "who signs it?" });
+    expect(d.reasonCode).toBe("short-unclear");
+  });
+});
+

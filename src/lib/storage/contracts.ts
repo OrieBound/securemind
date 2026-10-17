@@ -43,7 +43,12 @@ export type VectorHit = {
   id: string;
   content: string;
   category: string;
+  /** Raw vector similarity (0–1). */
   similarity: number;
+  /** Share (0–1) of the question's key words found in the chunk. */
+  lexical?: number;
+  /** Vector similarity plus the keyword bonus; what retrieval ranks and filters on. */
+  score?: number;
   documentId?: string | null;
   documentName?: string | null;
   provenance?: ChunkProvenance | null;

@@ -60,8 +60,9 @@ Prompt layers:
 Turn kinds (deterministic, before retrieval):
 
 - Social, app-help, provenance questions, and user corrections do not search Knowledge and do not show Sources. Grounding is not applicable.
-- A general question may silent-search Knowledge. A hit at similarity 0.5 (`EVIDENCE_MIN_SIMILARITY`) upgrades the turn and shows Sources. A miss stays general with no Sources.
-- Workspace-grounded and investigation turns retrieve, apply the same 0.5 floor, and show only sources the answer actually cited.
+- A general question, or a terse fragment such as "parking" or "notice period?", may silent-search Knowledge. A hit whose fused score reaches 0.55 (`SPECULATIVE_MIN_SCORE`) upgrades the turn and shows Sources. A miss stays general with no Sources, or asks to clarify for a terse fragment.
+- Workspace-grounded and investigation turns retrieve, accept hits at a fused score of 0.40 (`GROUNDED_MIN_SCORE`), and show only sources the answer actually cited. A short question straight after a grounded answer is treated as a follow-up on the same sources.
+- The fused score is vector similarity plus up to 0.12 for the share of the question's key words found in the chunk (`src/lib/retrieval-rank.ts`). A candidate set three times the size of the result is fetched first, so a literal keyword match outside the vector top results still surfaces. On a local install the embedding model gets its task prefixes (`search_document:` when storing, raw and `search_query:` forms when searching), and `npm run knowledge:reindex` re-embeds older chunks.
 - Attachments are read in the turn. Comparing an attachment to workspace Knowledge is the case that also retrieves.
 - Short unclear turns prefer the Micro tier and ask for clarification.
 - Vision attachments route to `meta-llama/llama-4-scout-17b-16e-instruct` on Groq when that path is available.

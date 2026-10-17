@@ -218,3 +218,49 @@ describe("dynamodb vector repository", () => {
     expect(bobHits.map((h) => h.id)).toEqual(["theirs"]);
   });
 });
+
+describe("dynamodb vector repository ranking", () => {
+  const near = [0.8, 0.6, 0, 0]; // similarity 0.8 to `network`
+  const weak = [0.35, 0.9367, 0, 0]; // similarity ~0.35 to `network`
+
+  function rankedRepo(embedQueries?: (t: string) => Promise<number[][]>) {
+    return createDynamoVectorRepository({
+      engine: createInMemoryVectorEngine(),
+      embed,
+      embedQueries,
+      dimensions: DIM,
+    });
+  }
+
+  it("keeps a weak vector match that shares the question's key words", async () => {
+    const r = rankedRepo();
+    await putDoc(r, { id: "w1", userId: "u", workspaceId: "ws", text: "network storage locker L-403", embedding: weak });
+    const hits = await r.retrieve({ query: "network storage locker", workspaceId: "ws", userId: "u" });
+    expect(hits.map(h => h.id)).toEqual(["w1"]);
+    expect(hits[0].similarity).toBeLessThan(0.5);
+    expect(hits[0].score).toBeGreaterThanOrEqual(0.4);
+    expect(hits[0].lexical).toBeGreaterThan(0);
+  });
+
+  it("drops a weak vector match with no shared words", async () => {
+    const r = rankedRepo();
+    await putDoc(r, { id: "w2", userId: "u", workspaceId: "ws", text: "unrelated boilerplate", embedding: weak });
+    expect(await r.retrieve({ query: "network", workspaceId: "ws", userId: "u" })).toEqual([]);
+  });
+
+  it("scores each chunk by its best match across query vectors", async () => {
+    // Query vector A misses the chunk; vector B (the prefixed form) matches it.
+    const r = rankedRepo(async () => [other, near]);
+    await putDoc(r, { id: "m1", userId: "u", workspaceId: "ws", text: "VPC rules", embedding: near });
+    const hits = await r.retrieve({ query: "network", workspaceId: "ws", userId: "u" });
+    expect(hits).toHaveLength(1);
+    expect(hits[0].similarity).toBeCloseTo(1, 5);
+  });
+
+  it("never returns another user's chunk", async () => {
+    const r = rankedRepo();
+    await putDoc(r, { id: "x1", userId: "alice", workspaceId: "ws", text: "network ACL", embedding: network });
+    expect(await r.retrieve({ query: "network", workspaceId: "ws", userId: "bob" })).toEqual([]);
+  });
+});
+

@@ -3,7 +3,7 @@
  * Owns retrieval / citation / UI decisions. Complexity tier routing stays in route-message.ts.
  *
  * General questions may still run a silent Knowledge search; citeable hits
- * (`applySpeculativeKnowledgeHits`) upgrade the turn after retrieval.
+ * (`applySpeculativeKnowledgeHits`, strong hits only) upgrade the turn after retrieval.
  */
 
 import { normalizeMessage, stripConversationalPrefixes } from "./normalize";
@@ -51,6 +51,12 @@ const FOLLOW_UP_RE =
 
 const AMBIGUOUS_SHORT_RE =
   /^(?:what\s+about\s+security|is\s+this\s+correct|can\s+you\s+check(?:\s+that)?|what\s+happened|this\??|that\??)\s*[?!.]*$/i;
+
+/** A reply this short after a grounded turn is treated as a follow-up on the same sources. */
+const SHORT_FOLLOW_UP_MAX_CHARS = 80;
+
+/** Reason code for a terse message that is searched before deciding whether to clarify. */
+export const SHORT_UNCLEAR_REASON = "short-unclear";
 
 const JOKE_RE = /\b(?:tell\s+me\s+a\s+joke|make\s+me\s+laugh)\b/i;
 
@@ -265,6 +271,26 @@ export function decideTurn(input: DecideTurnInput): TurnDecision {
     });
   }
 
+  // A short question straight after a grounded answer is almost always about the same
+  // sources ("who signs it?", "and the deposit?"). Do not require a cue word like "and".
+  // Requires no workspace evidence: if the search finds nothing, answer normally.
+  if (
+    (input.priorTurnHadCitations || input.priorTurnWasGrounded) &&
+    body.length <= SHORT_FOLLOW_UP_MAX_CHARS &&
+    !GENERAL_KNOWLEDGE_RE.test(body)
+  ) {
+    return base("grounded_follow_up", "short-follow-up-prior-grounding", {
+      shouldRetrieve: true,
+      retrievalQuery: body,
+      sourceScope: "workspace",
+      requiresCitations: true,
+      requiresWorkspaceEvidence: false,
+      showSourcesUi: true,
+      showGroundingBadge: true,
+      responseStyle: "concise_fact",
+    });
+  }
+
   // ── General knowledge (no workspace deixis) ────────────────────────────────
   if (GENERAL_KNOWLEDGE_RE.test(body) && !hasWorkspaceDeixis) {
     return base("general", "general-knowledge", {
@@ -309,9 +335,13 @@ export function decideTurn(input: DecideTurnInput): TurnDecision {
     });
   }
 
-  return base("ambiguous", "short-unclear", {
+  // A terse fragment ("notice period?", "parking") is often a document lookup. Search
+  // Knowledge first: strong hits upgrade the turn (applySpeculativeKnowledgeHits) and
+  // otherwise it stays a clarification. Not Micro, because the upgraded turn must be
+  // answered by a model that can read the passages.
+  return base("ambiguous", SHORT_UNCLEAR_REASON, {
     responseStyle: "clarify",
-    preferMicroTier: true,
+    preferMicroTier: false,
   });
 }
 
@@ -328,12 +358,13 @@ export function needsOperationalPrompt(decision: TurnDecision): boolean {
 
 /**
  * Social / help / correction turns must not search Knowledge.
- * General questions may search; hits at EVIDENCE_MIN_SIMILARITY become Sources.
+ * General questions and terse fragments may search; hits that clear
+ * SPECULATIVE_MIN_SCORE upgrade the turn, and Sources show only what the answer cites.
  */
 export function shouldSkipKnowledgeSearch(decision: TurnDecision): boolean {
   if (decision.shouldRetrieve) return false;
   if (decision.mode === "social" || decision.mode === "app_help") return true;
-  if (decision.mode === "ambiguous") return true;
+  if (decision.mode === "ambiguous") return decision.reasonCode !== SHORT_UNCLEAR_REASON;
   if (decision.mode === "attachment") return true;
   if (decision.reasonCode === "provenance-ask" || decision.reasonCode === "user-correction") {
     return true;
