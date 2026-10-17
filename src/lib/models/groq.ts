@@ -16,6 +16,8 @@
 
 import Groq from "groq-sdk";
 import type { ChatMessage } from "./types";
+import { TIER_NAMES } from "./router";
+import { tierGuideForPrompt } from "./tier-definitions";
 import { resolveRuntimeSecrets } from "@/lib/instance-config";
 import { isHostedRuntime } from "@/lib/runtime-env";
 
@@ -153,80 +155,30 @@ export const GROQ_NOT_CONFIGURED_MESSAGE =
   "Groq is not configured. Add a Groq API key in Settings → Models, " +
   "or use an installed local Ollama chat model.";
 
-/** Pattern pass — Micro only for true one-liners; real conversation floors at Standard. */
-export function heuristicComplexityTier(
-  message: string,
-  recentHistory: { role: "user" | "assistant"; content: string }[] = [],
-): string | null {
-  const m = message.trim();
-  const lower = m.toLowerCase();
-  const len = m.length;
-
-  const recentText = recentHistory.slice(-2).map(h => h.content).join(" ").toLowerCase();
-  const inDeepThread = /\b(debug|architect|implement|refactor|code|api|deploy|async)\b/.test(recentText);
-
-  // ── Upper tiers first (never under-tier hard problems) ──
-
-  // Plus — planning, synthesis (between Standard and Max)
-  if (/\b(help me plan|best approach|think through|walk me through|pros and cons|strategy|roadmap|brainstorm|weigh (the )?options)\b/i.test(lower)) {
-    return "Plus";
-  }
-  if (/\b(compare|evaluate).{0,40}(options|approaches|trade-?offs|paths)\b/i.test(lower)) return "Plus";
-  if (/\b(what should i|how should i|advice on|help me decide)\b/i.test(lower) && len > 60) return "Plus";
-
-  // Max — technical depth (former High)
-  if (/\b(debug|refactor|implement|architecture|stack trace|race condition|code review|design a system)\b/i.test(lower) && len > 50) {
-    return "Max";
-  }
-  if (/(```|[{}();]|=>|function\s|async\s|await\s)/.test(m) && len > 40) return "Max";
-  if (inDeepThread && len < 140) return "Max";
-
-  // Max — explicit deep analysis (rare; classifier usually better but catch obvious cases)
-  if (/\b(analyze thoroughly|design a (full|complete) system|doctoral|prove that|formal proof)\b/i.test(lower)) {
-    return "Max";
-  }
-
-  // ── Lower tiers — Micro for acks only; casual chat → Standard ──
-
-  // Light — simple how-to / explain (longer than a one-liner; 8B can mumble steps)
-  if (/^(how do i|how to|what is|what's an? |explain |give me an example|can you explain|walk me through how)/i.test(lower) && len >= 45 && len < 320) {
-    return "Light";
-  }
-
-  // Micro — one-word / one-line acks only (cheapest; quality irrelevant)
-  if (/^(thanks|thank you|ok|okay|got it|cool|yes|no|sure|lol|haha|yep|nice|bye)\b/i.test(lower) && len < 60) {
-    return "Micro";
-  }
-  if (/^(hey|hi|hello)\b/i.test(lower) && len < 40) {
-    return "Micro";
-  }
-
-  if (/\b(when was|who is|who was|capital of|how many|what year|define )\b/i.test(lower) && len < 140) {
-    return "Light";
-  }
-
-  // Standard — casual companion chat, small talk, short general messages
-  if (/\b(how are you|what's up|how's it going|what do you (like|do)|what else|tell me about|what do you think)\b/i.test(lower) && len < 200) {
-    return "Standard";
-  }
-  if (len <= 200 && !/\b(analyze|design|architect|implement|debug|compare|plan|explain|help me)\b/i.test(lower)) {
-    return "Standard";
-  }
-
-  return null;
-}
-
 /**
- * LLM-only tier pick — used when score-based routing in route-message.ts is ambiguous.
+ * Small-model tie-break for a score the rules cannot place (route-message.ts decides when).
  *
- * Uses llama-3.1-8b-instant at temperature 0 — near-instant, negligible cost.
- * Returns fallback tier unchanged if classification fails or Groq is unavailable.
+ * Uses llama-3.1-8b-instant at temperature 0 and at most 10 output tokens. The prompt's
+ * tier guide is generated from tier-definitions.ts, so it matches what the user is shown.
+ * Reports the token usage so the caller can price the call: it is not free, and it counts
+ * toward the monthly cost cap through the turn it belongs to.
+ *
+ * `wasAuto` is true only when the model returned a valid tier. If Groq is unavailable it
+ * returns the fallback with no usage; if the call ran but the answer was unusable it
+ * returns the fallback with the usage that was spent.
  */
+export const CLASSIFIER_MODEL = "llama-3.1-8b-instant";
+
 export async function classifyComplexityLlm(
   message: string,
   fallback: string,
   recentHistory: { role: "user" | "assistant"; content: string }[] = [],
-): Promise<{ mode: string; wasAuto: boolean }> {
+): Promise<{
+  mode: string;
+  wasAuto: boolean;
+  model?: string;
+  usage?: { promptTokens: number; completionTokens: number };
+}> {
   if (!(await hasGroqRuntime())) return { mode: fallback, wasAuto: false };
   try {
     const client = await getClient();
@@ -236,42 +188,40 @@ export async function classifyComplexityLlm(
       .map(m => `${m.role === "user" ? "User" : "AI"}: ${String(m.content).slice(0, 120)}`)
       .join("\n");
     const contextBlock = contextLines
-      ? `\nRecent conversation (for context — classify the LATEST message):\n${contextLines}\n`
+      ? `\nRecent conversation (for context only, classify the LATEST message):\n${contextLines}\n`
       : "";
 
     const res = await client.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+      model: CLASSIFIER_MODEL,
       messages: [
         {
           role: "system",
           content: `Pick ONE complexity tier for the LATEST user message. Reply with ONLY the tier name.
 ${contextBlock}
-Tiers (most → least complex):
-Max      — debugging, code review, system design, deep technical work, code blocks
-Plus     — planning, strategy, comparing options, "help me think through", decision advice
-Standard — DEFAULT for companion chat, emotional topics, small talk, general back-and-forth
-Light    — how-to / explain / quick facts — not casual chat
-Micro    — ONLY one-line acks ("thanks", "ok", "got it", "lol") — never real conversation
+Tiers (most to least complex):
+${tierGuideForPrompt()}
 
 RULES:
-1. Casual companion chat → Standard (NOT Micro). Micro is acks only.
-2. Light is for how-to, explain, and short facts — not small talk.
-3. Use Plus for planning / decision-help — not Standard or Max unless technical.
-4. Short follow-ups in a deep technical thread → Max (not Micro).
-5. Use Max for genuine technical depth, not everyday chat.`,
+1. Casual conversation is Standard, never Micro. Micro is acknowledgements only.
+2. Light is for a single fact or a simple how-to, not small talk.
+3. Plus is for planning and decision help, and for summarizing or analysing documents.
+4. Max is for genuine technical depth (code, debugging, system design), not everyday chat.
+5. Judge the latest message on its own. Follow-ups to earlier replies are handled elsewhere.`,
         },
         { role: "user", content: message.slice(0, 600) },
       ],
       max_tokens: 10,
       temperature: 0,
     });
+    const usage = res.usage
+      ? { promptTokens: res.usage.prompt_tokens ?? 0, completionTokens: res.usage.completion_tokens ?? 0 }
+      : undefined;
     const raw = (res.choices[0]?.message?.content ?? "").trim();
-    const VALID = ["Max", "Plus", "Standard", "Light", "Micro", "High", "Fast"];
-    const found = VALID.find(t => raw.startsWith(t));
-    let mode = found ?? fallback;
-    if (mode === "High") mode = "Max";
-    if (mode === "Fast") mode = "Light";
-    return { mode, wasAuto: mode !== fallback };
+    // High and Fast are retired names a model may still emit.
+    const found = [...TIER_NAMES, "High", "Fast"].find(t => raw.startsWith(t));
+    if (!found) return { mode: fallback, wasAuto: false, model: CLASSIFIER_MODEL, usage };
+    const mode = found === "High" ? "Max" : found === "Fast" ? "Light" : found;
+    return { mode, wasAuto: true, model: CLASSIFIER_MODEL, usage };
   } catch {
     return { mode: fallback, wasAuto: false };
   }

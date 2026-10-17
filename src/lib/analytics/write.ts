@@ -82,6 +82,12 @@ export type InferenceEventInput = {
   tier: string;
   promptTokens?: number | null;
   completionTokens?: number | null;
+  /**
+   * Extra estimated USD that belongs to this turn but is not in its token counts, such as
+   * the small-model tier tie-break. Added to the recorded estimate so it counts toward the
+   * monthly cap without creating a separate event that would inflate tier and request counts.
+   */
+  extraCostUsd?: number;
   latencyMs?: number | null;
   status: InferenceStatus;
   retrievalHitCount?: number;
@@ -126,6 +132,11 @@ export async function recordInferenceEvent(input: InferenceEventInput): Promise<
     });
     estimatedCostUsd = est.estimatedCostUsd;
     pricingVersion = est.pricingVersion;
+  }
+
+  const extra = input.extraCostUsd ?? 0;
+  if (extra > 0 && Number.isFinite(extra)) {
+    estimatedCostUsd = (estimatedCostUsd ?? 0) + extra;
   }
 
   try {

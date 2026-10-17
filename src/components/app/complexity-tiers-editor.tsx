@@ -19,19 +19,17 @@ import {
   type ProviderFilter,
 } from "@/components/app/model-catalog";
 import { DEFAULT_TIER_MODELS } from "@/lib/models/tier-assignment";
+import { TIER_DEFINITIONS } from "@/lib/models/tier-definitions";
 import { isChatUsableModelId } from "@/lib/models/catalog-shared";
 import type { ModelSelectionStatus } from "@/lib/models/model-availability";
 
 const TIERS = ["Max", "Plus", "Standard", "Light", "Micro"] as const;
 type Tier = (typeof TIERS)[number];
 
-const TIER_HELP: Record<Tier, string> = {
-  Max: "Hardest problems and deep technical work",
-  Plus: "Planning, analysis, and longer reasoning",
-  Standard: "Everyday questions — the default route",
-  Light: "Short how-to, facts, and instructions",
-  Micro: "Brief acknowledgements and one-line replies",
-};
+// One definition per tier, shared with the router and the tie-break prompt.
+const TIER_HELP = Object.fromEntries(
+  TIERS.map(tier => [tier, TIER_DEFINITIONS[tier].summary]),
+) as Record<Tier, string>;
 
 export type LastRouteSummary = {
   mode?: string;

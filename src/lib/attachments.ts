@@ -15,6 +15,9 @@ export {
   MAX_FILE_BYTES,
 } from "@/lib/documents/constants";
 
+/** The instruction used when a file is attached with no message. */
+export const DEFAULT_ATTACHMENT_ASK = "Please review the attached file(s).";
+
 export type CurrentAttachmentDoc = {
   id: string;
   name: string;

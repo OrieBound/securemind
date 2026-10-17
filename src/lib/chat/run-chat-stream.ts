@@ -21,7 +21,14 @@ import {
 } from "@/lib/models/router";
 import { streamChat } from "@/lib/models/provider";
 import { resolveAllowedModel } from "@/lib/models/allowlist";
-import { routeMessage } from "@/lib/models/route-message";
+import {
+  applyEvidenceFloors,
+  applyTurnPolicyMicro,
+  noteFloorNotApplied,
+  routeMessage,
+} from "@/lib/models/route-message";
+import type { RouteScoreCard } from "@/lib/models/route-scorecard";
+import { tierRank } from "@/lib/models/tier-definitions";
 import { decideChatRuntime, MODEL_NOT_ASSIGNED_CODE } from "@/lib/models/resolve-chat-runtime";
 import { probeHardware } from "@/lib/models/local-recommendations";
 import { runtimeEdition } from "@/lib/runtime-env";
@@ -52,6 +59,7 @@ import { MAX_ATTACHMENTS_PER_TURN } from "@/lib/documents/constants";
 import {
   attachedDocumentNamesFromText,
   compactAttachedDocumentHistory,
+  DEFAULT_ATTACHMENT_ASK,
   formatAttachmentsForHistory,
   mergeCurrentAttachments,
   withAttachmentNamesInQuery,
@@ -81,6 +89,8 @@ export type ChatStreamContext = {
   hasImages: boolean;
   images: string[];
   activeMode: string;
+  /** Why this tier ran: signals, adjustments, floors, tie-break cost. */
+  scoreCard: RouteScoreCard;
   wasAutoRouted: boolean;
   model: string;
   provider: ModelProvider;
@@ -157,7 +167,7 @@ export async function prepareChatTurn(
   const hasFileAttachments = orderedAttachments.some(d => d.content.trim());
   const message = (rawMessage ?? "").trim()
     || (hasImages || hasFileAttachments || requestedAttachmentIds.length > 0
-      ? "Please review the attached file(s)."
+      ? DEFAULT_ATTACHMENT_ASK
       : "");
 
   if (!message) {
@@ -192,78 +202,101 @@ export async function prepareChatTurn(
     hasImages,
   });
   let activeMode = turn.preferMicroTier ? "Micro" : routeDecision.tier;
+  let scoreCard: RouteScoreCard = turn.preferMicroTier
+    ? applyTurnPolicyMicro(routeDecision.card)
+    : routeDecision.card;
   const wasAutoRouted = routeDecision.wasAuto || turn.preferMicroTier;
 
   const groqOk = await hasGroqRuntime();
   const groqBlock = await getGroqUnavailableReason();
   const runtimeSecrets = await resolveRuntimeSecrets();
-  const { model: routedModel, provider: routedProvider } = routeModel("chat", activeMode);
   const [ollamaProbe, bedrockBlock] = await Promise.all([
     probeOllama(2500),
     bedrockBlockReason(),
   ]);
   const ollamaChatModels = ollamaProbe.tags.filter(t => !isOllamaEmbedModel(t));
 
-  let override: { provider: ModelProvider; model: string } | null = null;
-  const userModelOverride = modelOverrides[activeMode];
-  if (userModelOverride && !hasImages) {
-    const allowed = await resolveAllowedModel(userModelOverride);
-    if (!allowed) {
-      console.warn("[chat] Rejected non-allowlisted model override.");
-    } else {
-      override = { provider: allowed.provider, model: allowed.model };
+  /** Which model runs for a tier, or why none can. Used for the first pass and again if a floor raises the tier. */
+  const resolveForTier = async (
+    tier: string,
+  ): Promise<
+    | { ok: true; decision: Extract<ReturnType<typeof decideChatRuntime>, { ok: true }> }
+    | { ok: false; failure: ChatPrepareFailure }
+  > => {
+    const { model: routedModel, provider: routedProvider } = routeModel("chat", tier);
+
+    let override: { provider: ModelProvider; model: string } | null = null;
+    const userModelOverride = modelOverrides[tier];
+    if (userModelOverride && !hasImages) {
+      const allowed = await resolveAllowedModel(userModelOverride);
+      if (!allowed) {
+        console.warn("[chat] Rejected non-allowlisted model override.");
+      } else {
+        override = { provider: allowed.provider, model: allowed.model };
+      }
     }
-  }
 
-  if (runtimeEdition() === "cloud" && !hasImages && !override && !groqOk && !bedrockBlock) {
-    return {
-      ok: false,
-      status: 503,
-      body: {
-        error:
-          "No model is assigned for this complexity tier. Pick a model in Insights → Models or Settings → Models. Enabling Bedrock does not select a model, and it does not change models you already assigned.",
-        code: MODEL_NOT_ASSIGNED_CODE,
-        setupRequired: true,
-        settingsSection: "inference",
-      },
-    };
-  }
+    if (runtimeEdition() === "cloud" && !hasImages && !override && !groqOk && !bedrockBlock) {
+      return {
+        ok: false,
+        failure: {
+          ok: false,
+          status: 503,
+          body: {
+            error:
+              "No model is assigned for this complexity tier. Pick a model in Insights → Models or Settings → Models. Enabling Bedrock does not select a model, and it does not change models you already assigned.",
+            code: MODEL_NOT_ASSIGNED_CODE,
+            setupRequired: true,
+            settingsSection: "inference",
+          },
+        },
+      };
+    }
 
-  const decision = decideChatRuntime({
-    edition: runtimeEdition(),
-    routedProvider: hasImages ? "groq" : routedProvider,
-    routedModel: hasImages ? VISION_MODEL : routedModel,
-    activeMode,
-    hasImages,
-    primaryProvider: runtimeSecrets.primaryProvider,
-    groqOk,
-    groqBlock,
-    bedrockOk: !bedrockBlock,
-    bedrockBlock,
-    ollamaReachable: ollamaProbe.reachable,
-    ollamaChatModels,
-    hardware: probeHardware(),
-    override,
-  });
+    const resolved = decideChatRuntime({
+      edition: runtimeEdition(),
+      routedProvider: hasImages ? "groq" : routedProvider,
+      routedModel: hasImages ? VISION_MODEL : routedModel,
+      activeMode: tier,
+      hasImages,
+      primaryProvider: runtimeSecrets.primaryProvider,
+      groqOk,
+      groqBlock,
+      bedrockOk: !bedrockBlock,
+      bedrockBlock,
+      ollamaReachable: ollamaProbe.reachable,
+      ollamaChatModels,
+      hardware: probeHardware(),
+      override,
+    });
 
-  if (!decision.ok) {
-    return {
-      ok: false,
-      status: 503,
-      body: {
-        error: decision.message,
-        code: decision.code,
-        setupRequired: true,
-        settingsSection: decision.settingsSection,
-        setup: decision.setup,
-      },
-    };
-  }
+    if (!resolved.ok) {
+      return {
+        ok: false,
+        failure: {
+          ok: false,
+          status: 503,
+          body: {
+            error: resolved.message,
+            code: resolved.code,
+            setupRequired: true,
+            settingsSection: resolved.settingsSection,
+            setup: resolved.setup,
+          },
+        },
+      };
+    }
+    return { ok: true, decision: resolved };
+  };
 
-  const model = decision.model;
-  const provider = decision.provider;
-  const useGroq = decision.useGroq;
-  const useBedrock = decision.useBedrock;
+  const first = await resolveForTier(activeMode);
+  if (!first.ok) return first.failure;
+  let decision = first.decision;
+
+  let model = decision.model;
+  let provider = decision.provider;
+  let useGroq = decision.useGroq;
+  let useBedrock = decision.useBedrock;
 
   if (provider === "ollama") {
     const modelError = await checkOllamaModel(model);
@@ -343,6 +376,43 @@ export async function prepareChatTurn(
   const candidateCount = candidateHits.length;
   const evidenceCount = evidenceHits.length;
 
+  // Phase 2 routing: the tier above was chosen from the words alone, before any document was
+  // found. If this turn must be answered from documents, raise it (never lower it). The new
+  // tier is used only if a model can run there and it would not breach the cost cap;
+  // otherwise the first-pass model stands and the score card says so.
+  if (!turn.preferMicroTier && !hasImages) {
+    const floored = applyEvidenceFloors(scoreCard, {
+      message,
+      evidencePassages: turn.shouldRetrieve ? evidenceHits.length : 0,
+      evidenceDocuments: new Set(
+        evidenceHits.map(h => h.documentId).filter((id): id is string => Boolean(id)),
+      ).size,
+      attachmentChars: orderedAttachments.reduce((n, d) => n + d.content.length, 0),
+    });
+    if (tierRank(floored.tier) > tierRank(activeMode)) {
+      const alt = await resolveForTier(floored.tier);
+      let why: string | null = null;
+      if (!alt.ok) {
+        why = "no model is assigned there";
+      } else if (capStatus.capped && isBillableInferenceProvider(alt.decision.provider)) {
+        why = "it would exceed the monthly cost cap";
+      } else if (alt.decision.provider === "ollama" && (await checkOllamaModel(alt.decision.model))) {
+        why = "that local model is not installed";
+      }
+      if (alt.ok && !why) {
+        decision = alt.decision;
+        model = decision.model;
+        provider = decision.provider;
+        useGroq = decision.useGroq;
+        useBedrock = decision.useBedrock;
+        activeMode = floored.tier;
+        scoreCard = floored;
+      } else {
+        scoreCard = noteFloorNotApplied(scoreCard, floored.tier, why ?? "no usable model");
+      }
+    }
+  }
+
   const operational = needsOperationalPrompt(turn);
   let systemPrompt =
     buildSystemPrompt({
@@ -409,6 +479,7 @@ export async function prepareChatTurn(
       hasImages,
       images,
       activeMode,
+      scoreCard,
       wasAutoRouted,
       model,
       provider,
@@ -457,6 +528,7 @@ export async function* iterateChatSseFrames(
         wasAutoRouted: ctx.wasAutoRouted,
         costTier: getCostTier(actualProvider, ctx.model),
         turnMode: ctx.turn.mode,
+        scoreCard: ctx.scoreCard,
       },
     });
 
@@ -586,6 +658,7 @@ export async function* iterateChatSseFrames(
       provider: actualProvider,
       model: actualModel,
       tier: ctx.activeMode,
+      extraCostUsd: ctx.scoreCard.classifier.costUsd,
       promptTokens: usageHold.current?.promptTokens ?? null,
       completionTokens: usageHold.current?.completionTokens ?? null,
       latencyMs: Date.now() - startedAt,
