@@ -17,3 +17,19 @@ domain_name = "example.com"
 #   "www"    = { type = "CNAME", values = ["d111111abcdef8.cloudfront.net"] }
 #   "sample" = { type = "A", alias = { name = "d222222abcdef8.cloudfront.net", zone_id = "Z2FDTNDATAQYW2" } }
 # }
+
+# Static websites on S3 + CloudFront (a marketing page, a demo). Each gets its own certificate,
+# DNS records and a role that its GitHub repository can use to upload files, with no stored keys.
+# Needs the zone above. Read each prefix with:
+#   gh api repos/OWNER/REPO/actions/oidc/customization/sub   (sub_claim_prefix)
+# static_sites = {
+#   marketing = {
+#     aliases                  = ["example.com", "www.example.com"]  # the first is the main address
+#     redirect_others_to_first = true                                # www -> example.com
+#     github_subject_prefix    = "repo:OWNER@111/marketing@222"
+#   }
+#   sample = {
+#     aliases               = ["sample.example.com"]
+#     github_subject_prefix = "repo:OWNER@111/sample@333"
+#   }
+# }

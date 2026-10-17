@@ -18,6 +18,12 @@ provider "aws" {
   region = var.aws_region
 }
 
+# CloudFront only reads certificates from us-east-1, wherever the rest of the stack runs.
+provider "aws" {
+  alias  = "cloudfront_cert"
+  region = "us-east-1"
+}
+
 provider "random" {}
 
 variable "aws_region" {
@@ -200,6 +206,54 @@ module "domain" {
   amplify_branch        = var.amplify_branch
   api_rest_api_id       = module.api.rest_api_id
   extra_records         = var.extra_dns_records
+}
+
+# Static websites (marketing, demo): S3 + CloudFront + certificate + a GitHub deploy role each.
+# Empty by default, so nothing is built. Needs domain_name, because the records go in that zone.
+variable "static_sites" {
+  type = map(object({
+    aliases                  = list(string)
+    redirect_others_to_first = optional(bool, false)
+    github_subject_prefix    = string
+    github_branch            = optional(string, "main")
+  }))
+  default     = {}
+  description = "Static sites to host, keyed by a short name. See domain.tfvars.example."
+}
+
+data "aws_iam_openid_connect_provider" "github" {
+  count = length(var.static_sites) > 0 ? 1 : 0
+  url   = "https://token.actions.githubusercontent.com"
+}
+
+module "static_site" {
+  for_each = var.static_sites
+  source   = "./modules/static_site"
+  providers = {
+    aws                 = aws
+    aws.cloudfront_cert = aws.cloudfront_cert
+  }
+
+  name                     = each.key
+  env_name                 = var.env_name
+  zone_id                  = module.domain.zone_id
+  aliases                  = each.value.aliases
+  redirect_others_to_first = each.value.redirect_others_to_first
+  github_subject_prefix    = each.value.github_subject_prefix
+  github_branch            = each.value.github_branch
+  oidc_provider_arn        = data.aws_iam_openid_connect_provider.github[0].arn
+}
+
+output "static_sites" {
+  description = "Per site: the values to copy into that repository's GitHub Actions variables."
+  value = {
+    for k, m in module.static_site : k => {
+      url             = m.site_url
+      s3_bucket       = m.bucket_name
+      distribution_id = m.distribution_id
+      role_arn        = m.deploy_role_arn
+    }
+  }
 }
 
 output "api_base_url" {
