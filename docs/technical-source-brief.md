@@ -192,11 +192,19 @@ Browser → Next.js on :3000 → Postgres (workspaces, messages, documents, fact
 
 Hosted path:
 
-Browser → Amplify (WEB_COMPUTE) for the UI, sign-in, workspaces, settings, and non-chat APIs. Chat stream and warm go to API Gateway REST stage `prod`, then two Lambdas (arm64; chat is the long streaming function). Amplify and the chat Lambda both use the DynamoDB fragments table (app records on Amplify; vector search on the chat path). Cognito is the user pool. Secrets Manager holds the table name, vendor keys, and an optional bootstrap Groq key. Profile photos are a private S3 bucket. CloudWatch holds Lambda logs (14 days) and a Bedrock metrics dashboard. Prompt and response content logging is not turned on by that dashboard.
+Browser → Amplify (WEB_COMPUTE) for the UI, sign-in, workspaces, settings, and non-chat APIs. Chat stream and warm go to API Gateway REST stage `prod`, then two Lambdas (arm64; chat is the long streaming function). Amplify and the chat Lambda both use the DynamoDB fragments table (app records on Amplify; vector search on the chat path). Cognito is the user pool. Secrets Manager holds the table name, vendor keys, an optional bootstrap Groq key, and one `app-secrets` secret with the instance encryption key and the first-run setup code (the Amplify compute role can read only that one; the server loads it at startup, so neither is a plain Amplify variable). Profile photos are a private S3 bucket. CloudWatch holds Lambda logs (14 days) and a Bedrock metrics dashboard. Prompt and response content logging is not turned on by that dashboard.
 
 CI on `main`: GitHub Actions runs tests, assumes an OIDC role, Terraform-applies the sandbox (when the role and state bucket are configured), and starts an Amplify release job. State is an S3 bucket. The lock is an object in that same bucket. Pull requests plan only.
 
 There is no custom VPC. These are regional managed services.
+
+## Sign-in security and response headers
+
+Two-step verification is optional and uses an authenticator app (TOTP) through real Cognito. When an account has it on, the password step returns a short-lived sign-in session instead of a cookie, and `/api/auth/login/mfa` finishes the sign-in with the 6-digit code. Cognito makes the secret and checks every code. Setting it up (QR code and a typeable key, confirmed by a code) and turning it off (password required again) are in My Profile. Admins see a recommendation until they turn it on, and an Owner or Admin can reset someone's second step from the Admin page for a lost phone. SMS codes are not offered. The local Docker sign-in cannot do codes, so the control is hidden there. It does not end sessions that already exist, and it is not required unless the operator sets the pool to `ON`. See `docs/mfa.md`.
+
+Every response from the app carries a Content-Security-Policy and the usual protective headers: no framing, no content sniffing, a strict referrer policy, and permissions limited to the microphone for voice input. On the hosted edition HSTS is added. The browser may connect only to its own origin and the chat API origin, because model vendors are called from the server. The policy still allows inline scripts, since Next.js writes inline hydration scripts; nonces would need middleware. The chat and warm Lambdas and API Gateway's own error responses add the sniffing, referrer and HSTS headers.
+
+The hosted edition can be served from a custom domain: the app on a subdomain, the chat API optionally on another, and the registrar stays where it is with only its nameservers pointed at a Route53 zone. It is staged and off by default. See `docs/deploy/custom-domain.md`.
 
 ## Explicitly absent
 
