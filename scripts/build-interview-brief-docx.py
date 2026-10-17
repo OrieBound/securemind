@@ -805,7 +805,7 @@ def build() -> None:
     body(
         doc,
         "CI on GitHub Actions runs tests on push and pull request. A pull request can plan. A push to main can apply and then start an Amplify release job, but only when the OIDC role and the Terraform state bucket are configured. "
-        "Bootstrap is once, from a laptop: an S3 state bucket, a DynamoDB lock table, and a deploy role scoped to this repository. The pipeline does not store an AWS access key. Amplify’s own auto-build is off so the GitHub check is what starts and waits on the UI build.",
+        "Bootstrap is once, from a laptop: an S3 state bucket (versioned and encrypted, with S3 state locking), and a deploy role scoped to this repository. The pipeline does not store an AWS access key. Amplify’s own auto-build is off so the GitHub check is what starts and waits on the UI build.",
     )
     body(
         doc,
