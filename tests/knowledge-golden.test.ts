@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ollamaReady, runGolden, summarize, type GoldenMode } from "./helpers/knowledge-golden";
+import { ollamaReady, runGolden, summarize, type GoldenMode } from "../scripts/lib/knowledge-golden";
 
 /**
  * Golden Knowledge retrieval check against the synthetic tenancy agreement.
