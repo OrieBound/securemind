@@ -4,7 +4,7 @@
 
 import type { ChatMessage } from "./types";
 import { resolveVendorApiKey } from "./vendor-secrets";
-import { fetchWithTimeout } from "./vendor-stream";
+import { fetchWithTimeout, usageFromGeminiChunk, type VendorUsageCallback } from "./vendor-stream";
 import { isChatUsableModelId, type CatalogModel } from "./catalog-shared";
 
 function toGeminiContents(messages: ChatMessage[]): Array<{
@@ -73,6 +73,7 @@ export async function* streamGoogleChat(
   messages: ChatMessage[],
   model: string,
   signal?: AbortSignal,
+  onUsage?: VendorUsageCallback,
 ): AsyncGenerator<string> {
   const apiKey = await resolveVendorApiKey("google");
   if (!apiKey) {
@@ -120,6 +121,8 @@ export async function* streamGoogleChat(
           const json = JSON.parse(payload) as {
             candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
           };
+          const usage = usageFromGeminiChunk(json);
+          if (usage) onUsage?.(usage);
           const parts = json.candidates?.[0]?.content?.parts ?? [];
           for (const p of parts) {
             if (p.text) yield p.text;
