@@ -46,4 +46,22 @@ describe("rate overrides", () => {
     );
     expect(priced["groq:allam-2-7b"]).toEqual({ inputPerM: 0.05, outputPerM: 0.08 });
   });
+
+  it("accepts vendor overrides and lists the curated vendor families", () => {
+    const map = parseRateOverrides({
+      "openai:GPT-4.1": { inputPerM: 1, outputPerM: 2 },
+      "google:models/gemini-2.5-pro": { inputPerM: 1, outputPerM: 2 },
+    });
+    expect(Object.keys(map).sort()).toEqual(["google:gemini-2.5-pro", "openai:gpt-4.1"]);
+
+    const rows = listEditableRates({});
+    for (const provider of ["google", "openai", "anthropic", "xai"]) {
+      expect(rows.some(r => r.provider === provider && r.source === "list")).toBe(true);
+    }
+  });
+
+  it("does not store an untouched vendor row as an override", () => {
+    const rows = listEditableRates({});
+    expect(overridesFromEditedRows(rows)).toEqual({});
+  });
 });

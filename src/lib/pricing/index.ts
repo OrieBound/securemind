@@ -19,6 +19,14 @@ import {
   estimateBedrockTurnCostUsd,
   lookupBedrockRates,
 } from "./bedrock";
+import {
+  isVendorPricedProvider,
+  lookupVendorRates,
+  VENDOR_MODEL_PRICING,
+  VENDOR_PRICING_EFFECTIVE,
+  VENDOR_PRICING_VERSION,
+  vendorFloorRates,
+} from "./vendors";
 import { costFromRates, type CostEstimate, type TokenRate } from "./types";
 import { lookupOverride, type RateOverrideMap } from "./rate-overrides";
 
@@ -42,14 +50,24 @@ export {
   estimateBedrockTurnCostUsd,
 } from "./bedrock";
 
+export {
+  VENDOR_MODEL_PRICING,
+  VENDOR_FLOOR_RATES,
+  VENDOR_PRICING_VERSION,
+  VENDOR_PRICING_EFFECTIVE,
+  lookupVendorRates,
+  vendorFloorRates,
+} from "./vendors";
+
 export const OLLAMA_PRICING_VERSION = "ollama-local-zero";
 
-/** Bundle stamp for Cost Insights chrome (both curated tables). */
-export const PRICING_BUNDLE_VERSION = `${GROQ_PRICING_VERSION}+${BEDROCK_PRICING_VERSION}+c10`;
-export const PRICING_BUNDLE_EFFECTIVE =
-  GROQ_PRICING_EFFECTIVE < BEDROCK_PRICING_EFFECTIVE
-    ? GROQ_PRICING_EFFECTIVE
-    : BEDROCK_PRICING_EFFECTIVE;
+/** Bundle stamp for Cost Insights chrome (all curated tables). */
+export const PRICING_BUNDLE_VERSION = `${GROQ_PRICING_VERSION}+${BEDROCK_PRICING_VERSION}+${VENDOR_PRICING_VERSION}+c10`;
+export const PRICING_BUNDLE_EFFECTIVE = [
+  GROQ_PRICING_EFFECTIVE,
+  BEDROCK_PRICING_EFFECTIVE,
+  VENDOR_PRICING_EFFECTIVE,
+].reduce((oldest, d) => (d < oldest ? d : oldest));
 
 /** Applied on top of list rates before persistence / cap math. */
 export const CONSERVATIVE_COST_UPLIFT = 0.1;
@@ -70,7 +88,7 @@ export const UNPRICED_CLOUD_FLOOR_RATES: TokenRate =
 export const UNPRICED_CLOUD_FLOOR_VERSION = `${GROQ_PRICING_VERSION}+floor-${DEFAULT_COST_BASELINE_MODEL}`;
 
 export const COST_ESTIMATE_DISCLAIMER =
-  "Estimated from recorded tokens × list rates (Groq / Bedrock on-demand; local Ollama is $0) with a +10% conservative uplift, rounded up. Not an AWS invoice — Cost Explorer lags about a day and is not used here. Unpriced cloud models use a Max-tier token floor. Admins can update rates on this page; changes apply to new turns only.";
+  "Estimated from recorded tokens × list rates (Groq / Bedrock on-demand; Gemini, OpenAI, Anthropic and Grok use approximate rates matched by model family; local Ollama is $0) with a +10% conservative uplift, rounded up. Not an invoice — provider billing is not queried, and a free tier is still estimated at list rate. Unmatched models use a per-vendor ceiling. Admins can set exact rates on this page; changes apply to new turns only.";
 
 /** Ceiling after uplift so estimates never under-count vs raw list rate. */
 export function applyConservativeUplift(rawUsd: number): number {
@@ -153,6 +171,20 @@ export function estimateInferenceCost(opts: {
     });
   }
 
+  if (isVendorPricedProvider(provider)) {
+    const matched = lookupVendorRates(provider, model);
+    // No prefix match: use the vendor's premium-tier ceiling, not the Groq floor,
+    // which would under-count a new Claude/GPT model against the cap.
+    const rates = matched ?? vendorFloorRates(provider) ?? UNPRICED_CLOUD_FLOOR_RATES;
+    return withConservative({
+      estimatedCostUsd: costFromRates(rates, promptTokens, completionTokens),
+      pricingVersion: matched
+        ? VENDOR_PRICING_VERSION
+        : `${VENDOR_PRICING_VERSION}+floor-${provider}`,
+      priced: true,
+    });
+  }
+
   // Unknown cloud-ish provider: still apply floor so caps are not bypassed.
   const floor = costFromRates(UNPRICED_CLOUD_FLOOR_RATES, promptTokens, completionTokens);
   return withConservative({
@@ -184,7 +216,11 @@ export function estimateSavingsVsBaseline(opts: {
 
 /** Models with a known list price (for pickers / diagnostics). */
 export function listPricedModelIds(): string[] {
-  return [...Object.keys(GROQ_MODEL_PRICING), ...Object.keys(BEDROCK_MODEL_PRICING)];
+  return [
+    ...Object.keys(GROQ_MODEL_PRICING),
+    ...Object.keys(BEDROCK_MODEL_PRICING),
+    ...Object.values(VENDOR_MODEL_PRICING).flatMap(entries => entries.map(e => e.prefix)),
+  ];
 }
 
 export function hasListPrice(
@@ -197,5 +233,6 @@ export function hasListPrice(
   if (lookupOverride(p, model, rateOverrides)) return true;
   if (p === "groq") return model in GROQ_MODEL_PRICING;
   if (p === "bedrock") return lookupBedrockRates(model) != null;
+  if (isVendorPricedProvider(p)) return lookupVendorRates(p, model) != null;
   return false;
 }

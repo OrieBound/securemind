@@ -4,7 +4,7 @@
 
 import type { ChatMessage } from "./types";
 import { resolveVendorApiKey } from "./vendor-secrets";
-import { fetchWithTimeout, parseOpenAiSseStream } from "./vendor-stream";
+import { fetchWithTimeout, parseOpenAiSseStream, type VendorUsageCallback } from "./vendor-stream";
 import { isChatUsableModelId, type CatalogModel } from "./catalog-shared";
 
 function toOpenAiMessages(messages: ChatMessage[]): Array<{ role: string; content: string }> {
@@ -44,6 +44,7 @@ export async function* streamOpenAIChat(
   messages: ChatMessage[],
   model: string,
   signal?: AbortSignal,
+  onUsage?: VendorUsageCallback,
 ): AsyncGenerator<string> {
   const apiKey = await resolveVendorApiKey("openai");
   if (!apiKey) {
@@ -61,6 +62,7 @@ export async function* streamOpenAIChat(
       model,
       messages: toOpenAiMessages(messages),
       stream: true,
+      stream_options: { include_usage: true },
       max_tokens: 1024,
       temperature: 0.8,
     }),
@@ -72,5 +74,5 @@ export async function* streamOpenAIChat(
   }
   if (!res.body) throw new Error("OpenAI returned an empty stream.");
 
-  yield* parseOpenAiSseStream(res.body);
+  yield* parseOpenAiSseStream(res.body, onUsage);
 }

@@ -72,3 +72,6 @@ next-env.d.ts
 infra/terraform/backend.hcl
 infra/terraform/.build/
 COMMIT_MSG.tmp
+
+# Exported Cursor chat history and QA notes (local only)
+cursor-history/

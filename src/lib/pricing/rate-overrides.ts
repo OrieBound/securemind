@@ -6,8 +6,24 @@
 import { BEDROCK_MODEL_PRICING, normalizeBedrockModelId } from "./bedrock";
 import { GROQ_MODEL_PRICING } from "./groq";
 import type { TokenRate } from "./types";
+import {
+  isVendorPricedProvider,
+  lookupVendorRates,
+  normalizeVendorModelId,
+  VENDOR_MODEL_PRICING,
+  VENDOR_PRICED_PROVIDERS,
+  type VendorPricedProvider,
+} from "./vendors";
 
-export type RateProvider = "groq" | "bedrock";
+export type RateProvider = "groq" | "bedrock" | VendorPricedProvider;
+
+export function isRateProvider(value: unknown): value is RateProvider {
+  return (
+    value === "groq" ||
+    value === "bedrock" ||
+    (typeof value === "string" && isVendorPricedProvider(value))
+  );
+}
 
 export type RateOverrideMap = Record<string, TokenRate>;
 
@@ -25,7 +41,12 @@ const MAX_RATE = 10_000;
 
 export function overrideKey(provider: string, model: string): string {
   const p = provider.toLowerCase();
-  const m = p === "bedrock" ? normalizeBedrockModelId(model) : model.trim();
+  const m =
+    p === "bedrock"
+      ? normalizeBedrockModelId(model)
+      : isVendorPricedProvider(p)
+        ? normalizeVendorModelId(model)
+        : model.trim();
   return `${p}:${m}`;
 }
 
@@ -46,7 +67,7 @@ export function parseOverrideKey(key: string): { provider: RateProvider; model: 
   if (cut <= 0) return null;
   const provider = key.slice(0, cut).toLowerCase();
   const model = key.slice(cut + 1).trim();
-  if (provider !== "groq" && provider !== "bedrock") return null;
+  if (!isRateProvider(provider)) return null;
   if (!model || model.length > MAX_MODEL_ID) return null;
   return { provider, model };
 }
@@ -69,7 +90,24 @@ export function lookupOverride(
   overrides: RateOverrideMap | undefined,
 ): TokenRate | null {
   if (!overrides) return null;
-  return overrides[overrideKey(provider, model)] ?? null;
+  const exact = overrides[overrideKey(provider, model)];
+  if (exact) return exact;
+
+  // Vendor rows are model-family prefixes ("gpt-4.1"), so an override on a prefix
+  // also prices its variants. Longest matching prefix wins.
+  const p = provider.toLowerCase();
+  if (!isVendorPricedProvider(p)) return null;
+  const id = normalizeVendorModelId(model);
+  const head = `${p}:`;
+  let best: { len: number; rates: TokenRate } | null = null;
+  for (const [key, rates] of Object.entries(overrides)) {
+    if (!key.startsWith(head)) continue;
+    const prefix = key.slice(head.length);
+    if (id.startsWith(prefix) && (!best || prefix.length > best.len)) {
+      best = { len: prefix.length, rates };
+    }
+  }
+  return best?.rates ?? null;
 }
 
 export function ratesEqual(a: TokenRate, b: TokenRate): boolean {
@@ -78,6 +116,7 @@ export function ratesEqual(a: TokenRate, b: TokenRate): boolean {
 
 export function catalogRate(provider: RateProvider, model: string): TokenRate | null {
   if (provider === "groq") return GROQ_MODEL_PRICING[model] ?? null;
+  if (provider !== "bedrock") return lookupVendorRates(provider, model);
   return BEDROCK_MODEL_PRICING[normalizeBedrockModelId(model)]
     ?? BEDROCK_MODEL_PRICING[model]
     ?? null;
@@ -92,10 +131,15 @@ export function overridesFromEditedRows(
 ): RateOverrideMap {
   const out: RateOverrideMap = {};
   for (const row of rows) {
-    if (row.provider !== "groq" && row.provider !== "bedrock") continue;
+    if (!isRateProvider(row.provider)) continue;
     const rates = parseTokenRate({ inputPerM: row.inputPerM, outputPerM: row.outputPerM });
     if (!rates) continue;
-    const model = row.provider === "bedrock" ? normalizeBedrockModelId(row.model) : row.model.trim();
+    const model =
+      row.provider === "bedrock"
+        ? normalizeBedrockModelId(row.model)
+        : isVendorPricedProvider(row.provider)
+          ? normalizeVendorModelId(row.model)
+          : row.model.trim();
     if (!model) continue;
     const catalog = catalogRate(row.provider, model);
     if (catalog && ratesEqual(catalog, rates)) continue;
@@ -133,6 +177,9 @@ export function listEditableRates(
 
   for (const model of Object.keys(BEDROCK_MODEL_PRICING)) push("bedrock", model);
   for (const model of Object.keys(GROQ_MODEL_PRICING)) push("groq", model);
+  for (const vendor of VENDOR_PRICED_PROVIDERS) {
+    for (const entry of VENDOR_MODEL_PRICING[vendor]) push(vendor, entry.prefix);
+  }
 
   const floor = extras?.floor;
   for (const model of extras?.groqModelIds ?? []) {
