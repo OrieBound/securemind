@@ -216,6 +216,7 @@ variable "static_sites" {
     redirect_others_to_first = optional(bool, false)
     github_subject_prefix    = string
     github_branch            = optional(string, "main")
+    enabled                  = optional(bool, true)
     existing = optional(object({
       bucket_name   = optional(string)
       role_name     = optional(string)
@@ -247,6 +248,7 @@ module "static_site" {
   redirect_others_to_first = each.value.redirect_others_to_first
   github_subject_prefix    = each.value.github_subject_prefix
   github_branch            = each.value.github_branch
+  enabled                  = each.value.enabled
   existing                 = each.value.existing
   oidc_provider_arn        = data.aws_iam_openid_connect_provider.github[0].arn
 }
