@@ -79,7 +79,7 @@ Paste that output, as-is, into `infra/terraform/backend.hcl`.
 
 ## Phase 3 — GitHub repository variables (for automated plan/apply, optional but recommended)
 
-This phase lets GitHub Actions in *your* fork assume the role from Phase 2, without ever holding an AWS access key as a GitHub secret. If you only ever intend to apply from your own laptop, you can skip this phase and go straight to Phase 5 — but then pull requests won't get an automatic `terraform plan`.
+This phase lets GitHub Actions in *your* fork assume the role from Phase 2, without ever holding an AWS access key as a GitHub secret. If you only ever intend to apply from your own laptop, you can skip this phase and go straight to Phase 4 — but then pull requests won't get an automatic `terraform plan`.
 
 In your GitHub repository: **Settings → Environments → New environment**, name it exactly what you passed as `github_environment` above (e.g. `aws-my-env`). Then add these as **Environment variables** (not secrets — none of these are secret):
 
@@ -93,15 +93,7 @@ Do **not** add `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` anywhere in GitHub
 
 The workflow in `.github/workflows/ci.yml` is written for the maintainer's own environment name. If you're deploying your own fork, open that file and change `aws-sandbox` (and the matching `env_name: sandbox` lines) to the environment name and env name you chose above.
 
-## Phase 4 — One-time console setup (Amplify + Bedrock)
-
-Two things only exist as console clicks — Terraform cannot do them, because they both require handing AWS a credential it does not accept from code.
-
-**Amplify → connect your GitHub repo.** Terraform creates the Amplify *app* in Phase 5, but it cannot hold a GitHub token. After Phase 5 finishes, open the Amplify console, find the app it created, and connect it to your GitHub repository through the GitHub App flow (not a personal access token). Leave auto-build **off** — the GitHub Actions workflow starts builds deliberately, after a successful `terraform apply`.
-
-**Bedrock → enable model access (optional).** If you want chat to work the moment you sign in, without pasting any API key, open the [Bedrock console](https://console.aws.amazon.com/bedrock/) in the same region, go to **Model access**, and request access to **Titan Text Embeddings V2** and at least one chat model (Claude or Nova are reasonable defaults). This is a console toggle, not an IAM permission — having the right IAM policy is not enough on its own. If you skip this, SecureMind still runs; you just add a Groq, OpenAI, Gemini, or Anthropic key in Settings after your first sign-in instead.
-
-## Phase 5 — Apply
+## Phase 4 — Apply
 
 Copy the example deploy file and fill in your values:
 
@@ -130,9 +122,50 @@ npm run infra:up
 
 This packages the two Lambda functions, runs `terraform init` against the backend file from Phase 2, runs `terraform apply`, and then wires the Cognito callback URLs and API CORS to whatever Amplify URL now exists. It will print a plan and ask you to confirm. This step creates the real resources — Cognito pool, DynamoDB table, API Gateway, two Lambdas, the Amplify app shell — and can incur AWS charges while it exists.
 
-If you skipped Phase 4's Amplify connection, do it now: the Amplify app exists but has no source yet.
+The Amplify **app** now exists, but it has no source connected and no branch yet — that's Phase 5, and it has to come after this step because Terraform cannot hold a GitHub token.
 
-## Phase 6 — First sign-in
+> **Standing rule, not just a one-time step:** every time you run `terraform apply` again after this point — including the drift-correction case in Phase 5 — immediately run `npm run infra:wire` right after it. `terraform apply` only knows about `http://localhost:3000` for CORS/callback URLs; `infra:wire` is what extends that to your actual Amplify domain. Running `apply` without a following `wire` silently narrows your live site back to localhost-only CORS and Cognito callbacks, which looks like "sign-in broke" with no error that points at the cause.
+
+## Phase 5 — Console setup: connect Amplify to GitHub, enable Bedrock (optional)
+
+**Amplify → Hosting → connect your GitHub repo.** Open the Amplify console, find the app Phase 4 created, and connect it to your GitHub repository through the GitHub App flow (not a personal access token). This lives under the app's **Hosting** menu — not **App settings → Backend Environments** (that's Amplify's own CLI-managed backend feature, unrelated to this project; this app's backend is 100% Terraform-managed).
+
+Walking through the "Add branch" wizard, three choices matter:
+
+- **"My app is a monorepo"** — leave **unchecked**. The repo root *is* the Next.js app.
+- **"Enable full-stack deploys"** — leave **unchecked**. This ties the branch to an Amplify-managed backend environment, which doesn't exist and would conflict with the Terraform-managed stack.
+- **Service role** — select the existing Terraform-created role, **`securemind-amplify-<env>`** (e.g. `securemind-amplify-my-env`). Do **not** let the wizard create a new role — a console-generated role won't have the Bedrock/DynamoDB/Cognito-admin/vendor-keys/avatars policies Terraform attached to the real one.
+
+Save the branch. Then immediately turn auto-build off and re-sync the full environment, because the console save can silently reset things Terraform set:
+
+```bash
+aws amplify update-branch --app-id <amplify_app_id> --branch-name main --no-enable-auto-build --profile my-securemind --region us-east-1
+npm run infra:wire
+```
+
+(`<amplify_app_id>` is `terraform -chdir=infra/terraform output -raw amplify_app_id`.) The `--no-enable-auto-build` call matters even if you didn't check an auto-build box — the wizard can set `enableAutoBuild: true` by default regardless. Builds should only start deliberately (GitHub Actions after a green apply, or the manual command in Phase 6).
+
+The console wizard can also silently **replace** the app's entire environment variable set with just its own bookkeeping (`_LIVE_UPDATES`), wiping out everything Terraform set — including the setup code you'll need in Phase 6. `npm run infra:wire` above does not fully fix that on its own if it already happened; if Phase 6's status check comes back with `codeConfigured: false`, run `npm run infra:up` again (or just `terraform apply` in `infra/terraform`) followed immediately by `npm run infra:wire` one more time — Terraform owns that attribute and will self-heal it. See [roadblock #24](hosted-sandbox-roadblocks.md#24-amplify-console-silently-replaces-terraform-managed-app-env-vars-2026-10-04) if you want the full story.
+
+**Bedrock → enable model access (optional).** If you want chat to work the moment you sign in, without pasting any API key, open the [Bedrock console](https://console.aws.amazon.com/bedrock/) in the same region, go to **Model access**, and request access to **Titan Text Embeddings V2** and at least one chat model (Claude or Nova are reasonable defaults). This is a console toggle, not an IAM permission — having the right IAM policy is not enough on its own. If you skip this, SecureMind still runs; you just add a Groq, OpenAI, Gemini, or Anthropic key in Settings after your first sign-in instead.
+
+## Phase 6 — First build and sign-in
+
+Auto-build is off, and if you're applying from your own laptop rather than through GitHub Actions, nothing else will start the first build for you. Start it by hand:
+
+```bash
+aws amplify start-job --app-id <amplify_app_id> --branch-name main --job-type RELEASE --profile my-securemind --region us-east-1
+```
+
+Watch it in the Amplify console (or poll `aws amplify get-job --app-id <amplify_app_id> --branch-name main --job-id <job-id> --query job.summary.status`) until it says `SUCCEED` — usually a few minutes.
+
+Confirm the site is actually ready before trying to sign in:
+
+```bash
+curl https://<amplify_default_domain>/api/setup/status
+```
+
+You're looking for `"cognitoConfigured":true` and `"codeConfigured":true`. If either is `false`, see the troubleshooting note at the end of Phase 5 — it means the drift bug hit and needs one more `terraform apply` + `infra:wire` pass before this will work.
 
 The user pool starts empty. There is no demo account and no seeded password. Print the one-time setup code:
 
@@ -142,7 +175,7 @@ terraform -chdir=infra/terraform output -raw setup_claim_secret
 
 This code is not a password and is not shown anywhere in the Amplify console — it only exists in Terraform's output and in Secrets Manager. Open the Amplify URL (`terraform -chdir=infra/terraform output -raw amplify_default_domain`, prefixed with your branch), enter that setup code along with the email and password you want for the first account, and that account becomes the Owner.
 
-Sign in. Send a chat message. If you enabled Bedrock model access in Phase 4, it should answer. If not, go to **Settings → Models**, add a vendor key for Groq, OpenAI, Gemini, or Anthropic, and it will answer with that instead.
+Sign in. Send a chat message. If you enabled Bedrock model access in Phase 5, it should answer. If not, go to **Settings → Models**, add a vendor key for Groq, OpenAI, Gemini, or Anthropic, and it will answer with that instead.
 
 ## What this does not do
 

@@ -72,3 +72,10 @@ next-env.d.ts
 infra/terraform/backend.hcl
 infra/terraform/.build/
 COMMIT_MSG.tmp
+
+# Local scratch (never commit)
+cursor-history/
+build-log.txt
+*.log
+*.bak
+scripts/_*.ts

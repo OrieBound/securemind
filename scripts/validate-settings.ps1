@@ -109,7 +109,7 @@ Show "bedrock hidden while gate is off" ($cat.bedrock.Count -eq 0) `
   "groq=$($cat.groq.Count) bedrock=$($cat.bedrock.Count) ollama=$($cat.ollama.Count)"
 
 # 14. Live Bedrock catalog with a real profile
-$st = Put @{ awsProfile = "your-aws-profile"; bedrockRegion = "us-east-1"; allowRealAws = $true }
+$st = Put @{ awsProfile = $(if ($env:SMOKE_AWS_PROFILE) { $env:SMOKE_AWS_PROFILE } else { "your-aws-profile" }); bedrockRegion = "us-east-1"; allowRealAws = $true }
 $cat = Invoke-RestMethod -Uri "$base/api/models/catalog" -WebSession $s -Method GET
 Show "live bedrock catalog" ($cat.bedrock.Count -gt 10) `
   "detected=$($st.aws.detected) bedrockModels=$($cat.bedrock.Count) errors=$($cat.errors -join '; ')"
