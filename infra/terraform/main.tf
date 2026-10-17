@@ -110,7 +110,11 @@ locals {
   app_url        = local.custom_domains ? "https://${var.app_subdomain}.${var.domain_name}" : ""
   api_public_url = local.custom_domains && var.api_subdomain != "" ? "https://${var.api_subdomain}.${var.domain_name}" : module.api.api_base_url
   allowed_origin = local.app_url != "" ? local.app_url : var.allowed_origin
-  login_urls     = local.app_url != "" ? ["http://localhost:3000/", "http://localhost:3000/login", "${local.app_url}/", "${local.app_url}/login"] : ["http://localhost:3000/", "http://localhost:3000/login"]
+  # Sign-in addresses: localhost, the custom domain when there is one, and the address in
+  # allowed_origin (Amplify's own, until the domain is live). Keeping the last one here means a
+  # plain apply never drops what `npm run infra:wire` added.
+  login_origins = distinct(compact([local.app_url, var.allowed_origin == "http://localhost:3000" ? "" : trimsuffix(var.allowed_origin, "/")]))
+  login_urls    = concat(["http://localhost:3000/", "http://localhost:3000/login"], flatten([for o in local.login_origins : ["${o}/", "${o}/login"]]))
 
   chat_zip           = "${path.module}/.build/lambda/chat.zip"
   warm_zip           = "${path.module}/.build/lambda/warm.zip"
