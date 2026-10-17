@@ -18,7 +18,7 @@ import { originalExists, readOriginal } from "@/lib/document-storage";
 import { embedDocumentText } from "@/lib/models/embed";
 import { mirrorDocumentChunkToDynamo } from "@/lib/storage/dynamodb-ingest";
 import { usesHostedAppStore } from "@/lib/workspaces/store";
-import { getPersistedDocument, updatePersistedDocument } from "@/lib/documents/persist";
+import { getPersistedDocumentRaw, updatePersistedDocument } from "@/lib/documents/persist";
 import { scrubPII, type ScrubEvent } from "@/lib/pii";
 import { sanitizeRetrievedText } from "@/lib/prompt-guard";
 import { extractTextFromImage, isFailedExtractContent } from "@/lib/image-extract";
@@ -451,7 +451,7 @@ async function processHostedDocument(
     return;
   }
   try {
-    const doc = await getPersistedDocument(ownerUserId, documentId);
+    const doc = await getPersistedDocumentRaw(ownerUserId, documentId);
     if (!doc) {
       console.error(`[documents] processDocument: document ${documentId} not found`);
       return;

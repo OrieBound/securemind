@@ -188,6 +188,7 @@ import { PRODUCT_POSITIONING } from "@/lib/branding";
 import { PortalBrandMark } from "@/components/app/portal-brand-mark";
 import { themeForRuntime } from "@/lib/provider-theme";
 import { cn } from "@/lib/utils";
+import { shortProcessingError } from "@/lib/documents/stale-processing";
 import {
   scrubPII,
   allScannedCategories,
@@ -1975,7 +1976,7 @@ function DocumentCard({
                          "text-success",
         )}>
           {isProcessing ? "Processing…" :
-           isFailed     ? (doc.processingError ? `Failed · ${doc.processingError}` : "Needs attention") :
+           isFailed     ? (doc.processingError ? `Failed · ${shortProcessingError(doc.processingError)}` : "Needs attention") :
            isStored     ? "Stored · start Ollama to index" :
            `${doc.chunkCount} chunks indexed`}
         </span>

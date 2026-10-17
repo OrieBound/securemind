@@ -4,6 +4,7 @@
  */
 
 import { db } from "@/lib/db";
+import { INTERRUPTED_CODE, isStaleProcessing } from "@/lib/documents/stale-processing";
 import { usesHostedAppStore } from "@/lib/workspaces/store";
 import {
   hostedAppStore,
@@ -63,7 +64,53 @@ function newId(): string {
   return crypto.randomUUID();
 }
 
-export async function listPersistedDocuments(
+/**
+ * Mark a document failed if it is still "processing" and its run was interrupted. The
+ * update is scoped to the owner and only applies while the status is still "processing",
+ * so a run that finishes in the meantime is never overwritten.
+ */
+async function failIfStillProcessing(userId: string, id: string): Promise<void> {
+  const patch = { status: "failed", processingError: INTERRUPTED_CODE, processedAt: new Date() };
+  if (usesHostedAppStore()) {
+    const existing = await hostedAppStore().getDocument(userId, id);
+    if (!existing || existing.status !== "processing") return;
+    await hostedAppStore().putDocument({
+      ...existing,
+      status: patch.status,
+      processingError: patch.processingError,
+      processedAt: patch.processedAt.toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    return;
+  }
+  await db.document.updateMany({
+    where: { id, userId, status: "processing" },
+    data: patch,
+  });
+}
+
+/** Settle interrupted documents among `docs` (all owned by `userId`) and return fresh copies. */
+async function settleStaleProcessing(
+  userId: string,
+  docs: PersistedDocument[],
+  now: number = Date.now(),
+): Promise<PersistedDocument[]> {
+  const stale = docs.filter(d => d.userId === userId && isStaleProcessing(d, now));
+  if (stale.length === 0) return docs;
+  const settled = new Map<string, PersistedDocument>();
+  for (const doc of stale) {
+    try {
+      await failIfStillProcessing(userId, doc.id);
+      const fresh = await readDocument(userId, doc.id);
+      if (fresh) settled.set(doc.id, fresh);
+    } catch (err) {
+      console.warn("[documents] could not settle stale document (non-critical):", String(err));
+    }
+  }
+  return docs.map(d => settled.get(d.id) ?? d);
+}
+
+async function readDocuments(
   userId: string,
   workspaceId: string | null,
 ): Promise<PersistedDocument[]> {
@@ -101,7 +148,7 @@ export async function listPersistedDocuments(
   }));
 }
 
-export async function getPersistedDocument(
+async function readDocument(
   userId: string,
   id: string,
 ): Promise<PersistedDocument | null> {
@@ -132,6 +179,26 @@ export async function getPersistedDocument(
     fragmentIds: [],
     chunks: [],
   };
+}
+
+/** Read without settling interrupted runs. For ingest itself, which is the run in question. */
+export const getPersistedDocumentRaw = readDocument;
+
+export async function listPersistedDocuments(
+  userId: string,
+  workspaceId: string | null,
+): Promise<PersistedDocument[]> {
+  return settleStaleProcessing(userId, await readDocuments(userId, workspaceId));
+}
+
+export async function getPersistedDocument(
+  userId: string,
+  id: string,
+): Promise<PersistedDocument | null> {
+  const doc = await readDocument(userId, id);
+  if (!doc) return null;
+  const [settled] = await settleStaleProcessing(userId, [doc]);
+  return settled;
 }
 
 export async function findReusableDocument(
@@ -204,7 +271,7 @@ export async function createProcessingDocument(input: {
       chunkCount: 0,
     },
   });
-  return (await getPersistedDocument(input.userId, d.id))!;
+  return (await readDocument(input.userId, d.id))!;
 }
 
 export async function updatePersistedDocument(
@@ -234,7 +301,7 @@ export async function updatePersistedDocument(
   delete data.fragmentIds;
   delete data.chunks;
   await db.document.update({ where: { id }, data: data as never });
-  return getPersistedDocument(userId, id);
+  return readDocument(userId, id);
 }
 
 export async function deletePersistedDocument(
