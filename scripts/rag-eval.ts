@@ -8,7 +8,7 @@
  * upgrades to a Knowledge-grounded turn. The same checks run as tests/knowledge-golden.test.ts.
  */
 
-import { ollamaReady, runGolden, summarize, type GoldenMode } from "../tests/helpers/knowledge-golden";
+import { ollamaReady, runGolden, summarize, type GoldenMode } from "./lib/knowledge-golden";
 
 async function main() {
   if (!(await ollamaReady())) {

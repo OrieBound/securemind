@@ -4,7 +4,8 @@
  * Runs the app's real extraction, chunking, embedding and ranking against the synthetic
  * tenancy agreement, so a change to any of them shows up as a measured drop in how often
  * the right passage is retrieved. Needs a local Ollama with nomic-embed-text.
- * Shared by tests/knowledge-golden.test.ts and `npm run rag:eval`.
+ * Shared by tests/knowledge-golden.test.ts and `npm run rag:eval`. Lives under scripts/ (not
+ * tests/) because the Docker image excludes tests/ but typechecks scripts/.
  */
 
 import { readFileSync } from "node:fs";
@@ -42,7 +43,7 @@ export type GoldenReport = {
 };
 
 export function loadFixture(): GoldenFixture {
-  const path = resolve(__dirname, "../fixtures/knowledge-golden.json");
+  const path = resolve(__dirname, "../../tests/fixtures/knowledge-golden.json");
   return JSON.parse(readFileSync(path, "utf8")) as GoldenFixture;
 }
 
