@@ -79,3 +79,4 @@ build-log.txt
 *.log
 *.bak
 scripts/_*.ts
+tfplan*

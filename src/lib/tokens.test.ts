@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateTokens, selectWorkingMemory } from "./tokens";
+import { estimateTokens, selectWorkingMemory, usageToRecord } from "./tokens";
 
 describe("selectWorkingMemory", () => {
   it("keeps a large attached-document extract even when a later reply would overflow", () => {
@@ -27,5 +27,31 @@ describe("selectWorkingMemory", () => {
       3000,
     );
     expect(selected.map(m => m.content)).toEqual(["old", "ack", "new question"]);
+  });
+});
+
+describe("usageToRecord", () => {
+  const messages = [{ content: "x".repeat(400) }];
+
+  it("keeps usage the provider reported", () => {
+    const reported = { promptTokens: 7, completionTokens: 9 };
+    expect(usageToRecord(reported, "openai", messages, "partial")).toBe(reported);
+  });
+
+  it("estimates a billable provider's partial reply when no usage was reported", () => {
+    expect(usageToRecord(null, "anthropic", messages, "y".repeat(40))).toEqual({
+      promptTokens: 100,
+      completionTokens: 10,
+    });
+  });
+
+  it("records nothing when no reply text was produced (failed before generating)", () => {
+    expect(usageToRecord(null, "openai", messages, "")).toBeNull();
+    expect(usageToRecord(null, "openai", messages, "   \n")).toBeNull();
+  });
+
+  it("never estimates for local Ollama", () => {
+    expect(usageToRecord(null, "ollama", messages, "some reply")).toBeNull();
+    expect(usageToRecord(null, "Ollama", messages, "some reply")).toBeNull();
   });
 });

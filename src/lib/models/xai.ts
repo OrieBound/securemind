@@ -5,7 +5,7 @@
 
 import type { ChatMessage } from "./types";
 import { resolveVendorApiKey } from "./vendor-secrets";
-import { fetchWithTimeout, parseOpenAiSseStream } from "./vendor-stream";
+import { fetchWithTimeout, parseOpenAiSseStream, type VendorUsageCallback } from "./vendor-stream";
 import { isChatUsableModelId, type CatalogModel } from "./catalog-shared";
 
 const XAI_API = "https://api.x.ai/v1";
@@ -68,6 +68,7 @@ export async function* streamXaiChat(
   messages: ChatMessage[],
   model: string,
   signal?: AbortSignal,
+  onUsage?: VendorUsageCallback,
 ): AsyncGenerator<string> {
   const apiKey = await resolveVendorApiKey("xai");
   if (!apiKey) {
@@ -85,6 +86,7 @@ export async function* streamXaiChat(
       model,
       messages: toXaiMessages(messages),
       stream: true,
+      stream_options: { include_usage: true },
       max_tokens: 1024,
       temperature: 0.8,
     }),
@@ -96,5 +98,5 @@ export async function* streamXaiChat(
   }
   if (!res.body) throw new Error("Grok returned an empty stream.");
 
-  yield* parseOpenAiSseStream(res.body);
+  yield* parseOpenAiSseStream(res.body, onUsage);
 }
