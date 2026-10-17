@@ -46,6 +46,12 @@ variable "github_subject_prefix" {
   description = "Repository part of the GitHub OIDC subject, for example repo:owner@123/name@456. Read it with: gh api repos/OWNER/REPO/actions/oidc/customization/sub"
 }
 
+variable "enabled" {
+  type        = bool
+  default     = true
+  description = "Set false to switch the CloudFront distribution off (visitors get an error) without deleting anything."
+}
+
 variable "github_branch" {
   type    = string
   default = "main"
@@ -235,7 +241,7 @@ resource "aws_cloudfront_function" "rewrite" {
 }
 
 resource "aws_cloudfront_distribution" "site" {
-  enabled             = true
+  enabled             = var.enabled
   is_ipv6_enabled     = true
   http_version        = "http2and3"
   price_class         = "PriceClass_100"
