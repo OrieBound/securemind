@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { describeProcessingError, shortProcessingError } from "@/lib/documents/stale-processing";
 import { ChevronLeft, Shield, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { sessionApiFetch } from "@/lib/client/api-base";
@@ -111,7 +112,7 @@ function statusLabel(doc: KnowledgeDocDetail): { text: string; cls: string; dot:
     return { text: "Embedding…", cls: "text-yellow-400", dot: "bg-yellow-400 animate-pulse" };
   }
   return {
-    text: doc.processingError ? `Failed · ${doc.processingError}` : "Needs attention",
+    text: doc.processingError ? `Failed · ${shortProcessingError(doc.processingError)}` : "Needs attention",
     cls: "text-red-400",
     dot: "bg-red-400",
   };
@@ -128,6 +129,10 @@ export function KnowledgeDetail({
   onDelete: () => void;
   onReprocess: () => void;
 }) {
+  const failureNote =
+    doc.status === "failed" && doc.processingError && doc.processingError !== describeProcessingError(doc.processingError)
+      ? describeProcessingError(doc.processingError)
+      : null;
   const [showFullContent, setShowFullContent] = useState(false);
   const [contentQuery, setContentQuery] = useState("");
   const [chunkPage, setChunkPage] = useState(0);
@@ -225,6 +230,10 @@ export function KnowledgeDetail({
           <dt className="text-foreground/35">Indexed chunks</dt>
           <dd className="text-foreground/70">{doc.chunkCount}</dd>
         </dl>
+
+        {doc.status === "failed" && failureNote && (
+          <p className="text-[0.72rem] leading-relaxed text-red-400/80">{failureNote}</p>
+        )}
 
         <div className="flex flex-wrap gap-2">
           {(doc.status === "failed" || doc.status === "ready") && (

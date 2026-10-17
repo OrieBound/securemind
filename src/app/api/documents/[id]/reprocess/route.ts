@@ -8,6 +8,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { extractDocument, processDocument, scrubDocumentText } from "@/lib/documents";
 import { getPersistedDocument, updatePersistedDocument } from "@/lib/documents/persist";
+import { NO_SOURCE_CODE, describeProcessingError } from "@/lib/documents/stale-processing";
 import { originalExists, readOriginal } from "@/lib/document-storage";
 import { getIdentity } from "@/lib/identity";
 import { ImageExtractError } from "@/lib/image-extract";
@@ -25,7 +26,27 @@ export async function POST(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Document not found" }, { status: 404 });
   }
 
-  await updatePersistedDocument(userId, doc.id, { status: "processing", processingError: null });
+  // Nothing to work from: the upload died before the original or any text was saved.
+  // Say so now instead of flipping to "processing" and failing with a generic error.
+  if (!originalExists(doc.storageKey) && !doc.content.trim()) {
+    await updatePersistedDocument(userId, doc.id, {
+      status: "failed",
+      processingError: NO_SOURCE_CODE,
+      processedAt: new Date(),
+    });
+    return NextResponse.json(
+      { error: describeProcessingError(NO_SOURCE_CODE), code: NO_SOURCE_CODE },
+      { status: 422 },
+    );
+  }
+
+  // processedAt marks when this run began, so a document that was already old is not
+  // mistaken for an interrupted one the moment Reprocess is clicked.
+  await updatePersistedDocument(userId, doc.id, {
+    status: "processing",
+    processingError: null,
+    processedAt: new Date(),
+  });
 
   try {
     if (originalExists(doc.storageKey)) {
