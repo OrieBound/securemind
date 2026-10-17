@@ -51,6 +51,19 @@ variable "github_branch" {
   default = "main"
 }
 
+# Names of resources that already exist and are being brought under Terraform (see the import
+# steps in docs/deploy/static-sites.md). Leave empty for a new site. Names cannot change in place
+# for some of these, so adopting under the old name avoids replacing them.
+variable "existing" {
+  type = object({
+    bucket_name   = optional(string)
+    role_name     = optional(string)
+    function_name = optional(string)
+    oac_name      = optional(string)
+  })
+  default = {}
+}
+
 variable "oidc_provider_arn" {
   type        = string
   description = "ARN of the account's GitHub OIDC provider (token.actions.githubusercontent.com)."
@@ -71,7 +84,7 @@ data "aws_caller_identity" "current" {}
 # --- Bucket ------------------------------------------------------------------------------------
 
 resource "aws_s3_bucket" "site" {
-  bucket = "${local.prefix}-${data.aws_caller_identity.current.account_id}"
+  bucket = coalesce(var.existing.bucket_name, "${local.prefix}-${data.aws_caller_identity.current.account_id}")
   tags   = local.tags
 }
 
@@ -176,7 +189,7 @@ resource "aws_acm_certificate_validation" "site" {
 # --- CloudFront --------------------------------------------------------------------------------
 
 resource "aws_cloudfront_origin_access_control" "site" {
-  name                              = "${local.prefix}-oac"
+  name                              = coalesce(var.existing.oac_name, "${local.prefix}-oac")
   origin_access_control_origin_type = "s3"
   signing_behavior                  = "always"
   signing_protocol                  = "sigv4"
@@ -202,7 +215,7 @@ locals {
 }
 
 resource "aws_cloudfront_function" "rewrite" {
-  name    = "${local.prefix}-rewrite"
+  name    = coalesce(var.existing.function_name, "${local.prefix}-rewrite")
   runtime = "cloudfront-js-2.0"
   publish = true
   comment = "Serve index.html for static export routes."
@@ -349,7 +362,7 @@ data "aws_iam_policy_document" "deploy" {
 }
 
 resource "aws_iam_role" "deploy" {
-  name                 = "${local.prefix}-github-deploy"
+  name                 = coalesce(var.existing.role_name, "${local.prefix}-github-deploy")
   assume_role_policy   = data.aws_iam_policy_document.trust.json
   max_session_duration = 3600
   tags                 = local.tags

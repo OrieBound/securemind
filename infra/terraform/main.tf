@@ -216,6 +216,12 @@ variable "static_sites" {
     redirect_others_to_first = optional(bool, false)
     github_subject_prefix    = string
     github_branch            = optional(string, "main")
+    existing = optional(object({
+      bucket_name   = optional(string)
+      role_name     = optional(string)
+      function_name = optional(string)
+      oac_name      = optional(string)
+    }), {})
   }))
   default     = {}
   description = "Static sites to host, keyed by a short name. See domain.tfvars.example."
@@ -241,6 +247,7 @@ module "static_site" {
   redirect_others_to_first = each.value.redirect_others_to_first
   github_subject_prefix    = each.value.github_subject_prefix
   github_branch            = each.value.github_branch
+  existing                 = each.value.existing
   oidc_provider_arn        = data.aws_iam_openid_connect_provider.github[0].arn
 }
 
