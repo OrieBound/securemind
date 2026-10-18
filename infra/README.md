@@ -49,7 +49,7 @@ cd infra/terraform/bootstrap
 terraform init
 terraform workspace select your-env || terraform workspace new your-env
 terraform apply \
-  -var="github_repository=YOUR_ORG/securemind" \
+  -var="github_subject_prefix=repo:YOUR_ORG@OWNER_ID/securemind@REPO_ID" \
   -var="env_name=your-env" \
   -var="github_environment=aws-your-env"
 ```
@@ -138,7 +138,7 @@ Change trust or the GHA deploy policy with **bootstrap apply**, not `infra:up`:
 
 ```bash
 cd infra/terraform/bootstrap
-terraform apply -var="github_repository=YOUR_ORG/securemind" -auto-approve
+terraform apply -var="github_subject_prefix=repo:YOUR_ORG@OWNER_ID/securemind@REPO_ID" -auto-approve
 ```
 
 ## Secrets on the hosted edition

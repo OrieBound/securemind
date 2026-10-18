@@ -62,6 +62,12 @@ variable "create_cognito_domain" {
   default = false
 }
 
+variable "permissions_boundary_arn" {
+  type        = string
+  default     = ""
+  description = "Permission boundary for the roles this stack creates. Set it when applying from CI; the bootstrap prints it."
+}
+
 variable "access_contact_url" {
   type        = string
   default     = ""
@@ -162,43 +168,45 @@ module "secrets" {
 }
 
 module "api" {
-  source                 = "./modules/api"
-  env_name               = var.env_name
-  allowed_origin         = local.allowed_origin
-  chat_zip_path          = local.chat_zip
-  warm_zip_path          = local.warm_zip
-  fragments_table_name   = module.data_dynamodb.table_name
-  fragments_table_arn    = module.data_dynamodb.table_arn
-  groq_param_name        = module.secrets.groq_param_name
-  groq_param_arn         = module.secrets.groq_param_arn
-  vendor_keys_param_name = module.secrets.vendor_keys_param_name
-  vendor_keys_param_arn  = module.secrets.vendor_keys_param_arn
-  auth_mode              = var.auth_mode
-  cognito_user_pool_id   = module.auth_cognito.user_pool_id
-  cognito_client_id      = module.auth_cognito.client_id
-  cognito_region         = var.aws_region
-  cognito_issuer         = module.auth_cognito.issuer
-  embed_dimensions       = tostring(var.embed_dimensions)
-  avatar_bucket_name     = local.avatar_bucket_name
+  source                   = "./modules/api"
+  permissions_boundary_arn = var.permissions_boundary_arn
+  env_name                 = var.env_name
+  allowed_origin           = local.allowed_origin
+  chat_zip_path            = local.chat_zip
+  warm_zip_path            = local.warm_zip
+  fragments_table_name     = module.data_dynamodb.table_name
+  fragments_table_arn      = module.data_dynamodb.table_arn
+  groq_param_name          = module.secrets.groq_param_name
+  groq_param_arn           = module.secrets.groq_param_arn
+  vendor_keys_param_name   = module.secrets.vendor_keys_param_name
+  vendor_keys_param_arn    = module.secrets.vendor_keys_param_arn
+  auth_mode                = var.auth_mode
+  cognito_user_pool_id     = module.auth_cognito.user_pool_id
+  cognito_client_id        = module.auth_cognito.client_id
+  cognito_region           = var.aws_region
+  cognito_issuer           = module.auth_cognito.issuer
+  embed_dimensions         = tostring(var.embed_dimensions)
+  avatar_bucket_name       = local.avatar_bucket_name
 }
 
 module "amplify" {
-  source                 = "./modules/amplify"
-  env_name               = var.env_name
-  api_base_url           = local.api_public_url
-  cognito_user_pool_id   = module.auth_cognito.user_pool_id
-  cognito_user_pool_arn  = module.auth_cognito.user_pool_arn
-  cognito_client_id      = module.auth_cognito.client_id
-  cognito_region         = var.aws_region
-  cognito_issuer         = module.auth_cognito.issuer
-  auth_mode              = var.auth_mode
-  branch_name            = var.amplify_branch
-  fragments_table_name   = module.data_dynamodb.table_name
-  fragments_table_arn    = module.data_dynamodb.table_arn
-  vendor_keys_param_name = module.secrets.vendor_keys_param_name
-  vendor_keys_param_arn  = module.secrets.vendor_keys_param_arn
-  access_contact_url     = var.access_contact_url
-  avatar_s3_bucket_name  = local.avatar_bucket_name
+  source                   = "./modules/amplify"
+  env_name                 = var.env_name
+  api_base_url             = local.api_public_url
+  cognito_user_pool_id     = module.auth_cognito.user_pool_id
+  cognito_user_pool_arn    = module.auth_cognito.user_pool_arn
+  cognito_client_id        = module.auth_cognito.client_id
+  cognito_region           = var.aws_region
+  cognito_issuer           = module.auth_cognito.issuer
+  auth_mode                = var.auth_mode
+  branch_name              = var.amplify_branch
+  fragments_table_name     = module.data_dynamodb.table_name
+  fragments_table_arn      = module.data_dynamodb.table_arn
+  vendor_keys_param_name   = module.secrets.vendor_keys_param_name
+  vendor_keys_param_arn    = module.secrets.vendor_keys_param_arn
+  access_contact_url       = var.access_contact_url
+  permissions_boundary_arn = var.permissions_boundary_arn
+  avatar_s3_bucket_name    = local.avatar_bucket_name
 }
 
 # Custom domain. Needs the Amplify app and the API to exist, and never feeds back into them
