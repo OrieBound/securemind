@@ -307,3 +307,12 @@ describe("POST /api/setup/complete", () => {
     });
   });
 });
+
+describe("claimRequiresSetupCode — Docker on-prem", () => {
+  it("requires a code in the Docker runtime", async () => {
+    process.env.SECUREMIND_RUNTIME = "docker";
+    const { claimRequiresSetupCode } = await import("@/lib/setup-claim");
+    expect(claimRequiresSetupCode()).toBe(true);
+    delete process.env.SECUREMIND_RUNTIME;
+  });
+});

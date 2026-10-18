@@ -12,7 +12,7 @@ Cloud hosting uses `infra/` (Amplify + Lambda). This path is the **on-prem produ
 - [Docker](https://docs.docker.com/get-docker/) with Compose v2 (`docker compose`, with a space)
 - About 8 GB of free disk for images plus `llama3.2:3b` and `nomic-embed-text`
 - 8 GB of RAM is a practical floor for the 3B chat model
-- Free ports: `3000`, `5432`, `4566`, `11434`
+- Free port: `3000` (bound to this computer only; the database, sign-in service and Ollama are not published. Host development publishes them on loopback through `docker-compose.dev.yml`)
 
 No AWS account is needed. A model API key is not required, but it is strongly recommended: the built-in local models run on your own computer and, unless it is very powerful, they are slow and will not do well. Groq has a free tier and is a good first key. Node.js is only for the host-dev workflow later on this page.
 
@@ -71,7 +71,7 @@ Internal DNS: app → `db`, `floci`, `ollama` by service name. No Node.js on the
 **Fast iteration** — infra in Docker, app on host:
 
 ```bash
-docker compose up -d db floci ollama ollama-init
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db floci ollama ollama-init
 cp .env.example .env.local
 # point DATABASE_URL at localhost:5432 and AWS_ENDPOINT_URL at localhost:4566
 # Ollama in Compose publishes localhost:11434 — stop a host Ollama daemon if that port is taken
@@ -156,3 +156,13 @@ GitHub Actions publishes the app when `main` changes the image inputs:
 - [floci-local.md](./floci-local.md) — Floci feature matrix + host-dev checklist  
 - [ADR 0006](../adr/0006-on-prem-docker.md) — decision record  
 - [infra/README.md](../../infra/README.md) — AWS cloud path  
+
+---
+
+## Network exposure and security defaults
+
+- Only the app is published, on `127.0.0.1:3000`. Postgres, the Floci sign-in service and Ollama are reachable only inside the Compose network.
+- To reach the app from other computers, set `SECUREMIND_BIND_ADDR=0.0.0.0` **and** put a TLS reverse proxy and a firewall in front. The stack ships no TLS; without it, passwords and documents cross the network in clear text.
+- Optionally set `POSTGRES_PASSWORD` in a `.env` file before the first start. It cannot be changed afterwards without altering the database user.
+- Bedrock through your AWS profile is opt-in (`docker-compose.bedrock.yml`) and mounts only a folder you choose (`./aws-profile`), never your whole `~/.aws`.
+- Treat this stack as single-user. See `docs/security-audit/` for the open items.

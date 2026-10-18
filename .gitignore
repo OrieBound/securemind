@@ -80,3 +80,6 @@ build-log.txt
 *.bak
 scripts/_*.ts
 tfplan*
+
+# Opt-in Bedrock profile folder (docker-compose.bedrock.yml)
+/aws-profile/

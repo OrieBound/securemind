@@ -7,7 +7,9 @@
 # Open http://localhost:3000 — first visit creates the Owner (your email + password).
 #
 # Host dev (app on npm run dev, infra only in Docker):
-#   docker compose up -d db floci ollama ollama-init
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db floci ollama ollama-init
+# (the dev file publishes db/floci/ollama on 127.0.0.1 only; the default stack publishes
+#  nothing but the app, on 127.0.0.1:3000)
 #
 # Tear down (wipes local DB + Floci + Ollama model cache):
 #   docker compose down -v
@@ -15,11 +17,9 @@
 services:
   db:
     image: pgvector/pgvector:pg16
-    ports:
-      - "5432:5432"
     environment:
       POSTGRES_USER: securemind
-      POSTGRES_PASSWORD: securemind
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-securemind}
       POSTGRES_DB: securemind
     volumes:
       - securemind-pgdata:/var/lib/postgresql/data
@@ -33,8 +33,6 @@ services:
 
   floci:
     image: floci/floci:latest
-    ports:
-      - "4566:4566"
     environment:
       # In-container issuer/JWKS use the Compose service name (not localhost).
       FLOCI_HOSTNAME: floci
@@ -47,8 +45,6 @@ services:
 
   ollama:
     image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
     volumes:
       - securemind-ollama:/root/.ollama
     healthcheck:
@@ -85,8 +81,8 @@ services:
         condition: service_completed_successfully
     environment:
       BOOTSTRAP_DIR: /bootstrap
-      DATABASE_URL: postgresql://securemind:securemind@db:5432/securemind
-      DIRECT_URL: postgresql://securemind:securemind@db:5432/securemind
+      DATABASE_URL: postgresql://securemind:${POSTGRES_PASSWORD:-securemind}@db:5432/securemind
+      DIRECT_URL: postgresql://securemind:${POSTGRES_PASSWORD:-securemind}@db:5432/securemind
       AWS_ENDPOINT_URL: http://floci:4566
       AWS_ACCESS_KEY_ID: test
       AWS_SECRET_ACCESS_KEY: test
@@ -103,7 +99,8 @@ services:
       context: .
       target: runner
     ports:
-      - "3000:3000"
+      # Loopback only by default. Set SECUREMIND_BIND_ADDR=0.0.0.0 only behind TLS and a firewall.
+      - "${SECUREMIND_BIND_ADDR:-127.0.0.1}:3000:3000"
     depends_on:
       init:
         condition: service_completed_successfully
@@ -114,8 +111,8 @@ services:
       SECUREMIND_EDITION: local
       SECUREMIND_RUNTIME: docker
       STORAGE_BACKEND: postgres
-      DATABASE_URL: postgresql://securemind:securemind@db:5432/securemind
-      DIRECT_URL: postgresql://securemind:securemind@db:5432/securemind
+      DATABASE_URL: postgresql://securemind:${POSTGRES_PASSWORD:-securemind}@db:5432/securemind
+      DIRECT_URL: postgresql://securemind:${POSTGRES_PASSWORD:-securemind}@db:5432/securemind
       AUTH_MODE: cognito
       AUTH_ALLOW_LOCAL_FALLBACK: "false"
       AWS_ENDPOINT_URL: http://floci:4566
@@ -130,21 +127,11 @@ services:
       DOCUMENT_STORAGE_PATH: /data/uploads
       AVATAR_STORAGE_PATH: /data/avatars
       INSTANCE_KEY_FILE: /data/instance.key
-      # Profile list and SSO cache live in this computer's AWS CLI directory.
-      # HOME points the SDK at the bind mount below. The test keys above stay
-      # for local Floci login; Bedrock hides them and uses the selected profile.
+      # Bedrock on this computer's AWS profile is opt-in: see docker-compose.bedrock.yml.
       HOME: /home/nextjs
     volumes:
       - securemind-bootstrap:/bootstrap:ro
       - securemind-data:/data
-      # Read-only. Sign in on the computer (`aws sso login`); do not paste keys.
-      # Override the path with HOST_AWS_DIR when it is not ~/.aws.
-      - type: bind
-        source: ${HOST_AWS_DIR:-${USERPROFILE:-${HOME}}/.aws}
-        target: /home/nextjs/.aws
-        read_only: true
-        bind:
-          create_host_path: true
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]

@@ -35,3 +35,6 @@ tests
 # Docker
 Dockerfile*
 docker-compose*.yml
+
+# Opt-in Bedrock profile folder (docker-compose.bedrock.yml)
+/aws-profile/

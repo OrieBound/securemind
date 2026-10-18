@@ -53,9 +53,20 @@ function authMode(): AuthMode {
   return "local";
 }
 
-function allowLocalFallback(): boolean {
+/** Production builds never fall back to the local Super Admin unless it is explicitly asked for. */
+export function allowLocalFallback(): boolean {
   const v = process.env.AUTH_ALLOW_LOCAL_FALLBACK;
-  if (v === undefined || v === "") return true;
+  if (v === undefined || v === "") return process.env.NODE_ENV !== "production";
+  return v === "true" || v === "1";
+}
+
+/**
+ * The fixed local identity is a development convenience. In a production build it needs
+ * ALLOW_INSECURE_LOCAL_IDENTITY=true, so a missing AUTH_MODE cannot silently open every route.
+ */
+export function localIdentityAllowed(): boolean {
+  if (process.env.NODE_ENV !== "production") return true;
+  const v = process.env.ALLOW_INSECURE_LOCAL_IDENTITY;
   return v === "true" || v === "1";
 }
 
@@ -181,6 +192,12 @@ export async function getIdentity(req: Request): Promise<Identity> {
   const mode = authMode();
 
   if (mode === "local") {
+    if (!localIdentityAllowed()) {
+      throw new IdentityError(
+        "Authentication is not configured. Set AUTH_MODE=cognito, or ALLOW_INSECURE_LOCAL_IDENTITY=true for a single-user machine.",
+        503,
+      );
+    }
     return localOwnerIdentity();
   }
 

@@ -82,6 +82,11 @@ variable "cognito_user_pool_id" {
   type = string
 }
 
+variable "cognito_user_pool_arn" {
+  type    = string
+  default = ""
+}
+
 variable "cognito_client_id" {
   type = string
 }
@@ -205,6 +210,15 @@ resource "aws_iam_role_policy" "lambda" {
           Action = [
             "bedrock:InvokeModel",
             "bedrock:InvokeModelWithResponseStream",
+          ]
+          Resource = [
+            "arn:aws:bedrock:*::foundation-model/*",
+            "arn:aws:bedrock:*:*:inference-profile/*",
+          ]
+        },
+        {
+          Effect = "Allow"
+          Action = [
             "bedrock:ListFoundationModels",
             "bedrock:GetFoundationModel",
             "bedrock:GetFoundationModelAvailability",
@@ -313,11 +327,25 @@ resource "aws_api_gateway_resource" "warm" {
   path_part   = "warm"
 }
 
+# Reject unauthenticated calls at the gateway, before any Lambda runs. The Lambda still verifies
+# the token itself (issuer, client, token use). The access token carries the scope below when it
+# comes from a password sign-in, which is how the app signs users in.
+resource "aws_api_gateway_authorizer" "cognito" {
+  count           = var.cognito_user_pool_arn != "" ? 1 : 0
+  name            = "securemind-cognito-${var.env_name}"
+  rest_api_id     = aws_api_gateway_rest_api.this.id
+  type            = "COGNITO_USER_POOLS"
+  provider_arns   = [var.cognito_user_pool_arn]
+  identity_source = "method.request.header.Authorization"
+}
+
 resource "aws_api_gateway_method" "chat_post" {
-  rest_api_id   = aws_api_gateway_rest_api.this.id
-  resource_id   = aws_api_gateway_resource.chat.id
-  http_method   = "POST"
-  authorization = "NONE"
+  rest_api_id          = aws_api_gateway_rest_api.this.id
+  resource_id          = aws_api_gateway_resource.chat.id
+  http_method          = "POST"
+  authorization        = var.cognito_user_pool_arn != "" ? "COGNITO_USER_POOLS" : "NONE"
+  authorizer_id        = var.cognito_user_pool_arn != "" ? aws_api_gateway_authorizer.cognito[0].id : null
+  authorization_scopes = var.cognito_user_pool_arn != "" ? ["aws.cognito.signin.user.admin"] : null
 }
 
 resource "aws_api_gateway_method" "chat_options" {
@@ -443,6 +471,7 @@ resource "aws_api_gateway_deployment" "this" {
       aws_api_gateway_resource.chat.id,
       aws_api_gateway_resource.warm.id,
       aws_api_gateway_method.chat_post.id,
+      var.cognito_user_pool_arn,
       aws_api_gateway_method.chat_options.id,
       aws_api_gateway_method.warm_any.id,
       aws_api_gateway_integration.chat_post.id,
@@ -469,8 +498,8 @@ resource "aws_api_gateway_stage" "prod" {
   stage_name    = "prod"
 }
 
-# The gateway methods are open (the chat Lambda checks the sign-in token itself), so anyone who
-# knows the address can send requests. This caps how fast, which caps what a flood can cost.
+# OPTIONS and /warm stay open by design (browser preflight and a no-data wake-up), so anyone who
+# knows the address can still send those requests. This caps how fast, which caps what a flood can cost.
 # Roughly: the default limit would allow thousands of requests a second, about $4 per million.
 # At 20 a second the worst case is about 1.7 million requests a day.
 resource "aws_api_gateway_method_settings" "all" {

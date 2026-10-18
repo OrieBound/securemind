@@ -121,7 +121,7 @@ Node.js 20 or newer.
 ```bash
 npm install
 cp .env.example .env.local
-docker compose up -d db floci ollama ollama-init
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db floci ollama ollama-init
 npx prisma migrate deploy
 npm run dev
 ```

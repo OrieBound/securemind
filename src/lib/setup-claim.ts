@@ -3,7 +3,7 @@
  *
  * Hosted (Amplify): operator-printed SETUP_CLAIM_SECRET required. The code is
  * not the Cognito password and is never returned by APIs.
- * Local / on-prem: email + chosen password only. SETUP_CLAIM_SECRET is ignored.
+ * Docker on-prem: the init container prints a one-time code (also required). Host dev: email + password only.
  */
 
 import { timingSafeEqual } from "node:crypto";
@@ -45,7 +45,8 @@ export class SetupClaimError extends Error {
 }
 
 export function claimRequiresSetupCode(): boolean {
-  return isHostedRuntime();
+  // The Docker stack is reachable by whoever can reach its port, so it needs a code too.
+  return isHostedRuntime() || process.env.SECUREMIND_RUNTIME === "docker";
 }
 
 export function setupClaimSecretConfigured(): boolean {
@@ -195,7 +196,7 @@ export async function runFirstAdminClaim(input: ClaimInput): Promise<ClaimResult
   if (claimRequiresSetupCode()) {
     if (!setupClaimSecretConfigured()) {
       throw new SetupClaimError(
-        "This instance is missing its setup code. Apply Terraform and use the value from `terraform output -raw setup_claim_secret`.",
+        "This instance is missing its setup code. Hosted: use `terraform output -raw setup_claim_secret`. Docker: run `docker compose logs init`.",
         503,
       );
     }

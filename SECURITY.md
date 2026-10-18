@@ -33,3 +33,10 @@ Your own install is yours to run. A report about how an operator configured thei
 - Turn on **required reviewers** for the GitHub environment if your plan allows it. Otherwise restrict deployments to `main`.
 - Set an **AWS Budget** alert, for example at $5 a month.
 - Never put an AWS access key in GitHub, and never paste an API key into a public issue.
+
+## Known limits (read before deploying)
+
+- **The Docker stack is single-user.** It publishes only the app, on `127.0.0.1`. It ships no TLS; add a TLS reverse proxy and a firewall before exposing it. See `docs/deploy/on-prem-docker.md`.
+- **Admins can impersonate members.** An Admin can set a member's password, which gives access to that member's conversations and documents.
+- **Chat redaction runs in the browser.** It protects against accidental sensitive input. A crafted request that skips the browser is not stopped by the server.
+- A security assessment and its open items are in `docs/security-audit/`.

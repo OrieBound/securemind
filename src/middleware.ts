@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createRemoteJWKSet, jwtVerify } from "jose";
-import { cognitoIssuerCandidates } from "@/lib/identity";
+import { allowLocalFallback, cognitoIssuerCandidates, localIdentityAllowed } from "@/lib/identity";
 
 /**
  * When AUTH_MODE is cognito (or jwt-hs256), require a valid access token for
@@ -39,15 +39,18 @@ function jwks(url: string) {
 
 export async function middleware(req: NextRequest) {
   const mode = (process.env.AUTH_MODE ?? "local").toLowerCase();
-  if (mode === "local") return NextResponse.next();
-
   const path = req.nextUrl.pathname;
+  if (mode === "local") {
+    if (path.startsWith("/api/") && !localIdentityAllowed()) {
+      return NextResponse.json({ error: "Authentication is not configured." }, { status: 503 });
+    }
+    return NextResponse.next();
+  }
   if (!path.startsWith("/api/")) return NextResponse.next();
   if (path.startsWith("/api/auth")) return NextResponse.next();
   if (path === "/api/setup/status" || path === "/api/setup/claim") return NextResponse.next();
 
-  const fallback = process.env.AUTH_ALLOW_LOCAL_FALLBACK;
-  const allowFallback = fallback === undefined || fallback === "" || fallback === "true" || fallback === "1";
+  const allowFallback = allowLocalFallback();
 
   const token = readToken(req);
   if (!token) {
