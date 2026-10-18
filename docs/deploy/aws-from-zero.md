@@ -23,7 +23,7 @@ You also need:
 
 - **An AWS account you administer.** Not an organization's shared management account — your own account, or a member account you control. [Create one here](https://aws.amazon.com/) if you don't have one yet.
 - **A way to sign in to that account from the CLI.** AWS SSO (IAM Identity Center) is the normal path and is what this guide uses. A long-lived IAM access key also works, but is not recommended.
-- **Permission in that account** to create IAM roles/policies, S3 buckets, Lambda functions, API Gateway, Cognito, Amplify apps, DynamoDB tables, and Secrets Manager entries. If this is your own account and you are the root/admin user, you already have this.
+- **Permission in that account** to create IAM roles/policies, S3 buckets, Lambda functions, API Gateway, Cognito, Amplify apps, DynamoDB tables, and Systems Manager parameters. If this is your own account and you are the root/admin user, you already have this.
 - **A GitHub account**, and your own copy of this repository (a fork, or a push to a new repo you own). The Terraform bootstrap step creates an IAM role that trusts *your* GitHub repository — it needs that repository to exist first.
 - **Optional:** access to [Amazon Bedrock models](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-modify.html) in that account, if you want chat to work without pasting a vendor API key. You can skip this and add a Groq/OpenAI/Gemini/Anthropic key in Settings after you're signed in instead.
 
