@@ -2,7 +2,7 @@
  * Streaming chat Lambda for API Gateway REST response streaming.
  *
  * Localhost continues to use Next.js /api/chat.
- * Hydrate Secrets Manager bootstrap env before importing DB-backed chat code.
+ * Hydrate Parameter Store (or older Secrets Manager) bootstrap env before importing DB-backed chat code.
  */
 
 import { getIdentity, IdentityError } from "../../src/lib/identity";

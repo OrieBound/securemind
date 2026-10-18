@@ -95,7 +95,7 @@ These resources can incur AWS charges. Remove them with `npm run infra:down -- -
 - [Node.js 20](https://nodejs.org/) or newer. The apply scripts package the chat Lambda.
 - [Git](https://git-scm.com/downloads)
 - A GitHub repository you control, so you can connect the Amplify GitHub App to your copy.
-- Permission in that account to create IAM, S3, Lambda, API Gateway, Cognito, Amplify, DynamoDB, Secrets Manager, and CloudFormation.
+- Permission in that account to create IAM, S3, Lambda, API Gateway, Cognito, Amplify, DynamoDB, Systems Manager Parameter Store, and CloudFormation.
 - For a model with no vendor key: [Bedrock model access](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-modify.html) for Titan Text Embeddings v2 and a chat model you will use. Access in the console is separate from IAM.
 
 The example region is `us-east-1`.

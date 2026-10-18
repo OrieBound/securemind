@@ -409,7 +409,7 @@ def build() -> None:
     h2(doc, "5.2  In your AWS account")
     body_para(
         doc,
-        "The interface is hosted on Amplify. Chat streaming goes through API Gateway to a Lambda. Sign-in is an invite-only Cognito user pool. Workspaces, messages, and vectors live in DynamoDB. Vendor keys live in Secrets Manager. Profile photos live in a private S3 bucket. There is no custom VPC. These are regional services in the account you operate.",
+        "The interface is hosted on Amplify. Chat streaming goes through API Gateway to a Lambda. Sign-in is an invite-only Cognito user pool. Workspaces, messages, and vectors live in DynamoDB. Vendor keys live in Parameter Store as an encrypted SecureString. Profile photos live in a private S3 bucket. There is no custom VPC. These are regional services in the account you operate.",
     )
     body_para(
         doc,

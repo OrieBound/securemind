@@ -718,7 +718,7 @@ def build() -> None:
         doc,
         "On a local or Docker install, Groq and other vendor keys (Google, OpenAI, Anthropic, and stored-only Azure) live in InstanceConfig, encrypted with AES-256-GCM. The ciphertext prefix is smenc:v1:. "
         "The key is INSTANCE_ENCRYPTION_KEY, or a file created under .data/instance.key, which in Docker is on the /data volume. API responses return a masked last-four hint, never the secret. "
-        "On the hosted runtime, those pasted vendor keys are written to Secrets Manager (securemind/<env>/vendor-keys) and cleared off the config row. A deploy-time Groq secret is separate from the admin-pasted key.",
+        "On the hosted runtime, those pasted vendor keys are written to Parameter Store as a SecureString (/securemind/<env>/vendor-keys) and cleared off the config row. A deploy-time Groq secret is separate from the admin-pasted key.",
     )
     body(
         doc,
@@ -796,7 +796,7 @@ def build() -> None:
     h1(doc, "20.  Hosted AWS")
     say(
         doc,
-        "The hosted shape is regional managed services, not a VPC I invented. Amplify hosts the UI. API Gateway and Lambda stream chat. Cognito is invite-only. DynamoDB holds fragments and the vector index. Secrets Manager holds bootstrap and vendor keys. A private bucket holds avatars. CloudWatch holds logs. Bedrock is optional and uses the account’s own IAM.",
+        "The hosted shape is regional managed services, not a VPC I invented. Amplify hosts the UI. API Gateway and Lambda stream chat. Cognito is invite-only. DynamoDB holds fragments and the vector index. Parameter Store holds the encryption key, setup code and vendor keys. A private bucket holds avatars. CloudWatch holds logs. Bedrock is optional and uses the account’s own IAM.",
     )
     body(
         doc,
@@ -854,7 +854,7 @@ def build() -> None:
     bullet(doc, "Policy changes go forward only. ", "Tightening a tier cannot backfill old files, because the raw text is gone. Loosening cannot un-redact. The admin dialog has to say that.")
     bullet(doc, "404, not 403. ", "Authorization responses should not confirm that another person’s id exists.")
     bullet(doc, "Postgres locally, DynamoDB when hosted. ", "One consistent write and zero idle cost for development. Native vectors later made a single-table hosted store honest. OpenSearch and always-on Aurora were the expensive wrong answers.")
-    bullet(doc, "Do not accept AWS keys in the product. ", "A database full of long-lived cloud keys is a worse design than asking the SDK to use a profile, SSO, or a role. Vendor API keys are scoped differently and are encrypted or stored in Secrets Manager.")
+    bullet(doc, "Do not accept AWS keys in the product. ", "A database full of long-lived cloud keys is a worse design than asking the SDK to use a profile, SSO, or a role. Vendor API keys are scoped differently and are encrypted or stored in Parameter Store.")
     bullet(doc, "Live Bedrock catalog. ", "A checked-in model list rots. Bedrock retires versions.")
     bullet(doc, "Enable, not automatic listing. ", "A key proves the vendor knows you. It does not prove the model is allowed to answer in that account.")
     bullet(doc, "Amplify for UI, Lambda for the stream. ", "Amplify does not stream Next API routes. API Gateway response streaming does. App Runner was simpler and always warm, and the idle cost was the reason it stopped being the default.")
@@ -891,7 +891,7 @@ def build() -> None:
     h2(doc, "Where do secrets live?")
     body(
         doc,
-        "Vendor keys: encrypted in InstanceConfig locally, Secrets Manager when hosted. AWS keys: nowhere in the app. They resolve from the SDK chain. The encryption key for local vendor secrets is an env var or a file on the data volume, not a value returned by the API.",
+        "Vendor keys: encrypted in InstanceConfig locally, Parameter Store (SecureString) when hosted. AWS keys: nowhere in the app. They resolve from the SDK chain. The encryption key for local vendor secrets is an env var or a file on the data volume, not a value returned by the API.",
     )
     h2(doc, "Why not embed every message so the bot remembers everything?")
     body(
@@ -911,7 +911,7 @@ def build() -> None:
     h2(doc, "Why is the AWS diagram missing a VPC?")
     body(
         doc,
-        "Because the hosted design does not create one. Amplify, API Gateway, Lambda, DynamoDB, Cognito, Secrets Manager, S3, CloudWatch, and Bedrock are regional services. Drawing a VPC would be fiction.",
+        "Because the hosted design does not create one. Amplify, API Gateway, Lambda, DynamoDB, Cognito, Parameter Store, S3, CloudWatch, and Bedrock are regional services. Drawing a VPC would be fiction.",
     )
     h2(doc, "What broke, and what did you change?")
     body(

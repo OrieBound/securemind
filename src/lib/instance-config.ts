@@ -638,7 +638,7 @@ export async function resolveRuntimeSecrets(): Promise<{
       ? primary
       : "auto",
     groqApiKey: row?.groqApiKey?.trim() || process.env.GROQ_API_KEY?.trim() || null,
-    /** Admin-pasted key only (hosted: Secrets Manager vendor-keys overlay). Not the deploy-time GROQ_SECRET_ARN default. */
+    /** Admin-pasted key only (hosted: Parameter Store vendor-keys overlay). Not the deploy-time Groq bootstrap default. */
     instanceGroqApiKey: row?.groqApiKey?.trim() || null,
     bedrockRegion:
       row?.bedrockRegion?.trim() ||

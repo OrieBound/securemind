@@ -116,6 +116,16 @@ data "aws_iam_policy_document" "gha_deploy" {
       "lambda:*",
       "logs:*",
       "secretsmanager:*",
+      # Stored values live in Parameter Store (SecureString). secretsmanager stays so an older
+      # install can still be migrated and its old secrets removed.
+      "ssm:PutParameter",
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+      "ssm:DeleteParameter",
+      "ssm:DescribeParameters",
+      "ssm:AddTagsToResource",
+      "ssm:RemoveTagsFromResource",
+      "ssm:ListTagsForResource",
       "sts:GetCallerIdentity",
       # AWS provider probes these on almost every apply.
       "ec2:DescribeAccountAttributes",

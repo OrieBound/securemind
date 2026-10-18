@@ -18,7 +18,7 @@ SecureMind needs a permanently hosted AWS path that stays cheap at low traffic, 
 2. **API Gateway REST** + **Lambda** — application APIs, with **response streaming** for chat  
 3. **DynamoDB + native vectors** — hosted AWS data plane (ADR 0007). Terraform provisions the fragments table (nested CFN for the vector index until the AWS provider supports it). Local / on-prem remains Postgres + pgvector (ADR 0002). Neon/Aurora are optional opt-ins, not the default.  
 4. **Cognito** — invite-only (`infra/terraform/modules/auth_cognito`; no public self-signup)  
-5. **Secrets Manager** — hosted bootstrap is table name/ARN + optional deploy-time Groq. Admin-pasted vendor keys (Groq, Google, OpenAI, Anthropic) are written to Secrets Manager (`securemind/<env>/vendor-keys`). InstanceConfig does not store those values.  
+5. **Parameter Store** — originally Secrets Manager; moved 2026-10-18 because a standard SecureString parameter has no monthly charge and a secret costs $0.40. The instance encryption key and setup code are one parameter (`/securemind/<env>/app-secrets`), and the optional deploy-time Groq key is another. Admin-pasted vendor keys (Groq, Google, OpenAI, Anthropic) are written to `/securemind/<env>/vendor-keys`. The table name is a plain setting. InstanceConfig does not store those values.  
 6. **Local/dev** — `npm run dev` keeps same-origin `/api/*`; remote API is opt-in via `NEXT_PUBLIC_API_BASE_URL`
 
 **Local vs cloud providers**

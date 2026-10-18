@@ -12,7 +12,7 @@ Sensitivity tiers and safe terms lived in browser `localStorage`, so Members cou
 2. **Ingest**: `scrubDocumentText` loads policy via `resolveIngestScrubOptions()` — never from the upload body.
 3. **Propose / accept**: Anyone authenticated may `POST` a pending proposal; only Admin applies.
 4. **Going forward only**: Changing sensitivity or safe terms updates the policy for **new** chat sends and **new** Knowledge ingest. Existing messages and documents are not re-scanned or rewritten. Already-redacted values cannot be restored (no raw retention). Defaults still merge with instance safe terms for detection.
-5. **Hosted vs local**: Hosted uses Cognito Admin/Member; local `AUTH_MODE=local` remains Admin. Ollama stays local-only; Bedrock is optional via SSO. No KMS required; Secrets Manager for bootstrap URLs/keys. Bedrock content logging stays opt-in.
+5. **Hosted vs local**: Hosted uses Cognito Admin/Member; local `AUTH_MODE=local` remains Admin. Ollama stays local-only; Bedrock is optional via SSO. No KMS required; Parameter Store (SecureString) for bootstrap keys (originally Secrets Manager; moved 2026-10-18 to avoid the $0.40-a-secret charge). Bedrock content logging stays opt-in.
 
 ### Consequences
 

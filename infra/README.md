@@ -29,7 +29,7 @@ Chat/workspaces/settings still use Prisma in application code. That leftover is 
 - [Terraform 1.14](https://developer.hashicorp.com/terraform/install) or newer. The state lock is an S3 lock file.
 - [Node.js 20](https://nodejs.org/) or newer.
 - [Git](https://git-scm.com/downloads), and a GitHub repository you can connect to Amplify.
-- Permission to create IAM, S3, Lambda, API Gateway, Cognito, Amplify, DynamoDB, Secrets Manager, and CloudFormation.
+- Permission to create IAM, S3, Lambda, API Gateway, Cognito, Amplify, DynamoDB, Systems Manager Parameter Store, and CloudFormation.
 - Optional, for a model with no vendor key: [Bedrock model access](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-modify.html) for Titan Text Embeddings v2 and a chat model.
 
 Hosted resources can incur AWS charges. Tear the stack down with `npm run infra:down -- --yes`.

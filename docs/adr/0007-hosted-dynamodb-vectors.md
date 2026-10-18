@@ -61,7 +61,7 @@ All three share the same item shape and ranking so swapping engines does not cha
 
 - `src/lib/storage/dynamodb-vectors.ts` implements put + retrieve. It must not import `@/lib/db`.
 - Default chat retrieval remains Postgres until `STORAGE_BACKEND=dynamodb`.
-- Secrets Manager for hosted bootstrap holds table name/ARN (+ optional Groq), not a Neon URL.
+- Hosted bootstrap holds no Neon URL. It originally kept the table name and an optional Groq key in Secrets Manager; the table name is now a plain setting and the Groq key a Parameter Store SecureString (moved 2026-10-18).
 - Knowledge originals stay off S3 unless explicitly revisited.
 - Hosted table Terraform lives in `infra/terraform/modules/data_dynamodb`. Apply to a real account only when you intend to. Local table: `npm run floci:dynamodb`.
 
