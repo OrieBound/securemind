@@ -4,7 +4,7 @@
 
 Use an AWS account and CLI profile that you control. Keep the app out of an organization management account. Nothing is created until you run bootstrap, `npm run infra:up`, or your own GitHub Actions deploy.
 
-This repo’s workflow on `main` applies the maintainer sandbox (GitHub environment `aws-sandbox`). A new install does not use that pipeline. Bootstrap your account, then apply from your laptop or from a workflow in your fork.
+The Terraform jobs in this repo’s workflow are off unless you set the repository variable `AWS_DEPLOY_ENABLED` to `true`. A new install can ignore them: bootstrap your account, then apply from your laptop or from a workflow in your fork.
 
 **Hosted data plane (ADR 0007):** DynamoDB + native vector search. **On-prem:** Docker Compose (Postgres + Ollama + Floci). Neon and Aurora are not in the default cloud stack.
 
@@ -104,7 +104,7 @@ Open the site, enter that code plus the email and password **you** choose. The s
 ## GitHub Actions
 
 - **PR:** tests, then `terraform plan` (OIDC) once vars are set
-- **`main`:** tests → apply (Environment `aws-sandbox`) → `amplify start-job`
+- **`main`:** tests → apply (your GitHub Environment) → `amplify start-job`
 
 Amplify clones GitHub and runs [`amplify.yml`](../amplify.yml). Actions does not upload a UI zip.
 
@@ -123,7 +123,7 @@ These are **different** permissions. The same error name is never used for all o
 
 Layer 1 is **not** “Terraform lacks an AWS service permission.” GitHub presents a `sub` claim; IAM must `StringLike` that exact string. New GitHub repos (after 2026-07-15) send:
 
-`repo:Owner@OWNER_ID/name@REPO_ID:environment:aws-sandbox`
+`repo:Owner@OWNER_ID/name@REPO_ID:environment:<your-environment>`
 
 A trust of `repo:Owner/name:*` does **not** match that. CloudTrail `AssumeRoleWithWebIdentity` → `userName` is the real `sub`.
 
@@ -132,7 +132,7 @@ Other GitHub/IAM mix-ups that look similar:
 - Job missing `permissions: id-token: write` (no OIDC token).
 - `AWS_ROLE_ARN` pointing at Amplify/Lambda (`sts:AssumeRole` for a service) instead of `securemind-gha-<env>`.
 - Trust used `StringEquals` with a `*` (wildcard only works on `StringLike`).
-- Environment `aws-sandbox` vars not visible on the job, so OIDC is skipped.
+- The Environment’s variables are not visible on the job (check `AWS_ENVIRONMENT`), so OIDC is skipped.
 
 Change trust or the GHA deploy policy with **bootstrap apply**, not `infra:up`:
 

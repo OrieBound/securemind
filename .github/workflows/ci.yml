@@ -45,9 +45,11 @@ jobs:
   terraform-plan:
     name: Terraform plan
     needs: test
-    if: github.event_name == 'pull_request'
+    # Off unless the repository variable AWS_DEPLOY_ENABLED is 'true'. A skipped job leaves no
+    # deployment record, so a fork or a public clone sees nothing from this job.
+    if: github.event_name == 'pull_request' && vars.AWS_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
-    environment: aws-sandbox
+    environment: ${{ vars.AWS_ENVIRONMENT || 'aws' }}
     permissions:
       contents: read
       id-token: write
@@ -108,14 +110,15 @@ jobs:
         if: vars.AWS_ROLE_ARN == '' || vars.TF_STATE_BUCKET == ''
         run: echo "Set GitHub vars AWS_ROLE_ARN, TF_STATE_BUCKET, and AWS_REGION after bootstrap. Skipping plan."
 
-  # Maintainer sandbox only. A fork deploys its own account by changing
-  # this environment name and the GitHub variables, not by reusing this job.
+  # Optional. Off unless the repository variable AWS_DEPLOY_ENABLED is 'true'. To use it for your
+  # own AWS account, set that variable, name your GitHub Environment in AWS_ENVIRONMENT (default
+  # 'aws'), and fill in that Environment's variables after bootstrap.
   deploy:
     name: Terraform apply · Amplify StartJob
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AWS_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
-    environment: aws-sandbox
+    environment: ${{ vars.AWS_ENVIRONMENT || 'aws' }}
     permissions:
       contents: read
       id-token: write
@@ -202,4 +205,4 @@ jobs:
 
       - name: Skip apply (OIDC not configured)
         if: vars.AWS_ROLE_ARN == '' || vars.TF_STATE_BUCKET == ''
-        run: echo "Set GitHub Environment aws-sandbox vars after bootstrap. Skipping apply."
+        run: echo "Set the GitHub Environment variables after bootstrap. Skipping apply."
