@@ -32,6 +32,7 @@ Groq, Gemini, OpenAI, Anthropic, and Grok run only after a key is saved. Bedrock
 - Detection is pattern-based and can miss values. There is no path that restores a replaced value.
 - One operator directory. It is not multi-tenant hosting.
 - Two-step verification with an authenticator app is optional on the hosted edition and recommended for admins. The local Docker sign-in does not support it. See [docs/mfa.md](docs/mfa.md).
+- Built and tested on a Windows computer with Chrome, Docker Desktop and an AWS account in us-east-1. Use it from a desktop browser. The layout fits phone and tablet widths, but macOS and Linux installs, Apple Silicon, other browsers and real phones have not been tested. The pre-built Docker image is for 64-bit Intel and AMD; on Apple Silicon use `docker compose up --build`.
 - Citations come from Knowledge you ingested. Conversation history is not a source.
 - The hosted data store is DynamoDB. Local Docker uses Postgres with pgvector.
 
