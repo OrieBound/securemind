@@ -91,7 +91,7 @@ In your GitHub repository: **Settings → Environments → New environment**, na
 
 Do **not** add `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` anywhere in GitHub. The role from Phase 2 is how GitHub Actions authenticates — a pasted key is not needed and is not accepted anywhere in this project.
 
-The workflow in `.github/workflows/ci.yml` is written for the maintainer's own environment name. If you're deploying your own fork, open that file and change `aws-sandbox` (and the matching `env_name: sandbox` lines) to the environment name and env name you chose above.
+The Terraform plan and apply jobs in `.github/workflows/ci.yml` are off by default. To use them for your own account, set the repository variable `AWS_DEPLOY_ENABLED` to `true`, name your GitHub Environment in the repository variable `AWS_ENVIRONMENT` (it defaults to `aws`), and fill in that Environment's variables from the bootstrap output. If you chose an env name other than `sandbox`, change the matching `env_name: sandbox` lines in that file too.
 
 ## Phase 4 — Apply
 
