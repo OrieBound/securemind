@@ -61,6 +61,12 @@ variable "fragments_table_arn" {
   default = ""
 }
 
+variable "permissions_boundary_arn" {
+  type        = string
+  default     = ""
+  description = "Optional permission boundary for the Amplify role. Required when the role is created from CI."
+}
+
 variable "access_contact_url" {
   type        = string
   default     = ""
@@ -95,8 +101,9 @@ data "aws_iam_policy_document" "amplify_assume" {
 }
 
 resource "aws_iam_role" "amplify" {
-  name               = "securemind-amplify-${var.env_name}"
-  assume_role_policy = data.aws_iam_policy_document.amplify_assume.json
+  name                 = "securemind-amplify-${var.env_name}"
+  assume_role_policy   = data.aws_iam_policy_document.amplify_assume.json
+  permissions_boundary = var.permissions_boundary_arn != "" ? var.permissions_boundary_arn : null
   tags = {
     Project = "SecureMind"
     Env     = var.env_name

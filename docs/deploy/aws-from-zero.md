@@ -57,15 +57,29 @@ Note the `Account` number in that output. Every command below runs against that 
 
 This phase creates two things, both small and not billable in any meaningful way: an S3 bucket to hold Terraform's state file, and an IAM role that your GitHub repository is allowed to assume. Nothing app-shaped exists yet.
 
+First read your repository's GitHub subject. It includes the numeric IDs of your account and repository, which is what ties the role to your repository alone:
+
+```bash
+gh api repos/<your-github-username>/securemind/actions/oidc/customization/sub --jq .sub_claim_prefix
+```
+
+It prints something like `repo:your-name@123456/securemind@7891011`. If it prints a plain `repo:your-name/securemind` with no `@` numbers, turn on immutable subjects for the repository first (the bootstrap refuses a subject without them).
+
 ```bash
 cd infra/terraform/bootstrap
 terraform init
 terraform workspace new my-env   # pick a short name: prod, main, whatever you'll call this install
 terraform apply \
-  -var="github_repository=<your-github-username>/securemind" \
+  -var="github_subject_prefix=<the value printed above>" \
   -var="env_name=my-env" \
   -var="github_environment=aws-my-env"
 ```
+
+### Who can use the role this creates
+
+Only your repository, running in the one GitHub Environment you name, can assume it. The trust rule matches the exact subject `repo:<you>@<owner id>/<repo>@<repo id>:environment:<environment>`, with no wildcards. A copy of the code in someone else's repository, a fork, a branch that is not in that Environment, or a pull request cannot match, and neither can a different account that later takes your username, because the numeric IDs differ. Give the Environment **required reviewers** (Settings → Environments), so a person approves every run.
+
+The role is also limited in what it can do. Writes are restricted to resources named `securemind-*` wherever AWS allows it, and it can only create or change IAM roles that carry the permission boundary this phase creates. It can never edit itself, the boundary or the identity provider. Treat it as only as trustworthy as your repository, and keep the repository private with branch protection on `main`.
 
 Terraform will print a plan and ask you to type `yes`. Read it — the only resources should be an S3 bucket, an IAM OIDC provider, and one IAM role.
 
@@ -81,13 +95,14 @@ Paste that output, as-is, into `infra/terraform/backend.hcl`.
 
 This phase lets GitHub Actions in *your* fork assume the role from Phase 2, without ever holding an AWS access key as a GitHub secret. If you only ever intend to apply from your own laptop, you can skip this phase and go straight to Phase 4 — but then pull requests won't get an automatic `terraform plan`.
 
-In your GitHub repository: **Settings → Environments → New environment**, name it exactly what you passed as `github_environment` above (e.g. `aws-my-env`). Then add these as **Environment variables** (not secrets — none of these are secret):
+In your GitHub repository: **Settings → Environments → New environment**, name it exactly what you passed as `github_environment` above (e.g. `aws-my-env`), and turn on **Required reviewers**. Then add these as **Environment variables** (not secrets — none of these are secret):
 
 | Variable | Value |
 |---|---|
 | `AWS_ROLE_ARN` | The `gha_role_arn` output from Phase 2 (`terraform output gha_role_arn`) |
 | `TF_STATE_BUCKET` | The `state_bucket` output from Phase 2 (`terraform output state_bucket`) |
 | `AWS_REGION` | The region you deployed into, e.g. `us-east-1` |
+| `PERMISSIONS_BOUNDARY_ARN` | The `permissions_boundary_arn` output from Phase 2 (`terraform output permissions_boundary_arn`) |
 
 Do **not** add `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` anywhere in GitHub. The role from Phase 2 is how GitHub Actions authenticates — a pasted key is not needed and is not accepted anywhere in this project.
 

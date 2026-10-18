@@ -47,6 +47,12 @@ variable "groq_param_arn" {
   default = ""
 }
 
+variable "permissions_boundary_arn" {
+  type        = string
+  default     = ""
+  description = "Optional permission boundary for the Lambda role. Required when the role is created from CI."
+}
+
 variable "vendor_keys_param_name" {
   type = string
 }
@@ -94,39 +100,8 @@ data "aws_region" "current" {}
 
 data "aws_caller_identity" "current" {}
 
-# Bootstrap GHA policy is not applied on push. This role already has
-# iam:PutRolePolicy, so grant CreateBucket before the bucket resource.
-data "aws_iam_role" "gha" {
-  name = "securemind-gha-${var.env_name}"
-}
-
-data "aws_iam_policy_document" "gha_avatars" {
-  statement {
-    sid     = "AvatarBucket"
-    actions = ["s3:*"]
-    resources = [
-      "arn:aws:s3:::${var.avatar_bucket_name}",
-      "arn:aws:s3:::${var.avatar_bucket_name}/*",
-    ]
-  }
-}
-
-resource "aws_iam_role_policy" "gha_avatars" {
-  name   = "securemind-gha-avatars-${var.env_name}"
-  role   = data.aws_iam_role.gha.id
-  policy = data.aws_iam_policy_document.gha_avatars.json
-}
-
-resource "time_sleep" "gha_avatars_wait" {
-  create_duration = "20s"
-  triggers = {
-    gha_avatars_policy_id = aws_iam_role_policy.gha_avatars.id
-  }
-}
-
 resource "aws_s3_bucket" "avatars" {
-  bucket     = var.avatar_bucket_name
-  depends_on = [time_sleep.gha_avatars_wait]
+  bucket = var.avatar_bucket_name
   tags = {
     Project = "SecureMind"
     Env     = var.env_name
@@ -192,8 +167,9 @@ data "aws_iam_policy_document" "lambda_assume" {
 }
 
 resource "aws_iam_role" "lambda" {
-  name               = "securemind-api-${var.env_name}"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+  name                 = "securemind-api-${var.env_name}"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
+  permissions_boundary = var.permissions_boundary_arn != "" ? var.permissions_boundary_arn : null
   tags = {
     Project = "SecureMind"
     Env     = var.env_name
