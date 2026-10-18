@@ -30,6 +30,7 @@ import {
   Trash2,
   Upload,
   X,
+  RefreshCw,
 } from "lucide-react";
 import {
   memo,
@@ -2748,7 +2749,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   }, [isAnalytics]);
 
   // Live vendor lists load when the user opens a picker — not on every page load.
-  const { catalog, byId: catalogById, ensureLoaded, loaded: catalogLoaded } = useModelCatalog();
+  const { catalog, byId: catalogById, ensureLoaded, loaded: catalogLoaded, refresh: refreshCatalog, loading: catalogLoading } = useModelCatalog();
   const chatCatalogModels = useMemo(() => buildChatPickerModels(catalog), [catalog]);
   const assignmentModels = useMemo(() => buildAssignmentPickerModels(catalog), [catalog]);
   const pickerById = useCallback(
@@ -5635,7 +5636,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
         <div className="flex-1 min-h-0 flex flex-col">
           <TabsContent value="context" className="mt-0 flex-1 min-h-0 data-[state=inactive]:hidden flex flex-col">
             <IntelPanelStack
-              storageKey="sm_intel_panels_usage_v6"
+              storageKey="sm_intel_panels_usage_v7"
               defaultOrder={["model", "last-response"]}
               panels={[
                 {
@@ -5643,6 +5644,18 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                   label: "Models",
                   defaultOpen: true,
                   defaultHeight: INTEL_HEIGHT.routing,
+                  headerAction: (
+                    <button
+                      type="button"
+                      onClick={() => void refreshCatalog()}
+                      disabled={catalogLoading}
+                      title="Refresh the model list. Use it after you add or change a key."
+                      aria-label="Refresh the model list"
+                      className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-[var(--surface-hover)] hover:text-foreground disabled:opacity-60"
+                    >
+                      <RefreshCw className={cn("size-3.5", catalogLoading && "animate-spin")} aria-hidden />
+                    </button>
+                  ),
                   children: (
                     <>
                       <ComplexityTiersEditor
