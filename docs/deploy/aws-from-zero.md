@@ -149,7 +149,8 @@ Walking through the "Add branch" wizard, three choices matter:
 
 - **"My app is a monorepo"** — leave **unchecked**. The repo root *is* the Next.js app.
 - **"Enable full-stack deploys"** — leave **unchecked**. This ties the branch to an Amplify-managed backend environment, which doesn't exist and would conflict with the Terraform-managed stack.
-- **Service role** — select the existing Terraform-created role, **`securemind-amplify-<env>`** (e.g. `securemind-amplify-my-env`). Do **not** let the wizard create a new role — a console-generated role won't have the Bedrock/DynamoDB/Cognito-admin/vendor-keys/avatars policies Terraform attached to the real one.
+- **Service role** — select the existing Terraform-created role, **`securemind-amplify-<env>`** (e.g. `securemind-amplify-my-env`). Do **not** let the wizard create a new role — a console-generated role won't have the permissions Terraform attached to the real one.
+  - The runtime (compute) role **`securemind-amplify-compute-<env>`** is attached by Terraform; do not set or change it in the console. It holds the Bedrock/DynamoDB/Cognito-admin/vendor-keys/avatars policies; the service role above holds only Amplify management.
 
 Save the branch. Then immediately turn auto-build off and re-sync the full environment, because the console save can silently reset things Terraform set:
 

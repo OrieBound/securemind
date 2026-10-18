@@ -182,6 +182,7 @@ module "api" {
   vendor_keys_param_arn    = module.secrets.vendor_keys_param_arn
   auth_mode                = var.auth_mode
   cognito_user_pool_id     = module.auth_cognito.user_pool_id
+  cognito_user_pool_arn    = module.auth_cognito.user_pool_arn
   cognito_client_id        = module.auth_cognito.client_id
   cognito_region           = var.aws_region
   cognito_issuer           = module.auth_cognito.issuer

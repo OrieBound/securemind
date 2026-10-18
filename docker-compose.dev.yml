@@ -1,0 +1,10 @@
+# Developer override: publish the backing services to THIS computer only (loopback).
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db floci ollama ollama-init
+# Never use on a shared or internet-reachable host.
+services:
+  db:
+    ports: ["127.0.0.1:5432:5432"]
+  floci:
+    ports: ["127.0.0.1:4566:4566"]
+  ollama:
+    ports: ["127.0.0.1:11434:11434"]

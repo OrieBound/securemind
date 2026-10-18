@@ -147,3 +147,39 @@ describe("getIdentity — jwt-hs256 mode", () => {
     expect(id.authenticated).toBe(false);
   });
 });
+
+describe("getIdentity — production fails closed", () => {
+  const prevNodeEnv = process.env.NODE_ENV;
+  afterEach(() => {
+    (process.env as Record<string, string | undefined>).NODE_ENV = prevNodeEnv;
+    delete process.env.ALLOW_INSECURE_LOCAL_IDENTITY;
+  });
+  const prod = () => {
+    (process.env as Record<string, string | undefined>).NODE_ENV = "production";
+  };
+
+  it("refuses the local identity in production unless explicitly allowed", async () => {
+    prod();
+    setEnv("AUTH_MODE", "local");
+    await expect(getIdentity(new Request("http://x/api/a"))).rejects.toMatchObject({ status: 503 });
+    process.env.ALLOW_INSECURE_LOCAL_IDENTITY = "true";
+    expect((await getIdentity(new Request("http://x/api/a"))).userId).toBe(LOCAL_USER_ID);
+  });
+
+  it("rejects a missing token in cognito mode when the fallback variable is unset", async () => {
+    prod();
+    setEnv("AUTH_MODE", "cognito");
+    setEnv("AUTH_ALLOW_LOCAL_FALLBACK", undefined);
+    setEnv("COGNITO_ISSUER", "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_x");
+    await expect(getIdentity(new Request("http://x/api/a"))).rejects.toMatchObject({ status: 401 });
+  });
+
+  it("rejects a forged token in cognito mode when the fallback variable is unset", async () => {
+    prod();
+    setEnv("AUTH_MODE", "cognito");
+    setEnv("AUTH_ALLOW_LOCAL_FALLBACK", undefined);
+    setEnv("COGNITO_ISSUER", "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_x");
+    const req = new Request("http://x/api/a", { headers: { authorization: "Bearer forged.token.value" } });
+    await expect(getIdentity(req)).rejects.toMatchObject({ status: 401 });
+  });
+});

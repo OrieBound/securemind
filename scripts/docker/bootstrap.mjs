@@ -6,7 +6,8 @@
 
 import { createConnection } from "node:net";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync, readFileSync, chmodSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, chmodSync, existsSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -138,11 +139,29 @@ async function main() {
   });
 
   // Copy dynamic Cognito env for the app container entrypoint.
-  const cognitoBody = readFileSync(cognitoOut, "utf8");
+  let cognitoBody = readFileSync(cognitoOut, "utf8");
   mkdirSync(bootstrapDir, { recursive: true });
+
+  // First-run Owner claim needs a one-time setup code, so a stranger who reaches the port first
+  // cannot become Owner. Kept across re-runs; ignored by the app once an Owner exists.
+  let setupCode = "";
+  if (existsSync(runtimeEnvFile)) {
+    const m = /^SETUP_CLAIM_SECRET=(\S+)$/m.exec(readFileSync(runtimeEnvFile, "utf8"));
+    if (m) setupCode = m[1];
+  }
+  if (!setupCode) setupCode = randomBytes(18).toString("base64url");
+  cognitoBody = cognitoBody
+    .split(/\r?\n/)
+    .filter(line => line.length > 0 && !line.startsWith("SETUP_CLAIM_SECRET="))
+    .concat("SETUP_CLAIM_SECRET=" + setupCode)
+    .join("\n") + "\n";
   writeFileSync(runtimeEnvFile, cognitoBody, "utf8");
   chmodSync(runtimeEnvFile, 0o644);
   log(`Wrote ${runtimeEnvFile}`);
+  log("==================================================================");
+  log(`First-run setup code (needed once, to create the Owner): ${setupCode}`);
+  log("Show it again with: docker compose logs init | grep \"setup code\"");
+  log("==================================================================");
 
   await ensureOllamaModel(EMBED_MODEL);
   await ensureOllamaModel(CHAT_MODEL);

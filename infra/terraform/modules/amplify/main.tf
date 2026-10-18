@@ -110,6 +110,18 @@ resource "aws_iam_role" "amplify" {
   }
 }
 
+# Runtime role for the Next.js server (Amplify compute). Kept separate from the service role above
+# so code running in the app does not inherit permission to manage Amplify itself.
+resource "aws_iam_role" "compute" {
+  name                 = "securemind-amplify-compute-${var.env_name}"
+  assume_role_policy   = data.aws_iam_policy_document.amplify_assume.json
+  permissions_boundary = var.permissions_boundary_arn != "" ? var.permissions_boundary_arn : null
+  tags = {
+    Project = "SecureMind"
+    Env     = var.env_name
+  }
+}
+
 resource "aws_iam_role_policy_attachment" "amplify" {
   role       = aws_iam_role.amplify.name
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess-Amplify"
@@ -136,7 +148,7 @@ data "aws_iam_policy_document" "amplify_logs" {
 
 resource "aws_iam_role_policy" "amplify_logs" {
   name   = "securemind-amplify-logs-${var.env_name}"
-  role   = aws_iam_role.amplify.id
+  role   = aws_iam_role.compute.id
   policy = data.aws_iam_policy_document.amplify_logs.json
 }
 
@@ -164,7 +176,7 @@ data "aws_iam_policy_document" "amplify_cognito_admin" {
 
 resource "aws_iam_role_policy" "amplify_cognito_admin" {
   name   = "securemind-amplify-cognito-admin-${var.env_name}"
-  role   = aws_iam_role.amplify.id
+  role   = aws_iam_role.compute.id
   policy = data.aws_iam_policy_document.amplify_cognito_admin.json
 }
 
@@ -190,7 +202,7 @@ data "aws_iam_policy_document" "amplify_dynamodb" {
 
 resource "aws_iam_role_policy" "amplify_dynamodb" {
   name   = "securemind-amplify-dynamodb-${var.env_name}"
-  role   = aws_iam_role.amplify.id
+  role   = aws_iam_role.compute.id
   policy = data.aws_iam_policy_document.amplify_dynamodb.json
 }
 
@@ -199,11 +211,21 @@ resource "aws_iam_role_policy" "amplify_dynamodb" {
 # role — operators do not create a second role by hand.
 data "aws_iam_policy_document" "amplify_bedrock" {
   statement {
-    sid    = "BedrockListAndInvoke"
+    sid    = "BedrockInvoke"
     effect = "Allow"
     actions = [
       "bedrock:InvokeModel",
       "bedrock:InvokeModelWithResponseStream",
+    ]
+    resources = [
+      "arn:aws:bedrock:*::foundation-model/*",
+      "arn:aws:bedrock:*:*:inference-profile/*",
+    ]
+  }
+  statement {
+    sid    = "BedrockList"
+    effect = "Allow"
+    actions = [
       "bedrock:ListFoundationModels",
       "bedrock:GetFoundationModel",
       "bedrock:GetFoundationModelAvailability",
@@ -216,7 +238,7 @@ data "aws_iam_policy_document" "amplify_bedrock" {
 
 resource "aws_iam_role_policy" "amplify_bedrock" {
   name   = "securemind-amplify-bedrock-${var.env_name}"
-  role   = aws_iam_role.amplify.id
+  role   = aws_iam_role.compute.id
   policy = data.aws_iam_policy_document.amplify_bedrock.json
 }
 
@@ -233,7 +255,7 @@ data "aws_iam_policy_document" "amplify_vendor_keys" {
 
 resource "aws_iam_role_policy" "amplify_vendor_keys" {
   name   = "securemind-amplify-vendor-keys-${var.env_name}"
-  role   = aws_iam_role.amplify.id
+  role   = aws_iam_role.compute.id
   policy = data.aws_iam_policy_document.amplify_vendor_keys.json
 }
 
@@ -256,7 +278,7 @@ data "aws_iam_policy_document" "amplify_avatars" {
 
 resource "aws_iam_role_policy" "amplify_avatars" {
   name   = "securemind-amplify-avatars-${var.env_name}"
-  role   = aws_iam_role.amplify.id
+  role   = aws_iam_role.compute.id
   policy = data.aws_iam_policy_document.amplify_avatars.json
 }
 
@@ -300,7 +322,7 @@ data "aws_iam_policy_document" "amplify_app_secrets" {
 
 resource "aws_iam_role_policy" "amplify_app_secrets" {
   name   = "securemind-amplify-app-secrets-${var.env_name}"
-  role   = aws_iam_role.amplify.id
+  role   = aws_iam_role.compute.id
   policy = data.aws_iam_policy_document.amplify_app_secrets.json
 }
 
@@ -309,8 +331,8 @@ resource "aws_amplify_app" "this" {
   description          = "SecureMind UI (API stays on API Gateway + Lambda)"
   platform             = "WEB_COMPUTE"
   iam_service_role_arn = aws_iam_role.amplify.arn
-  # Distinct from the service role: injected into Next.js compute so AdminCreateUser works.
-  compute_role_arn = aws_iam_role.amplify.arn
+  # Distinct from the service role: injected into Next.js compute. It has no Amplify management rights.
+  compute_role_arn = aws_iam_role.compute.arn
 
   build_spec = <<-EOT
     version: 1

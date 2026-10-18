@@ -1,0 +1,13 @@
+# Opt-in: let the app container use ONE AWS profile for Bedrock.
+#   docker compose -f docker-compose.yml -f docker-compose.bedrock.yml up -d
+# Put only the profile you want to expose in ./aws-profile/ (config + credentials or an SSO cache).
+# Anything in that folder is readable by the app process. Do not point this at your whole ~/.aws.
+services:
+  app:
+    volumes:
+      - type: bind
+        source: ${SECUREMIND_AWS_DIR:-./aws-profile}
+        target: /home/nextjs/.aws
+        read_only: true
+        bind:
+          create_host_path: true
