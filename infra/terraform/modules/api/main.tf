@@ -47,6 +47,18 @@ variable "groq_param_arn" {
   default = ""
 }
 
+variable "throttle_rate_limit" {
+  type        = number
+  default     = 20
+  description = "Requests per second the API accepts, across all callers. A small team needs far less."
+}
+
+variable "throttle_burst_limit" {
+  type        = number
+  default     = 40
+  description = "Short burst allowance above the steady rate."
+}
+
 variable "permissions_boundary_arn" {
   type        = string
   default     = ""
@@ -455,6 +467,21 @@ resource "aws_api_gateway_stage" "prod" {
   rest_api_id   = aws_api_gateway_rest_api.this.id
   deployment_id = aws_api_gateway_deployment.this.id
   stage_name    = "prod"
+}
+
+# The gateway methods are open (the chat Lambda checks the sign-in token itself), so anyone who
+# knows the address can send requests. This caps how fast, which caps what a flood can cost.
+# Roughly: the default limit would allow thousands of requests a second, about $4 per million.
+# At 20 a second the worst case is about 1.7 million requests a day.
+resource "aws_api_gateway_method_settings" "all" {
+  rest_api_id = aws_api_gateway_rest_api.this.id
+  stage_name  = aws_api_gateway_stage.prod.stage_name
+  method_path = "*/*"
+
+  settings {
+    throttling_rate_limit  = var.throttle_rate_limit
+    throttling_burst_limit = var.throttle_burst_limit
+  }
 }
 
 output "api_base_url" {
