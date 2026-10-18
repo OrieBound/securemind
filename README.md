@@ -151,7 +151,7 @@ Running it for yourself, privately, asks nothing of you. You do not have to tell
 
 ### A friendly request
 
-If you build on SecureMind, a line such as "Based on SecureMind (github.com/OrieBound/securemind)" in your README or about page is appreciated. A star on the repository is also a welcome way to say you are using it. These are requests, not license conditions, and nobody is breaking any agreement by skipping them.
+If you build on SecureMind, a line such as "Based on SecureMind (github.com/OrieBound/securemind)" in your README or about page is appreciated. A star on the repository, or a note in the [Who is using SecureMind?](https://github.com/OrieBound/securemind/discussions/1) thread, is also a welcome way to say you are using it. These are requests, not license conditions, and nobody is breaking any agreement by skipping them.
 
 ### Usage data
 
