@@ -6,6 +6,7 @@
  */
 
 import { useMemo } from "react";
+import { cn } from "@/lib/utils";
 import {
   ModelPickerList,
   isChatSelectableModel,
@@ -102,6 +103,31 @@ export function modelBlurb(model: CatalogModel): string {
   return "Chat model from a configured provider.";
 }
 
+/**
+ * Where each model belongs in Settings. Only models that answered a test (or are installed locally)
+ * feed chat menus. Models that failed here are kept apart so they never look usable.
+ */
+export type ModelGroups = {
+  inMenus: CatalogModel[];
+  /** Work here, but hidden from the menus on purpose. */
+  hidden: CatalogModel[];
+  /** Listed by the vendor, not tested yet. */
+  notChecked: CatalogModel[];
+  /** Tested here and did not answer. */
+  failed: CatalogModel[];
+};
+
+export function partitionModels(models: CatalogModel[]): ModelGroups {
+  const groups: ModelGroups = { inMenus: [], hidden: [], notChecked: [], failed: [] };
+  for (const m of models) {
+    if (isChatSelectableModel(m)) groups.inMenus.push(m);
+    else if (m.verification === "failed") groups.failed.push(m);
+    else if (m.hidden && (m.verification === "verified" || m.verification === "installed")) groups.hidden.push(m);
+    else groups.notChecked.push(m);
+  }
+  return groups;
+}
+
 function assignedTiers(bind: ComplexityTiersBind | null, modelId: string): string[] {
   if (!bind) return [];
   if (bind.modelSelectionMode === "fixed") {
@@ -136,8 +162,12 @@ export function ModelInventory({
   providerFilter?: ModelProviderId | "all";
   onProviderFilterChange?: (next: ModelProviderId | "all") => void;
 }) {
-  const inMenus = useMemo(() => models.filter(isChatSelectableModel), [models]);
-  const notInMenus = useMemo(() => models.filter(m => !isChatSelectableModel(m)), [models]);
+  const groups = useMemo(() => partitionModels(models), [models]);
+  const inMenus = groups.inMenus;
+  const notInMenus = useMemo(
+    () => [...groups.notChecked, ...groups.hidden, ...groups.failed],
+    [groups],
+  );
   const counts = useMemo(() => providerCountsLine(inMenus), [inMenus]);
   const filteredNotInMenus = useMemo(
     () => providerFilter === "all" ? notInMenus : notInMenus.filter(m => m.provider === providerFilter),
@@ -161,7 +191,7 @@ export function ModelInventory({
     <div className="space-y-3">
       {providerFilter === "all" ? (
         <p className="text-sm text-foreground/60 leading-relaxed">
-          Chat uses the models in this list. The rest stay under Not in chat yet until Enable succeeds.
+          Chat uses the models in this list, from every key that works. Models that have not been tested, are hidden, or do not answer here stay in the sections below.
         </p>
       ) : (
         <div className="rounded-lg border border-indigo-400/30 bg-indigo-500/10 px-3.5 py-3">
@@ -229,36 +259,98 @@ export function ModelInventory({
         />
       )}
 
-      {notInMenus.length > 0 && (
-        <details
-          key={providerFilter}
-          open={providerFilter !== "all" && filteredNotInMenus.length > 0}
-          className="rounded-lg border border-border bg-card"
-        >
-          <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium text-foreground/80">
-            Not in chat yet · {filteredNotInMenus.length}
-          </summary>
-          <div className="border-t border-border px-2 py-2">
-            <p className="px-1.5 pb-2 text-sm text-foreground/65">
-              Check access tries each listed model once. Enable tries one. A model that answers is added to the chat menus. If it cannot answer, it stays here.
-            </p>
-            <ModelPickerList
-              models={notInMenus}
-              browse
-              blurbFor={modelBlurb}
-              assignedTiersFor={id => assignedTiers(complexityTiers, id)}
-              onTest={onTest}
-              onToggleVisibility={onToggleVisibility}
-              results={results}
-              alwaysShowProviderFilters
-              providerFilter={providerFilter}
-              onProviderFilterChange={onProviderFilterChange}
-              maxHeightClass="max-h-[min(24rem,50vh)]"
-              emptyLabel="None."
-            />
-          </div>
-        </details>
-      )}
+      <ModelGroupSection
+        title="Not checked yet"
+        note="Check access tries each listed model once. A model that answers is added to the chat menus. If it cannot answer, it moves to Doesn't work here."
+        models={groups.notChecked}
+        providerFilter={providerFilter}
+        complexityTiers={complexityTiers}
+        onTest={onTest}
+        onToggleVisibility={onToggleVisibility}
+        results={results}
+        onProviderFilterChange={onProviderFilterChange}
+      />
+      <ModelGroupSection
+        title="Hidden from menus"
+        note="These work here. You hid them, so chat does not offer them."
+        models={groups.hidden}
+        providerFilter={providerFilter}
+        complexityTiers={complexityTiers}
+        onTest={onTest}
+        onToggleVisibility={onToggleVisibility}
+        results={results}
+        onProviderFilterChange={onProviderFilterChange}
+      />
+      <ModelGroupSection
+        title="Doesn't work here"
+        note="These were tested in this environment and did not answer. They are kept so you can try again after fixing access, a region or a network block."
+        models={groups.failed}
+        providerFilter={providerFilter}
+        complexityTiers={complexityTiers}
+        onTest={onTest}
+        onToggleVisibility={onToggleVisibility}
+        results={results}
+        onProviderFilterChange={onProviderFilterChange}
+        tone="problem"
+      />
     </div>
+  );
+}
+
+function ModelGroupSection({
+  title,
+  note,
+  models,
+  providerFilter,
+  complexityTiers,
+  onTest,
+  onToggleVisibility,
+  results,
+  onProviderFilterChange,
+  tone = "neutral",
+}: {
+  title: string;
+  note: string;
+  models: CatalogModel[];
+  providerFilter: ModelProviderId | "all";
+  complexityTiers: ComplexityTiersBind | null;
+  onTest?: (model: CatalogModel) => void;
+  onToggleVisibility?: (model: CatalogModel) => Promise<void>;
+  results?: Record<string, ModelTestResult>;
+  onProviderFilterChange?: (next: ModelProviderId | "all") => void;
+  tone?: "neutral" | "problem";
+}) {
+  const shown = providerFilter === "all" ? models : models.filter(m => m.provider === providerFilter);
+  if (models.length === 0) return null;
+  return (
+    <details
+      key={providerFilter}
+      open={providerFilter !== "all" && shown.length > 0}
+      className={cn(
+        "rounded-lg border bg-card",
+        tone === "problem" ? "border-red-500/30" : "border-border",
+      )}
+    >
+      <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium text-foreground/80">
+        {title} · {shown.length}
+      </summary>
+      <div className="border-t border-border px-2 py-2">
+        <p className="px-1.5 pb-2 text-sm text-foreground/65">{note}</p>
+        <ModelPickerList
+          models={models}
+          browse
+          blurbFor={modelBlurb}
+          assignedTiersFor={id => assignedTiers(complexityTiers, id)}
+          onTest={onTest}
+          onToggleVisibility={onToggleVisibility}
+          results={results}
+          alwaysShowProviderFilters
+          providerFilter={providerFilter}
+          onProviderFilterChange={onProviderFilterChange}
+          maxHeightClass="max-h-[min(24rem,50vh)]"
+          emptyLabel="None."
+        />
+      </div>
+    </details>
   );
 }
