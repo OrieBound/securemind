@@ -766,70 +766,6 @@ export function InferenceSettings(props: Props) {
 
           {riskAck && (
             <div className="rounded-lg border border-[var(--border-strong)] bg-elevated px-3.5 py-3.5 space-y-3">
-              <SupportedVendorsPanel
-                keys={vendorKeys}
-                modelCounts={{
-                  groq: groq.length,
-                  openai: openai.length,
-                  anthropic: anthropic.length,
-                  google: google.length,
-                  xai: xai.length,
-                }}
-                catalogErrors={errors}
-                riskAck={riskAck}
-                canEdit={canEdit}
-                busy={busy}
-                setupRun={setupRun}
-                onCheckAccess={provider => void runSetupCheck(provider)}
-                unverifiedCounts={{
-                  groq: allModels.filter(m => m.provider === "groq" && (m.verification === undefined || m.verification === "unverified") && !m.hidden && m.modality !== "other").length,
-                  openai: allModels.filter(m => m.provider === "openai" && (m.verification === undefined || m.verification === "unverified") && !m.hidden && m.modality !== "other").length,
-                  anthropic: allModels.filter(m => m.provider === "anthropic" && (m.verification === undefined || m.verification === "unverified") && !m.hidden && m.modality !== "other").length,
-                  google: allModels.filter(m => m.provider === "google" && (m.verification === undefined || m.verification === "unverified") && !m.hidden && m.modality !== "other").length,
-                  xai: allModels.filter(m => m.provider === "xai" && (m.verification === undefined || m.verification === "unverified") && !m.hidden && m.modality !== "other").length,
-                }}
-                inMenuCounts={{
-                  groq: inMenuCount("groq"),
-                  openai: inMenuCount("openai"),
-                  anthropic: inMenuCount("anthropic"),
-                  google: inMenuCount("google"),
-                  xai: inMenuCount("xai"),
-                }}
-                onOpenModels={openAvailableModels}
-                onRemove={k => void save({ removeKeyId: k.id }, `Removed ${k.label}`)}
-              />
-
-              {vendorKeys.some(k => k.catalog === "groq") && groq.length === 0 && (
-                <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2.5 space-y-2">
-                  <p className="text-[0.68rem] font-medium text-amber-200">
-                    Groq key saved, but no models loaded
-                  </p>
-                  <p className="text-[0.62rem] text-foreground/55 leading-relaxed">
-                    Chat will not use Groq until this server can list models. Voice uses Groq Whisper, a different endpoint, so transcription can still work.
-                  </p>
-                  {errors.length > 0 && (
-                    <p className="text-[0.62rem] text-amber-200/80 font-mono">{errors.join(" · ")}</p>
-                  )}
-                  {canEdit && (
-                    <button
-                      type="button"
-                      disabled={busy || refreshingModule === "vendor"}
-                      onClick={() => void (async () => {
-                        await refresh({ module: "vendor", providers: false, catalog: true });
-                        await sharedCatalog.refresh();
-                      })()}
-                      className={cn(
-                        "inline-flex items-center rounded-md border border-amber-500/40 bg-amber-500/15",
-                        "px-2.5 py-1 text-[0.68rem] font-semibold text-amber-100",
-                        "hover:bg-amber-500/25 disabled:opacity-50 cursor-pointer",
-                      )}
-                    >
-                      {refreshingModule === "vendor" ? "Checking…" : "Check key"}
-                    </button>
-                  )}
-                </div>
-              )}
-
               {canEdit && (
                 <div className="rounded-lg border border-dashed border-[var(--border-strong)] bg-muted px-3 py-3 space-y-2.5">
                   <p className="text-[0.65rem] uppercase tracking-wider text-muted-foreground font-semibold">
@@ -909,6 +845,70 @@ export function InferenceSettings(props: Props) {
                   </button>
                 </div>
               )}
+              <SupportedVendorsPanel
+                keys={vendorKeys}
+                modelCounts={{
+                  groq: groq.length,
+                  openai: openai.length,
+                  anthropic: anthropic.length,
+                  google: google.length,
+                  xai: xai.length,
+                }}
+                catalogErrors={errors}
+                riskAck={riskAck}
+                canEdit={canEdit}
+                busy={busy}
+                setupRun={setupRun}
+                onCheckAccess={provider => void runSetupCheck(provider)}
+                unverifiedCounts={{
+                  groq: allModels.filter(m => m.provider === "groq" && (m.verification === undefined || m.verification === "unverified") && !m.hidden && m.modality !== "other").length,
+                  openai: allModels.filter(m => m.provider === "openai" && (m.verification === undefined || m.verification === "unverified") && !m.hidden && m.modality !== "other").length,
+                  anthropic: allModels.filter(m => m.provider === "anthropic" && (m.verification === undefined || m.verification === "unverified") && !m.hidden && m.modality !== "other").length,
+                  google: allModels.filter(m => m.provider === "google" && (m.verification === undefined || m.verification === "unverified") && !m.hidden && m.modality !== "other").length,
+                  xai: allModels.filter(m => m.provider === "xai" && (m.verification === undefined || m.verification === "unverified") && !m.hidden && m.modality !== "other").length,
+                }}
+                inMenuCounts={{
+                  groq: inMenuCount("groq"),
+                  openai: inMenuCount("openai"),
+                  anthropic: inMenuCount("anthropic"),
+                  google: inMenuCount("google"),
+                  xai: inMenuCount("xai"),
+                }}
+                onOpenModels={openAvailableModels}
+                onRemove={k => void save({ removeKeyId: k.id }, `Removed ${k.label}`)}
+              />
+
+              {vendorKeys.some(k => k.catalog === "groq") && groq.length === 0 && (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.08] px-3 py-2.5 space-y-2">
+                  <p className="text-[0.68rem] font-medium text-amber-200">
+                    Groq key saved, but no models loaded
+                  </p>
+                  <p className="text-[0.62rem] text-foreground/55 leading-relaxed">
+                    Chat will not use Groq until this server can list models. Voice uses Groq Whisper, a different endpoint, so transcription can still work.
+                  </p>
+                  {errors.length > 0 && (
+                    <p className="text-[0.62rem] text-amber-200/80 font-mono">{errors.join(" · ")}</p>
+                  )}
+                  {canEdit && (
+                    <button
+                      type="button"
+                      disabled={busy || refreshingModule === "vendor"}
+                      onClick={() => void (async () => {
+                        await refresh({ module: "vendor", providers: false, catalog: true });
+                        await sharedCatalog.refresh();
+                      })()}
+                      className={cn(
+                        "inline-flex items-center rounded-md border border-amber-500/40 bg-amber-500/15",
+                        "px-2.5 py-1 text-[0.68rem] font-semibold text-amber-100",
+                        "hover:bg-amber-500/25 disabled:opacity-50 cursor-pointer",
+                      )}
+                    >
+                      {refreshingModule === "vendor" ? "Checking…" : "Check key"}
+                    </button>
+                  )}
+                </div>
+              )}
+
             </div>
           )}
         </div>

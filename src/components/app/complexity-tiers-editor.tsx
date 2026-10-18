@@ -6,6 +6,7 @@
  * Both share AppShell state so a change in either place applies immediately.
  */
 
+import { themeForRuntime } from "@/lib/provider-theme";
 import { useEffect, useState, type ReactNode } from "react";
 import { Check, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -533,14 +534,11 @@ function TierRow({
               Change model
             </span>
           )}
-          {provider && displayModelId && (
-            status.ready ? (
-              <ProviderBadge provider={provider} />
-            ) : (
-              <span className="text-[0.5rem] uppercase tracking-wider font-semibold text-amber-400/90 bg-amber-400/10 border border-amber-400/25 px-1 py-0.5 rounded shrink-0">
-                {status.notForChat ? "Not for chat" : status.label ?? "Not set up"}
-              </span>
-            )
+          {provider && displayModelId && <ProviderBadge provider={provider} />}
+          {provider && displayModelId && !status.ready && (
+            <span className="text-[0.5rem] uppercase tracking-wider font-semibold text-amber-400/90 bg-amber-400/10 border border-amber-400/25 px-1 py-0.5 rounded shrink-0">
+              {status.notForChat ? "Not for chat" : status.label ?? "Not set up"}
+            </span>
           )}
           <code
             title={displayModelId ? labelFor(displayModelId) : "Assign a model"}
@@ -551,7 +549,9 @@ function TierRow({
                 ? "text-emerald-200 bg-emerald-400/15 border-emerald-400/40"
                 : hasOverride
                   ? "text-indigo-200/90 bg-indigo-500/15 border-indigo-400/30"
-                  : "text-foreground/70 bg-elevated border-border",
+                  : provider && displayModelId
+                    ? themeForRuntime(provider).badge
+                    : "text-foreground/70 bg-elevated border-border",
             )}
           >
             {displayModelId ? labelFor(displayModelId) : "Assign a model"}
