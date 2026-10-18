@@ -30,7 +30,8 @@
     "infra:validate": "node infra/scripts/validate.mjs",
     "infra:up": "node infra/scripts/up.mjs",
     "infra:down": "node infra/scripts/down.mjs",
-    "infra:wire": "node infra/scripts/wire.mjs"
+    "infra:wire": "node infra/scripts/wire.mjs",
+    "infra:migrate-vendor-keys": "node infra/scripts/migrate-vendor-keys.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock": "^3.1101.0",
@@ -39,6 +40,7 @@
     "@aws-sdk/client-dynamodb": "^3.1116.0",
     "@aws-sdk/client-s3": "^3.1127.0",
     "@aws-sdk/client-secrets-manager": "^3.1102.0",
+    "@aws-sdk/client-ssm": "^3.1152.0",
     "@aws-sdk/client-sts": "^3.1101.0",
     "@aws-sdk/client-transcribe-streaming": "^3.1121.0",
     "@aws-sdk/credential-providers": "^3.1101.0",

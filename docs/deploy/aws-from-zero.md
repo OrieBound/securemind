@@ -173,7 +173,7 @@ The user pool starts empty. There is no demo account and no seeded password. Pri
 terraform -chdir=infra/terraform output -raw setup_claim_secret
 ```
 
-This code is not a password and is not shown anywhere in the Amplify console — it only exists in Terraform's output and in Secrets Manager. Open the Amplify URL (`terraform -chdir=infra/terraform output -raw amplify_default_domain`, prefixed with your branch), enter that setup code along with the email and password you want for the first account, and that account becomes the Owner.
+This code is not a password and is not shown anywhere in the Amplify console — it only exists in Terraform's output and in Parameter Store. Open the Amplify URL (`terraform -chdir=infra/terraform output -raw amplify_default_domain`, prefixed with your branch), enter that setup code along with the email and password you want for the first account, and that account becomes the Owner.
 
 Sign in. Send a chat message. If you enabled Bedrock model access in Phase 5, it should answer. If not, go to **Settings → Models**, add a vendor key for Groq, OpenAI, Gemini, or Anthropic, and it will answer with that instead.
 

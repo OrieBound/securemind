@@ -88,17 +88,17 @@ Open the site, enter that code plus the email and password **you** choose. The s
 | `modules/bedrock_lab` | Bedrock IAM managed policy + optional dashboard |
 | `modules/auth_cognito` | Invite-only user pool, app client, Owner/Admin/Member |
 | `modules/data_dynamodb` | Fragments table + vector index (1024, immutable) |
-| `modules/secrets` | fragments-table secret; vendor-keys; optional bootstrap Groq |
+| `modules/secrets` | `vendor-keys` parameter (Parameter Store, Advanced tier); optional bootstrap Groq parameter |
 | `modules/api` | API Gateway + streaming `/chat` + `/warm` |
-| `modules/amplify` | Amplify app (no GitHub token); the `app-secrets` Secrets Manager secret (instance encryption key and first-run setup code) |
+| `modules/amplify` | Amplify app (no GitHub token); the `app-secrets` Parameter Store parameter (instance encryption key and first-run setup code) |
 
 ## Secrets model
 
 | Secret | Where | Who sets it |
 |---|---|---|
-| DynamoDB table name | Secrets Manager `securemind/<env>/fragments-table` | Terraform |
-| Groq bootstrap | Secrets Manager (only if `GROQ_API_KEY` is set at deploy) | `.env.deploy` / you |
-| Vendor keys (Groq, Google, …) | Secrets Manager `securemind/<env>/vendor-keys` | Admin UI |
+| DynamoDB table name | Not a secret: a plain `DYNAMODB_FRAGMENTS_TABLE` setting on the Lambda and Amplify | Terraform |
+| Groq bootstrap | Parameter Store `/securemind/<env>/groq-api-key` (only if `GROQ_API_KEY` is set at deploy) | `.env.deploy` / you |
+| Vendor keys (Groq, Google, …) | Parameter Store `/securemind/<env>/vendor-keys` | Admin UI |
 | AWS access keys | Never in UI, DB, or GitHub | SSO / OIDC role |
 
 ## GitHub Actions
@@ -143,12 +143,13 @@ terraform apply -var="github_repository=YOUR_ORG/securemind" -auto-approve
 
 ## Secrets on the hosted edition
 
-The instance encryption key and the first-run setup code live in one Secrets Manager secret, `securemind/<env>/app-secrets` (about $0.40 a month). The Amplify compute role can read that one secret and nothing else. The only variable on the Amplify app is `APP_SECRETS_ARN`; the server loads the secret once at startup (`src/instrumentation.ts`). Nothing secret is written to `.env.production` or the build output.
+Stored values live in Systems Manager Parameter Store as SecureString parameters, encrypted with the AWS-managed key. Standard parameters have no monthly charge (Secrets Manager costs $0.40 per secret); the `vendor-keys` parameter uses the Advanced tier for 8 KB of room and costs $0.05 a month. The instance encryption key and the first-run setup code are one parameter, `/securemind/<env>/app-secrets`. The Amplify compute role can read that one parameter and nothing else. The only variable on the Amplify app is `APP_SECRETS_PARAM`; the server loads it once at startup (`src/instrumentation.ts`). Nothing secret is written to `.env.production` or the build output.
 
 - **Read the setup code:** `terraform -chdir=infra/terraform output -raw setup_claim_secret` (unchanged).
-- **Moving an existing install:** `terraform apply` creates the secret from the *same* random values and removes the two plain variables, so nothing is rotated and stored keys stay readable. Run `npm run infra:wire` straight after, then deploy.
+- **Moving an existing install:** `terraform apply` creates the parameters from the *same* random values, so the encryption key is not rotated. It also removes the old Secrets Manager secrets, which stay recoverable for 7 days. If you pasted vendor keys in the app, run `npm run infra:migrate-vendor-keys` straight after the apply to copy them across (it never prints a key), then `npm run infra:wire`, then deploy. Until the new build is live, the old code still reads the old secrets, so do the build promptly.
+- **Rotation:** nothing rotates by itself. To rotate, change the value and apply, or write a small Lambda that calls `ssm:PutParameter`.
 - **Rotating the encryption key:** change `random_id.instance_encryption` and apply. Anything encrypted with the old key becomes unreadable, so re-enter provider keys in Settings afterwards.
-- **If startup cannot reach Secrets Manager** it retries three times, then logs the error name and carries on. The app then fails closed: no stored keys can be read and nobody can claim the instance until the next restart.
+- **If startup cannot reach Parameter Store** it retries three times, then logs the error name and carries on. The app then fails closed: no stored keys can be read and nobody can claim the instance until the next restart.
 
 ## Custom domain
 

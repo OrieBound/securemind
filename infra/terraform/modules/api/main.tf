@@ -37,18 +37,22 @@ variable "fragments_table_arn" {
   type = string
 }
 
-variable "fragments_secret_arn" {
+variable "groq_param_name" {
+  type    = string
+  default = ""
+}
+
+variable "groq_param_arn" {
+  type    = string
+  default = ""
+}
+
+variable "vendor_keys_param_name" {
   type = string
 }
 
-variable "groq_secret_arn" {
-  type    = string
-  default = ""
-}
-
-variable "vendor_keys_secret_arn" {
-  type    = string
-  default = ""
+variable "vendor_keys_param_arn" {
+  type = string
 }
 
 variable "auth_mode" {
@@ -155,26 +159,25 @@ resource "aws_s3_bucket_ownership_controls" "avatars" {
 
 locals {
   env_vars = {
-    NODE_OPTIONS               = "--enable-source-maps"
-    DATABASE_MODE              = "dynamodb"
-    STORAGE_BACKEND            = "dynamodb"
-    AUTH_MODE                  = var.auth_mode
-    AUTH_ALLOW_LOCAL_FALLBACK  = "false"
-    COGNITO_USER_POOL_ID       = var.cognito_user_pool_id
-    COGNITO_CLIENT_ID          = var.cognito_client_id
-    COGNITO_REGION             = var.cognito_region
-    COGNITO_ISSUER             = var.cognito_issuer
-    EMBED_PROVIDER             = var.embed_provider
-    EMBED_DIMENSIONS           = var.embed_dimensions
-    ALLOWED_ORIGIN             = var.allowed_origin
-    DOCUMENT_INGEST_SYNC       = "true"
-    ENV_NAME                   = var.env_name
-    DYNAMODB_FRAGMENTS_TABLE   = var.fragments_table_name
-    FRAGMENTS_TABLE_SECRET_ARN = var.fragments_secret_arn
-    GROQ_SECRET_ARN            = var.groq_secret_arn
-    VENDOR_KEYS_SECRET_ARN     = var.vendor_keys_secret_arn
-    AVATAR_S3_BUCKET           = aws_s3_bucket.avatars.bucket
-    SECUREMIND_EDITION         = "cloud"
+    NODE_OPTIONS              = "--enable-source-maps"
+    DATABASE_MODE             = "dynamodb"
+    STORAGE_BACKEND           = "dynamodb"
+    AUTH_MODE                 = var.auth_mode
+    AUTH_ALLOW_LOCAL_FALLBACK = "false"
+    COGNITO_USER_POOL_ID      = var.cognito_user_pool_id
+    COGNITO_CLIENT_ID         = var.cognito_client_id
+    COGNITO_REGION            = var.cognito_region
+    COGNITO_ISSUER            = var.cognito_issuer
+    EMBED_PROVIDER            = var.embed_provider
+    EMBED_DIMENSIONS          = var.embed_dimensions
+    ALLOWED_ORIGIN            = var.allowed_origin
+    DOCUMENT_INGEST_SYNC      = "true"
+    ENV_NAME                  = var.env_name
+    DYNAMODB_FRAGMENTS_TABLE  = var.fragments_table_name
+    GROQ_API_KEY_PARAM        = var.groq_param_name
+    VENDOR_KEYS_PARAM         = var.vendor_keys_param_name
+    AVATAR_S3_BUCKET          = aws_s3_bucket.avatars.bucket
+    SECUREMIND_EDITION        = "cloud"
   }
 }
 
@@ -237,9 +240,10 @@ resource "aws_iam_role_policy" "lambda" {
           ]
         },
         {
+          # Parameter Store, read only. The AWS-managed key needs no separate KMS permission.
           Effect   = "Allow"
-          Action   = ["secretsmanager:GetSecretValue"]
-          Resource = compact([var.fragments_secret_arn, var.groq_secret_arn, var.vendor_keys_secret_arn])
+          Action   = ["ssm:GetParameter"]
+          Resource = compact([var.groq_param_arn, var.vendor_keys_param_arn])
         },
         {
           Effect = "Allow"
