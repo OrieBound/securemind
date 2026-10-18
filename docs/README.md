@@ -14,6 +14,7 @@ SecureMind is a privacy-aware AI workspace for managing models, knowledge, memor
 - [Deploy: Your own AWS account, from zero](./deploy/aws-from-zero.md)
 - [Two-step verification (authenticator-app codes)](./mfa.md)
 - [Deploy: Custom domain (registrar stays, Route53 DNS)](./deploy/custom-domain.md)
+- [Deploy: Static sites (S3 + CloudFront, Terraform)](./deploy/static-sites.md)
 - [Deploy: Floci Local](./deploy/floci-local.md)
 - [Deploy: On-Prem Docker](./deploy/on-prem-docker.md)
 - [Diagram: on-prem](./diagrams/securemind-onprem-diagram.jpg) · [source](./diagrams/securemind-onprem.drawio)
