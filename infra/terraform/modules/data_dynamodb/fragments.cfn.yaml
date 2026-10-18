@@ -32,10 +32,11 @@ Resources:
           KeyType: HASH
         - AttributeName: fragmentId
           KeyType: RANGE
+      DeletionProtectionEnabled: true
       SSESpecification:
         SSEEnabled: true
       PointInTimeRecoverySpecification:
-        PointInTimeRecoveryEnabled: false
+        PointInTimeRecoveryEnabled: true
       Tags:
         - Key: Project
           Value: SecureMind

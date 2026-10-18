@@ -79,6 +79,42 @@ variable "create_bedrock_dashboard" {
   default = true
 }
 
+variable "cognito_deletion_protection" {
+  type        = string
+  default     = "INACTIVE"
+  description = "ACTIVE for a real install: deleting the user pool would delete every user. Leave INACTIVE for a sandbox you tear down."
+}
+
+variable "alert_email" {
+  type        = string
+  default     = ""
+  description = "Receives alarm and budget notices (AWS sends a confirmation link first). Empty still creates the alarms."
+}
+
+variable "monthly_budget_usd" {
+  type        = number
+  default     = 20
+  description = "Monthly cost alert in USD (needs alert_email). 0 turns the budget off."
+}
+
+variable "enable_monitoring" {
+  type        = bool
+  default     = true
+  description = "Alarms, budget and CloudTrail (modules/monitoring). Needs the bootstrap stack applied with the monitoring permissions."
+}
+
+variable "enable_cloudtrail" {
+  type        = bool
+  default     = true
+  description = "One multi-region management-event trail. Set false if the account already has an organization trail."
+}
+
+variable "enable_api_access_logs" {
+  type        = bool
+  default     = false
+  description = "API Gateway stage access logs. Needs the account-level API Gateway CloudWatch role to be set once per account/region."
+}
+
 variable "auth_mode" {
   type    = string
   default = "cognito"
@@ -148,17 +184,30 @@ module "bedrock_lab" {
 }
 
 module "auth_cognito" {
-  source        = "./modules/auth_cognito"
-  env_name      = var.env_name
-  create_domain = var.create_cognito_domain
-  callback_urls = local.login_urls
-  logout_urls   = local.login_urls
+  source              = "./modules/auth_cognito"
+  env_name            = var.env_name
+  create_domain       = var.create_cognito_domain
+  deletion_protection = var.cognito_deletion_protection
+  callback_urls       = local.login_urls
+  logout_urls         = local.login_urls
 }
 
 module "data_dynamodb" {
   source           = "./modules/data_dynamodb"
   env_name         = var.env_name
   embed_dimensions = var.embed_dimensions
+}
+
+module "monitoring" {
+  count              = var.enable_monitoring ? 1 : 0
+  source             = "./modules/monitoring"
+  env_name           = var.env_name
+  alert_email        = var.alert_email
+  monthly_budget_usd = var.monthly_budget_usd
+  enable_cloudtrail  = var.enable_cloudtrail
+  chat_function_name = module.api.chat_function_name
+  rest_api_name      = "securemind-api-${var.env_name}"
+  table_name         = module.data_dynamodb.table_name
 }
 
 module "secrets" {
@@ -188,6 +237,7 @@ module "api" {
   cognito_issuer           = module.auth_cognito.issuer
   embed_dimensions         = tostring(var.embed_dimensions)
   avatar_bucket_name       = local.avatar_bucket_name
+  enable_access_logs       = var.enable_api_access_logs
 }
 
 module "amplify" {
