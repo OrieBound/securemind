@@ -1,6 +1,7 @@
 /**
  * Admin-pasted vendor API keys on hosted installs.
- * Secrets Manager holds the values; InstanceConfig / Dynamo does not.
+ * Parameter Store (SecureString) holds the values, or Secrets Manager on an install that has
+ * not moved yet; InstanceConfig / Dynamo does not.
  *
  * Local / on-prem still uses encrypted InstanceConfig (secret-at-rest).
  * AWS access keys are never stored here.
@@ -11,6 +12,8 @@ import {
   PutSecretValueCommand,
   SecretsManagerClient,
 } from "@aws-sdk/client-secrets-manager";
+import { GetParameterCommand, PutParameterCommand, SSMClient } from "@aws-sdk/client-ssm";
+import { secretRef, type SecretRef } from "@/lib/aws-secrets";
 import { withRealAwsEndpoints } from "@/lib/aws-credentials";
 import { isHostedRuntime } from "@/lib/runtime-env";
 import type { DetectedKeyKind } from "@/lib/provider-key-detect";
@@ -63,8 +66,14 @@ export function vendorKeyCacheIsLive(
   return now - savedAt < ttlMs;
 }
 
+/** Where the keys are stored: VENDOR_KEYS_PARAM, else the older VENDOR_KEYS_SECRET_ARN. */
+export function vendorKeysRef(): SecretRef | null {
+  return secretRef("VENDOR_KEYS_PARAM", "VENDOR_KEYS_SECRET_ARN");
+}
+
+/** The stored identifier, kept for callers that only need to know whether one is set. */
 export function vendorKeysSecretId(): string | null {
-  return process.env.VENDOR_KEYS_SECRET_ARN?.trim() || null;
+  return vendorKeysRef()?.id ?? null;
 }
 
 /** Tests only — in-memory stand-in for Secrets Manager. */
@@ -74,14 +83,39 @@ export function resetVendorKeyStoreForTests(bundle?: VendorKeyBundle | null): vo
   testStore = bundle === undefined ? undefined : bundle;
 }
 
-function client(): SecretsManagerClient {
-  return new SecretsManagerClient({
-    region:
-      process.env.AWS_REGION ||
-      process.env.AWS_DEFAULT_REGION ||
-      process.env.COGNITO_REGION ||
-      "us-east-1",
-  });
+function region(): string {
+  return (
+    process.env.AWS_REGION ||
+    process.env.AWS_DEFAULT_REGION ||
+    process.env.COGNITO_REGION ||
+    "us-east-1"
+  );
+}
+
+async function readStored(ref: SecretRef): Promise<string | null> {
+  if (ref.kind === "ssm") {
+    const out = await new SSMClient({ region: region() }).send(
+      new GetParameterCommand({ Name: ref.id, WithDecryption: true }),
+    );
+    return out.Parameter?.Value ?? null;
+  }
+  const out = await new SecretsManagerClient({ region: region() }).send(
+    new GetSecretValueCommand({ SecretId: ref.id }),
+  );
+  return out.SecretString ?? null;
+}
+
+async function writeStored(ref: SecretRef, value: string): Promise<void> {
+  if (ref.kind === "ssm") {
+    // Advanced tier so a long list of keys fits (8 KB, not 4 KB). Overwrite keeps one parameter.
+    await new SSMClient({ region: region() }).send(
+      new PutParameterCommand({ Name: ref.id, Value: value, Type: "SecureString", Overwrite: true, Tier: "Advanced" }),
+    );
+    return;
+  }
+  await new SecretsManagerClient({ region: region() }).send(
+    new PutSecretValueCommand({ SecretId: ref.id, SecretString: value }),
+  );
 }
 
 export function parseVendorKeyBundle(raw: unknown): VendorKeyBundle {
@@ -116,13 +150,12 @@ export async function readVendorKeyBundle(): Promise<VendorKeyBundle> {
   if (vendorKeyCacheIsLive(cache, cacheAt, Date.now())) {
     return cloneBundle(cache!);
   }
-  const id = vendorKeysSecretId();
-  if (!id) return { groqApiKey: null, extra: [] };
+  const ref = vendorKeysRef();
+  if (!ref) return { groqApiKey: null, extra: [] };
 
   const bundle = await withRealAwsEndpoints(async () => {
     try {
-      const out = await client().send(new GetSecretValueCommand({ SecretId: id }));
-      const raw = out.SecretString?.trim();
+      const raw = (await readStored(ref))?.trim();
       if (!raw) return { groqApiKey: null, extra: [] as VendorExtraKey[] };
       try {
         return parseVendorKeyBundle(JSON.parse(raw) as unknown);
@@ -155,20 +188,18 @@ export async function writeVendorKeyBundle(bundle: VendorKeyBundle): Promise<voi
     cacheAt = Date.now();
     return;
   }
-  const id = vendorKeysSecretId();
-  if (!id) {
+  const ref = vendorKeysRef();
+  if (!ref) {
     throw new Error(
-      "VENDOR_KEYS_SECRET_ARN is not set. Redeploy so Admin-pasted vendor keys go to Secrets Manager.",
+      "VENDOR_KEYS_PARAM is not set. Redeploy so Admin-pasted vendor keys go to Parameter Store.",
     );
   }
   await withRealAwsEndpoints(async () => {
-    await client().send(
-      new PutSecretValueCommand({
-        SecretId: id,
-        SecretString: JSON.stringify({
-          groqApiKey: next.groqApiKey,
-          extra: next.extra,
-        }),
+    await writeStored(
+      ref,
+      JSON.stringify({
+        groqApiKey: next.groqApiKey,
+        extra: next.extra,
       }),
     );
   });

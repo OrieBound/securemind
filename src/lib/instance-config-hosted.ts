@@ -1,7 +1,7 @@
 /**
  * Hosted InstanceConfig on the fragments table (no Postgres).
- * Vendor API keys are not stored here — Secrets Manager holds them
- * (`VENDOR_KEYS_SECRET_ARN`). This row is non-secret settings only.
+ * Vendor API keys are not stored here — Parameter Store holds them
+ * (`VENDOR_KEYS_PARAM`). This row is non-secret settings only.
  */
 
 import type { AttributeValue } from "@aws-sdk/client-dynamodb";

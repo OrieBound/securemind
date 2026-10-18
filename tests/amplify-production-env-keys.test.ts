@@ -19,16 +19,18 @@ describe("Amplify production env keys", () => {
     const keys = JSON.parse(
       readFileSync(join(process.cwd(), "infra/scripts/amplify-production-env-keys.json"), "utf8"),
     ) as string[];
-    // The secrets are read from Secrets Manager at startup, so only the ARN is baked in.
+    // The secrets are read from Parameter Store at startup, so only the parameter name is baked in.
     expect(keys).not.toContain("INSTANCE_ENCRYPTION_KEY");
     expect(keys).not.toContain("SETUP_CLAIM_SECRET");
-    expect(keys).toContain("APP_SECRETS_ARN");
+    expect(keys).toContain("APP_SECRETS_PARAM");
 
     const tf = readFileSync(join(process.cwd(), "infra/terraform/modules/amplify/main.tf"), "utf8");
     expect(tf).not.toMatch(/^\s*INSTANCE_ENCRYPTION_KEY\s*=/m);
     expect(tf).not.toMatch(/^\s*SETUP_CLAIM_SECRET\s*=/m);
-    expect(tf).toMatch(/APP_SECRETS_ARN\s*=\s*aws_secretsmanager_secret\.app_secrets\.arn/);
-    // The compute role may read exactly that secret, and nothing broader.
-    expect(tf).toMatch(/ReadAppSecrets[\s\S]*?secretsmanager:GetSecretValue[\s\S]*?aws_secretsmanager_secret\.app_secrets\.arn/);
+    expect(tf).toMatch(/APP_SECRETS_PARAM\s*=\s*aws_ssm_parameter\.app_secrets\.name/);
+    // The compute role may read exactly that parameter, and nothing broader.
+    expect(tf).toMatch(/ReadAppSecrets[\s\S]*?ssm:GetParameter[\s\S]*?aws_ssm_parameter\.app_secrets\.arn/);
+    // The parameter is an encrypted SecureString.
+    expect(tf).toMatch(/resource "aws_ssm_parameter" "app_secrets"[\s\S]*?type\s*=\s*"SecureString"/);
   });
 });

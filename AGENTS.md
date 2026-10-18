@@ -15,7 +15,7 @@ It is a **single-user personal project**. Default auth is `AUTH_MODE=local`. Opt
 - **ORM**: Prisma 7 — uses `@prisma/adapter-pg` + `pg` Pool. No `datasourceUrl` in constructor.
 - **Database**: Local / on-prem default is Postgres + pgvector (Docker Compose). Hosted AWS default is DynamoDB + native vector search (`SearchVectors`, ADR 0007). Neon is an optional opt-in, not provisioned by default. Aurora is parked. Terraform lives in `infra/terraform/` (ADR 0008). Do not run `infra:up` until you intend to create sandbox/billable resources. See `docs/adr/0002-storage-choice.md` and `docs/adr/0007-hosted-dynamodb-vectors.md`.
 - **AI inference**: Groq (primary, cloud), Ollama (local fallback), optional Bedrock via `src/lib/models/bedrock.ts`. Do not claim Bedrock is the default or production path unless credentials and a real model id are configured.
-- **Hosting target**: Amplify Hosting for the UI; API Gateway REST + Lambda for APIs (response streaming for chat). Cognito invite-only (`infra/terraform/modules/auth_cognito`). Hosted data plane is DynamoDB (ADR 0007); Secrets Manager bootstrap holds table name/ARN + optional Groq. Admin Settings vendor keys stay in `InstanceConfig` — not SM. Local `npm run dev` keeps Postgres + same-origin `/api/*`; set `NEXT_PUBLIC_API_BASE_URL` only when pointing at a deployed API. Do not stream chat through Amplify Next routes. See `infra/README.md` and ADR 0008.
+- **Hosting target**: Amplify Hosting for the UI; API Gateway REST + Lambda for APIs (response streaming for chat). Cognito invite-only (`infra/terraform/modules/auth_cognito`). Hosted data plane is DynamoDB (ADR 0007); Parameter Store (SecureString) holds the encryption key + setup code, the Admin-pasted vendor keys and the optional Groq bootstrap key (standard parameters have no monthly charge, where Secrets Manager costs $0.40 a secret); the table name is a plain Lambda/Amplify setting. Local/on-prem Admin Settings vendor keys stay in `InstanceConfig`. Local `npm run dev` keeps Postgres + same-origin `/api/*`; set `NEXT_PUBLIC_API_BASE_URL` only when pointing at a deployed API. Do not stream chat through Amplify Next routes. See `infra/README.md` and ADR 0008.
 - **Testing**: Vitest. `npm test` must pass before any commit.
 
 ## Architecture rules
@@ -151,7 +151,7 @@ src/
     aws-credentials.ts        ← AWS SDK credential chain + ALLOW_REAL_AWS gate
     instance-config.ts        ← Admin provider settings (never AWS creds; vendor keys encrypted at rest)
     secret-at-rest.ts         ← AES-256-GCM for UI-entered vendor keys
-    aws-secrets.ts            ← hosted: load the encryption key + setup code from Secrets Manager at startup
+    aws-secrets.ts            ← hosted: load the encryption key + setup code from Parameter Store (or an older Secrets Manager ARN) at startup
     security-headers.ts       ← CSP and the other security headers (UI and API)
     totp.ts                   ← RFC 6238 codes, readable and tested; not used to authenticate
     document-storage.ts       ← local original-file store (not Postgres)
