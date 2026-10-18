@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SignJWT } from "jose";
-import { getIdentity, LOCAL_USER_ID, roleFromGroups } from "./identity";
+import { assertAccessTokenClaims, getIdentity, LOCAL_USER_ID, roleFromGroups } from "./identity";
 
 const ENV_KEYS = [
   "AUTH_MODE",
@@ -181,5 +181,48 @@ describe("getIdentity — production fails closed", () => {
     setEnv("COGNITO_ISSUER", "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_x");
     const req = new Request("http://x/api/a", { headers: { authorization: "Bearer forged.token.value" } });
     await expect(getIdentity(req)).rejects.toMatchObject({ status: 401 });
+  });
+});
+
+describe("assertAccessTokenClaims", () => {
+  const aws = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_x";
+  const floci = "http://floci:4566/pool";
+  const ok = { token_use: "access", client_id: "cid" };
+
+  it("accepts an access token from the configured client", () => {
+    expect(() => assertAccessTokenClaims(ok, { clientId: "cid", issuer: aws })).not.toThrow();
+  });
+  it("rejects an ID token", () => {
+    expect(() => assertAccessTokenClaims({ token_use: "id", aud: "cid" }, { clientId: "cid", issuer: aws })).toThrow();
+    expect(() => assertAccessTokenClaims({ token_use: "id" }, { clientId: "cid", issuer: floci })).toThrow();
+  });
+  it("rejects a token from another client or without client_id", () => {
+    expect(() => assertAccessTokenClaims({ ...ok, client_id: "other" }, { clientId: "cid", issuer: aws })).toThrow();
+    expect(() => assertAccessTokenClaims({ token_use: "access" }, { clientId: "cid", issuer: aws })).toThrow();
+  });
+  it("fails closed on real Cognito when no client id is configured or token_use is missing", () => {
+    expect(() => assertAccessTokenClaims(ok, { issuer: aws })).toThrow();
+    expect(() => assertAccessTokenClaims({ client_id: "cid" }, { clientId: "cid", issuer: aws })).toThrow();
+  });
+});
+
+describe("getIdentity — inactive accounts", () => {
+  it("refuses a suspended account even when the local fallback is allowed", async () => {
+    vi.resetModules();
+    vi.doMock("@/lib/user-profile", () => ({ getUserProfile: async () => ({ status: "suspended" }) }));
+    vi.doMock("jose", async () => {
+      const real = await vi.importActual<typeof import("jose")>("jose");
+      return { ...real, createRemoteJWKSet: () => ({}), jwtVerify: async () => ({ payload: { sub: "u1", token_use: "access", client_id: "cid" } }) };
+    });
+    setEnv("AUTH_MODE", "cognito");
+    setEnv("AUTH_ALLOW_LOCAL_FALLBACK", "true");
+    setEnv("COGNITO_ISSUER", "http://floci:4566/pool");
+    setEnv("COGNITO_CLIENT_ID", "cid");
+    const { getIdentity: fresh } = await import("./identity");
+    const req = new Request("http://x/api/a", { headers: { authorization: "Bearer a.b.c" } });
+    await expect(fresh(req)).rejects.toMatchObject({ status: 403 });
+    vi.doUnmock("@/lib/user-profile");
+    vi.doUnmock("jose");
+    vi.resetModules();
   });
 });

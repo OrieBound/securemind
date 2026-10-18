@@ -1,3 +1,4 @@
+import { recordAudit } from "@/lib/audit-log";
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
@@ -139,6 +140,16 @@ export async function PUT(req: NextRequest) {
         },
         identity.userId,
       );
+      const changed = [
+        primaryProvider ? "primaryProvider" : null,
+        typeof body.groqApiKey === "string" ? "groqApiKey" : null,
+        body.clearGroqApiKey === true ? "clearGroqApiKey" : null,
+        addKey ? "addKey" : null,
+        typeof body.removeKeyId === "string" ? "removeKey" : null,
+        typeof body.allowRealAws === "boolean" ? "allowRealAws" : null,
+        typeof body.awsProfile === "string" || body.awsProfile === null ? "awsProfile" : null,
+      ].filter(Boolean).join(",");
+      await recordAudit(identity, "providers.update", { detail: changed || "settings" });
       return Response.json({ ...status, role: identity.role, canEdit: true });
     } catch (patchErr) {
       const status =

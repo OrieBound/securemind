@@ -36,6 +36,9 @@ const DC = "dc#";
 const BM = "bm#";
 const INF = "inf#";
 const SEC = "sec#";
+const AU = "au#";
+/** Instance-wide partition. A Cognito sub can never equal this, so it cannot collide with a user. */
+const AUDIT_PK = "app#_audit";
 const FT = "ft#";
 const SM = "sm#";
 const MAX_DOC_CONTENT_CHARS = 80_000;
@@ -181,6 +184,18 @@ export type HostedInferenceEvent = {
   retrievalMs: number | null;
   insufficientEvidence: boolean;
   attachmentUsed: boolean;
+};
+
+export type HostedAuditEvent = {
+  id: string;
+  at: string;
+  actorUserId: string | null;
+  actorEmail: string | null;
+  actorRole: string | null;
+  action: string;
+  target: string | null;
+  outcome: string;
+  detail: string | null;
 };
 
 export type HostedWorkspaceFact = {
@@ -723,6 +738,19 @@ export function createHostedAppStore(driver: HostedDriver) {
     return row;
   }
 
+  async function putAudit(row: HostedAuditEvent): Promise<void> {
+    await driver.put(AUDIT_PK, `${AU}${row.at}#${row.id}`, metaItem("instance", row));
+  }
+
+  async function listAudit(take = 200): Promise<HostedAuditEvent[]> {
+    const items = await driver.queryPrefix(AUDIT_PK, AU);
+    return items
+      .map(i => parseJson<HostedAuditEvent | null>(contentOf(i), null))
+      .filter((r): r is HostedAuditEvent => Boolean(r?.id && r.at))
+      .sort((a, b) => b.at.localeCompare(a.at))
+      .slice(0, take);
+  }
+
   async function listInferenceEvents(
     userId: string,
     query?: HostedEventQuery,
@@ -993,6 +1021,8 @@ export function createHostedAppStore(driver: HostedDriver) {
     deleteBookmark,
     listSecurityEvents,
     putSecurityEvent,
+    putAudit,
+    listAudit,
     listInferenceEvents,
     putInferenceEvent,
     listFacts,

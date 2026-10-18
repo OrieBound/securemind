@@ -12,6 +12,7 @@ import {
   AdminAddUserToGroupCommand,
   AdminCreateUserCommand,
   AdminDisableUserCommand,
+  AdminUserGlobalSignOutCommand,
   AdminEnableUserCommand,
   AdminListGroupsForUserCommand,
   AdminRemoveUserFromGroupCommand,
@@ -554,6 +555,18 @@ export async function setDirectoryUserEnabled(
       ? new AdminEnableUserCommand({ UserPoolId: pool, Username: target.username })
       : new AdminDisableUserCommand({ UserPoolId: pool, Username: target.username }),
   );
+
+  // Disabling does not end sessions already issued. Revoke the refresh tokens now; the profile
+  // status check in getIdentity() cuts off the access token still inside its lifetime.
+  if (!enabled) {
+    try {
+      await cip().send(
+        new AdminUserGlobalSignOutCommand({ UserPoolId: pool, Username: target.username }),
+      );
+    } catch (err) {
+      console.warn("[cognito-admin] global sign-out failed", err instanceof Error ? err.name : "error");
+    }
+  }
 
   return { ...target, enabled };
 }

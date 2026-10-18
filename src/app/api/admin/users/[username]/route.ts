@@ -1,3 +1,4 @@
+import { recordAudit } from "@/lib/audit-log";
 import { NextRequest } from "next/server";
 import { getIdentity, IdentityError } from "@/lib/identity";
 import { parseAssignableRole, requireAdmin, type AppRole } from "@/lib/roles";
@@ -110,6 +111,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       if (body.notifyPasswordEmail !== false && user.email) {
         notifyEmail = await sendAdminPasswordSetEmail({ to: user.email });
       }
+      await recordAudit(identity, "user.password_set", { target: username });
       return Response.json({
         ok: true,
         user,
@@ -123,7 +125,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
     if (body.resetMfa === true) {
       await adminResetDirectoryUserMfa(username, actorOpts);
-      console.info("[admin/users] two-step verification reset");
+      await recordAudit(identity, "user.mfa_reset", { target: username });
       return Response.json({
         ok: true,
         message:
@@ -133,6 +135,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
     if (body.sendPasswordReset === true) {
       await adminResetDirectoryUserPassword(username, actorOpts);
+      await recordAudit(identity, "user.password_reset_requested", { target: username });
       return Response.json({
         ok: true,
         message:
@@ -143,11 +146,13 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     if (typeof body.role === "string") {
       const role = parseAssignableRole(body.role);
       user = await setDirectoryUserRole(username, role, actorOpts);
+      await recordAudit(identity, "user.role_change", { target: username, detail: `role=${role}` });
     }
 
     if (body.status === "deleted" || body.status === "suspended" || body.status === "active") {
       const enable = body.status === "active";
       user = await setDirectoryUserEnabled(username, enable, actorOpts);
+      await recordAudit(identity, `user.status_${body.status}`, { target: username });
       const directory = await listDirectoryUsers();
       const target = directory.find(u => u.username === username || u.email === username);
       if (target?.sub) {
@@ -159,6 +164,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       }
     } else if (typeof body.enabled === "boolean") {
       user = await setDirectoryUserEnabled(username, body.enabled, actorOpts);
+      await recordAudit(identity, body.enabled ? "user.enabled" : "user.disabled", { target: username });
       const directory = await listDirectoryUsers();
       const target = directory.find(u => u.username === username || u.email === username);
       if (target?.sub) {
@@ -182,6 +188,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
         return Response.json({ error: "User has no Cognito sub for profile cap." }, { status: 422 });
       }
       const profile = await setUserMonthlyCostCap(target.sub, parsed.value ?? null);
+      await recordAudit(identity, "user.cost_cap_change", { target: username });
       monthlyCostCapUsd = profile.monthlyCostCapUsd;
       if (!user) user = target;
     }

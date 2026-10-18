@@ -87,3 +87,11 @@ For AWS (after P0 item 7 and 8): attach the policy simulator to the compute role
 | 7 | Done in source, not applied | Separate `securemind-amplify-compute-<env>` role; Bedrock invoke scoped to model/profile ARNs. Needs `terraform plan/apply` and an Amplify deploy check. |
 | 8 | Done in source, not applied | Cognito authorizer on `POST /chat` (scope `aws.cognito.signin.user.admin`). Verify a real sign-in streams successfully after apply. Reserved Lambda concurrency and WAF not added (new accounts have low concurrency quotas). |
 | 9 | Done | `SECURITY.md` and on-prem doc updated. |
+
+## P1 implementation status (first group, 2026-10-18)
+
+| # | Status | Notes |
+|---|---|---|
+| 12 (F-13, F-14) | Done | `assertAccessTokenClaims` requires `token_use=access` and the configured `client_id` (real Cognito fails closed if the client id is unset); applied in `getIdentity` and `middleware`. Logout calls Cognito `GlobalSignOut`; admin disable calls `AdminUserGlobalSignOut`; `getIdentity` refuses `suspended`/`deleted` profiles (30 s cache; a failed lookup does not block). The Amplify compute role and the permission boundary gained the Cognito admin actions the console already used (`AdminDisableUser`, `AdminEnableUser`, `AdminRemoveUserFromGroup`, `AdminResetUserPassword`, `AdminSetUserMFAPreference`, `AdminUserGlobalSignOut`). **The bootstrap stack must be re-applied for the boundary change.** Floci token claims were not observed; the Floci path is only held to "if `token_use` is present it must be `access`". |
+| 13 (F-16) | Done (API) | Append-only `AuditEvent` (Postgres, new migration) / `app#_audit` partition (DynamoDB). Recorded: user create, role change, password set, password-reset request, MFA reset, enable/disable/status, cost cap, provider settings, security policy. `GET /api/admin/audit` (Admin only). No UI view yet; Admin password changes by the user themselves and sign-ins are not logged. |
+| 18 (F-17) | Not started | |

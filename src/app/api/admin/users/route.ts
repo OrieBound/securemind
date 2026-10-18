@@ -1,3 +1,4 @@
+import { recordAudit } from "@/lib/audit-log";
 import { NextRequest } from "next/server";
 import { getIdentity, IdentityError } from "@/lib/identity";
 import { parseAssignableRole, requireAdmin } from "@/lib/roles";
@@ -155,6 +156,7 @@ export async function POST(req: NextRequest) {
       await setUserMonthlyCostCap(user.sub, capParsed.value);
       await ensureUserProfile({ userId: user.sub, email: user.email });
     }
+    await recordAudit(identity, "user.create", { target: user.email ?? null, detail: `role=${role}` });
     const emailTo = (user.email ?? body.email ?? "").trim().toLowerCase();
     const sendInvite = body.sendInvite !== false;
     let welcome: { sent: boolean; reason?: string };
