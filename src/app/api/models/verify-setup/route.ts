@@ -51,10 +51,15 @@ export async function POST(req: NextRequest) {
       getModelAvailability(),
       modelCredentialScope(provider),
     ]);
+    // A re-check also looks again at models whose last check failed, once each per run.
+    const recheckBefore = typeof body.recheckSince === "number" && Number.isFinite(body.recheckSince)
+      ? body.recheckSince
+      : undefined;
     const pending = modelsAwaitingSetupCheck(
       listedFor(provider, catalog)
         .filter(model => model.provider === provider)
         .map(model => withModelAvailability(model, records[modelKey(model)], scope)),
+      { recheckBefore },
     );
     if (pending.length === 0) {
       return Response.json({

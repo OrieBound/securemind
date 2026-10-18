@@ -38,3 +38,30 @@ describe("isAccountWideSetupStop", () => {
     expect(isAccountWideSetupStop("not_available", "The provider could not run this model id.")).toBe(false);
   });
 });
+
+describe("modelsAwaitingSetupCheck with a re-check", () => {
+  const started = Date.parse("2026-10-18T12:00:00Z");
+  const models = [
+    model({ id: "gpt-a", verification: "failed", checkedAt: "2026-10-17T09:00:00Z" }),
+    model({ id: "gpt-b", verification: "failed", checkedAt: "2026-10-18T12:00:05Z" }),
+    model({ id: "gpt-c", verification: "verified", checkedAt: "2026-10-17T09:00:00Z" }),
+    model({ id: "gpt-d", verification: "unverified" }),
+  ];
+
+  it("leaves failed models alone on a normal check", () => {
+    expect(modelsAwaitingSetupCheck(models).map(m => m.id)).toEqual(["gpt-d"]);
+  });
+
+  it("tries an older failure again, once, along with anything unchecked", () => {
+    expect(modelsAwaitingSetupCheck(models, { recheckBefore: started }).map(m => m.id)).toEqual(["gpt-a", "gpt-d"]);
+  });
+
+  it("does not loop: a failure recorded during the run is newer than the run", () => {
+    const afterRetry = models.map(m => (m.id === "gpt-a" ? { ...m, checkedAt: "2026-10-18T12:00:09Z" } : m));
+    expect(modelsAwaitingSetupCheck(afterRetry, { recheckBefore: started }).map(m => m.id)).toEqual(["gpt-d"]);
+  });
+
+  it("never touches a model that passed", () => {
+    expect(modelsAwaitingSetupCheck(models, { recheckBefore: started }).map(m => m.id)).not.toContain("gpt-c");
+  });
+});

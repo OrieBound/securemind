@@ -20,6 +20,7 @@ import {
   GROQ_VPN_SETTINGS_NOTE,
 } from "@/lib/models/groq-connectivity";
 import { consumeBedrockHighlight, HIGHLIGHT_BEDROCK_KEY } from "@/lib/onboarding";
+import { deriveKeyHealth, keyNeedsAttention, relativeTime, type KeyHealth } from "@/lib/models/key-health";
 import { VoiceSttSetupDialog } from "@/components/app/voice-stt-setup";
 import {
   voiceProviderDestination,
@@ -318,10 +319,11 @@ export function InferenceSettings(props: Props) {
     setupCancel.current = true;
   }, []);
 
-  const runSetupCheck = useCallback(async (provider: WiredVendorKind) => {
+  const runSetupCheck = useCallback(async (provider: WiredVendorKind, recheck = false) => {
+    const startedAt = Date.now();
     setupCancel.current = false;
     setSetupRun({ provider, done: 0, total: 0 });
-    setNote("Checking which models this key can use. Each model is tried once.");
+    setNote(recheck ? "Re-checking this key. Each model that failed before is tried once more." : "Checking which models this key can use. Each model is tried once.");
     let checked = 0;
     let ready = 0;
     let throttles = 0;
@@ -332,7 +334,7 @@ export function InferenceSettings(props: Props) {
           method: "POST",
           credentials: "same-origin",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, fresh: checked === 0 }),
+          body: JSON.stringify({ provider, fresh: checked === 0, ...(recheck ? { recheckSince: startedAt } : {}) }),
         });
         let data: {
           done?: boolean;
@@ -860,6 +862,14 @@ export function InferenceSettings(props: Props) {
                 busy={busy}
                 setupRun={setupRun}
                 onCheckAccess={provider => void runSetupCheck(provider)}
+                onRecheck={provider => void runSetupCheck(provider, true)}
+                keyHealth={{
+                  groq: deriveKeyHealth(allModels.filter(m => m.provider === "groq")),
+                  openai: deriveKeyHealth(allModels.filter(m => m.provider === "openai")),
+                  anthropic: deriveKeyHealth(allModels.filter(m => m.provider === "anthropic")),
+                  google: deriveKeyHealth(allModels.filter(m => m.provider === "google")),
+                  xai: deriveKeyHealth(allModels.filter(m => m.provider === "xai")),
+                }}
                 unverifiedCounts={{
                   groq: allModels.filter(m => m.provider === "groq" && (m.verification === undefined || m.verification === "unverified") && !m.hidden && m.modality !== "other").length,
                   openai: allModels.filter(m => m.provider === "openai" && (m.verification === undefined || m.verification === "unverified") && !m.hidden && m.modality !== "other").length,
@@ -1741,7 +1751,9 @@ function SupportedVendorsPanel({
   busy,
   setupRun,
   unverifiedCounts,
+  keyHealth,
   onCheckAccess,
+  onRecheck,
   onOpenModels,
   onRemove,
 }: {
@@ -1754,7 +1766,9 @@ function SupportedVendorsPanel({
   canEdit: boolean;
   busy: boolean;
   setupRun: { provider: WiredVendorKind; done: number; total: number } | null;
+  keyHealth: Record<WiredVendorKind, KeyHealth | null>;
   onCheckAccess: (kind: WiredVendorKind) => void;
+  onRecheck: (kind: WiredVendorKind) => void;
   onOpenModels: (kind: WiredVendorKind) => void;
   onRemove: (key: KeyInventoryItem) => void;
 }) {
@@ -1770,7 +1784,7 @@ function SupportedVendorsPanel({
         const models = modelCounts[v.kind];
         const inMenus = inMenuCounts[v.kind];
         const open = openKind === v.kind;
-        const status = v.kind === "groq"
+        const baseStatus = v.kind === "groq"
           ? groqVendorStatusLabel({
               riskAck,
               keySaved: configured,
@@ -1782,7 +1796,10 @@ function SupportedVendorsPanel({
             : configured
               ? "Connected"
               : "Not configured";
-        const warn = /rejected|Unreachable|0 models|Consent/i.test(status);
+        const health = configured && riskAck ? keyHealth[v.kind] : null;
+        const needsAttention = keyNeedsAttention(health);
+        const status = needsAttention && health ? health.label : baseStatus;
+        const warn = needsAttention || /rejected|Unreachable|0 models|Consent/i.test(status);
         const removable = Boolean(
           canEdit &&
           stored &&
@@ -1810,16 +1827,34 @@ function SupportedVendorsPanel({
                   )}
                   {stored?.hint && (
                     <span
-                      className="font-mono text-[0.7rem] text-foreground/50"
-                      title="Masked key identifier. The full secret is never shown."
+                      className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[0.7rem] text-foreground/75"
+                      title="Masked key identifier. Only the start and the last four characters are shown. The full secret is never shown."
                     >
-                      {stored.hint}
+                      Key {stored.hint}
                     </span>
                   )}
                 </div>
                 <p className="mt-1.5 text-sm text-foreground/70 leading-relaxed">
                   {vendorNextStep(v, configured, models, inMenus, riskAck)}
                 </p>
+                {health && health.state !== "unchecked" && (
+                  <p
+                    role={needsAttention ? "alert" : undefined}
+                    className={cn(
+                      "mt-1.5 text-[0.8rem] leading-relaxed",
+                      needsAttention ? "text-amber-200" : "text-foreground/55",
+                    )}
+                  >
+                    {needsAttention ? (
+                      <>
+                        <span className="font-semibold">{health.label}.</span> {health.detail}
+                      </>
+                    ) : (
+                      health.detail
+                    )}
+                    {relativeTime(health.checkedAt) ? ` Last checked ${relativeTime(health.checkedAt)}.` : ""}
+                  </p>
+                )}
               </div>
               <span className={cn(
                 "shrink-0 rounded-md border px-2 py-1 text-xs font-semibold",
@@ -1860,6 +1895,16 @@ function SupportedVendorsPanel({
                   className="inline-flex items-center rounded-lg border border-indigo-400/40 bg-indigo-500/15 px-3 py-2 text-sm font-semibold text-indigo-100 hover:bg-indigo-500/25 disabled:opacity-45 cursor-pointer"
                 >
                   Check access
+                </button>
+              ) : null}
+              {needsAttention && canEdit && !setupRun ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onRecheck(v.kind)}
+                  className="inline-flex items-center rounded-lg border border-amber-500/40 bg-amber-500/15 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-500/25 disabled:opacity-50 cursor-pointer"
+                >
+                  Re-check key
                 </button>
               ) : null}
               {models > 0 && (

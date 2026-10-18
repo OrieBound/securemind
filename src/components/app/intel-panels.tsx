@@ -26,6 +26,8 @@ export type IntelPanelDef = {
   defaultOpen?: boolean;
   /** Omit from the stack when false. */
   visible?: boolean;
+  /** A small control in the header, to the right (for example a refresh button). */
+  headerAction?: React.ReactNode;
   /**
    * Preferred body height in px on first visit.
    * Compact summaries should stay tight (~168); pickers can be taller.
@@ -496,42 +498,49 @@ function IntelPanelStackInner({
                     }
               }
             >
-              <button
-                type="button"
-                draggable
-                title="Drag to reorder · click to expand or collapse"
-                onDragStart={e => onPanelDragStart(panel.id, e)}
-                onDragEnd={onPanelDragEnd}
-                onClick={() => {
-                  if (suppressToggleClick.current) {
-                    suppressToggleClick.current = false;
-                    return;
-                  }
-                  toggle(panel.id);
-                }}
-                aria-expanded={isOpen}
-                className={cn(
-                  "group/phdr flex items-center gap-1 px-1.5 shrink-0 text-left cursor-grab active:cursor-grabbing",
-                  "hover:bg-[var(--surface-hover)] transition-colors",
-                  isOpen ? "border-b border-border bg-secondary/60" : "bg-card",
-                )}
-                style={{ height: HEADER_H }}
-              >
-                <GripVertical
-                  className="size-3.5 shrink-0 text-foreground/20 opacity-0 transition-opacity group-hover/phdr:opacity-80"
-                  aria-hidden
-                />
-                <ChevronRight
+              <div className="relative shrink-0">
+                <button
+                  type="button"
+                  draggable
+                  title="Drag to reorder · click to expand or collapse"
+                  onDragStart={e => onPanelDragStart(panel.id, e)}
+                  onDragEnd={onPanelDragEnd}
+                  onClick={() => {
+                    if (suppressToggleClick.current) {
+                      suppressToggleClick.current = false;
+                      return;
+                    }
+                    toggle(panel.id);
+                  }}
+                  aria-expanded={isOpen}
                   className={cn(
-                    "size-3.5 text-muted-foreground shrink-0 transition-transform duration-200",
-                    isOpen && "rotate-90 text-[var(--primary-soft-foreground)]",
+                    "group/phdr flex w-full items-center gap-1 px-1.5 shrink-0 text-left cursor-grab active:cursor-grabbing",
+                    "hover:bg-[var(--surface-hover)] transition-colors",
+                    isOpen ? "border-b border-border bg-secondary/60" : "bg-card",
                   )}
-                  aria-hidden
-                />
-                <span className="text-[0.6rem] uppercase tracking-[0.18em] text-[var(--text-secondary)] font-semibold truncate">
-                  {panel.label}
-                </span>
-              </button>
+                  style={{ height: HEADER_H }}
+                >
+                  <GripVertical
+                    className="size-3.5 shrink-0 text-foreground/20 opacity-0 transition-opacity group-hover/phdr:opacity-80"
+                    aria-hidden
+                  />
+                  <ChevronRight
+                    className={cn(
+                      "size-3.5 text-muted-foreground shrink-0 transition-transform duration-200",
+                      isOpen && "rotate-90 text-[var(--primary-soft-foreground)]",
+                    )}
+                    aria-hidden
+                  />
+                  <span className="text-[0.6rem] uppercase tracking-[0.18em] text-[var(--text-secondary)] font-semibold truncate">
+                    {panel.label}
+                  </span>
+                </button>
+                {panel.headerAction ? (
+                  <div className="absolute inset-y-0 right-1.5 flex items-center" style={{ height: HEADER_H }}>
+                    {panel.headerAction}
+                  </div>
+                ) : null}
+              </div>
 
               {isOpen && (
                 <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-2.5 pr-1.5 text-sm text-foreground [scrollbar-gutter:stable]">
@@ -636,8 +645,11 @@ export const INTEL_HEIGHT = {
   /** Shared height for sections that are often open together. */
   paired: 360,
   tall: 320,
-  /** Models routing + inline picker needs more vertical room than a paired strip. */
-  routing: 560,
+  /**
+   * Models routing + inline picker. With a provider filter and a search box the list runs to
+   * about 720px, so this is tall enough to show it without scrolling.
+   */
+  routing: 760,
   /** Cost total: workspace + range chips + metric + CTA — no inner scroll. */
   costTotal: 248,
 } as const;
