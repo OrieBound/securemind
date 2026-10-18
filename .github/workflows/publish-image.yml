@@ -45,6 +45,10 @@ jobs:
           target: runner
           push: true
           tags: ${{ steps.image.outputs.name }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.description=SecureMind, a privacy-aware AI workspace
 
       - uses: docker/build-push-action@v6
         with:
@@ -52,3 +56,7 @@ jobs:
           target: init
           push: true
           tags: ${{ steps.image.outputs.name }}:init
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.description=SecureMind, a privacy-aware AI workspace
