@@ -2,6 +2,10 @@
 
 A privacy-aware AI workspace for models, Knowledge, memory, cost, and sensitive-data risk.
 
+## You run it, and you own it
+
+SecureMind is an open-source project, not a hosted service. There is no installer to download and no account to create with the author. You copy the code from this repository and run it yourself, either on your own computer with Docker or in your own AWS account. The copy is yours: your data stays in your install, and you can change it or take it in a different direction under the license below.
+
 Detection runs before chat is sent and again when Knowledge is ingested. That reduces exposure. It does not guarantee complete removal of sensitive data, and it is not a compliance program. You review what is sent and what you store.
 
 ## Where to read
@@ -79,7 +83,7 @@ Ports, backups, and optional keys: [docs/deploy/on-prem-docker.md](docs/deploy/o
 
 <img src="docs/diagrams/securemind-aws-diagram.jpg" alt="SecureMind on AWS" width="820">
 
-You clone this repo and apply Terraform in an account you administer. The hosted install has no model until that account can call Bedrock, or you save a vendor key. This repository’s GitHub Actions pipeline deploys the maintainer sandbox. Your install uses your own state bucket, role, and GitHub environment.
+You clone this repo and apply Terraform in an account you administer. The hosted install has no model until that account can call Bedrock, or you save a vendor key. The Terraform jobs in this repository's GitHub Actions workflow are off by default. If you want them for your own copy, turn them on with repository variables (see the guide below). Your install uses your own state bucket, role, and GitHub environment.
 
 These resources can incur AWS charges. Remove them with `npm run infra:down -- --yes` when you are finished.
 
@@ -103,11 +107,11 @@ git clone https://github.com/OrieBound/securemind.git
 cd securemind
 ```
 
-Then follow [infra/README.md](infra/README.md): bootstrap the state bucket and deploy role, set three GitHub variables, connect Amplify, and apply.
+Make your own private repository from the code, then follow [docs/deploy/aws-from-zero.md](docs/deploy/aws-from-zero.md) (every step marked required or optional) or the condensed [infra/README.md](infra/README.md): bootstrap the state bucket and deploy role, connect Amplify, and apply. The GitHub variables are optional and only needed if you want GitHub Actions to run Terraform for you.
 
 ### Confirm
 
-The user pool starts empty. The setup code from Terraform is not the password. You choose the email and password on the site.
+The user pool starts empty. Print the one-time setup code with `terraform -chdir=infra/terraform output -raw setup_claim_secret`, open your Amplify address, and enter the code with the email and password you choose. That account becomes the Owner. The code is not a password. A local Docker install needs no setup code.
 
 ## Contributing on the host
 
@@ -133,3 +137,22 @@ npm run dev
 ## License
 
 SecureMind is released under the [Apache License 2.0](LICENSE). You can use it, change it, and run your own version, including inside your company. It comes as is, with no warranty. Sanitization reduces risk. It does not guarantee that every sensitive value is removed, and it is not a compliance program.
+
+### If you use or share it
+
+The license asks for a few small things, and nothing else:
+
+- Keep the [LICENSE](LICENSE) file with the code when you share it.
+- Keep the [NOTICE](NOTICE) file, or its text, in anything you distribute. It names the original project and its source.
+- If you changed files, say so in those files.
+- Do not present your copy as the official SecureMind or use the project name or logo to suggest the author endorses it.
+
+Running it for yourself, privately, asks nothing of you. You do not have to tell anyone.
+
+### A friendly request
+
+If you build on SecureMind, a line such as "Based on SecureMind (github.com/OrieBound/securemind)" in your README or about page is appreciated. A star on the repository is also a welcome way to say you are using it. These are requests, not license conditions, and nobody is breaking any agreement by skipping them.
+
+### Usage data
+
+SecureMind does not report anything to the author. It has no tracking, no usage counter and no phone-home call, so there is no way for the author to know who runs it. The public counts are the ones GitHub shows: stars, forks and package downloads.
