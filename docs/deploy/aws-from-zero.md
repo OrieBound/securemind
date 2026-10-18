@@ -95,7 +95,7 @@ Paste that output, as-is, into `infra/terraform/backend.hcl`.
 
 This phase lets GitHub Actions in *your* fork assume the role from Phase 2, without ever holding an AWS access key as a GitHub secret. If you only ever intend to apply from your own laptop, you can skip this phase and go straight to Phase 4 — but then pull requests won't get an automatic `terraform plan`.
 
-In your GitHub repository: **Settings → Environments → New environment**, name it exactly what you passed as `github_environment` above (e.g. `aws-my-env`), and turn on **Required reviewers**. Then add these as **Environment variables** (not secrets — none of these are secret):
+In your GitHub repository: **Settings → Environments → New environment**, name it exactly what you passed as `github_environment` above (e.g. `aws-my-env`), and turn on **Required reviewers**. GitHub only offers required reviewers on a public repository or a paid plan. On a free private repository, set **Deployment branches and tags** to **Selected branches** and allow only `main` instead. Then add these as **Environment variables** (not secrets — none of these are secret):
 
 | Variable | Value |
 |---|---|
