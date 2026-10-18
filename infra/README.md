@@ -30,7 +30,7 @@ Chat/workspaces/settings still use Prisma in application code. That leftover is 
 - [Node.js 20](https://nodejs.org/) or newer.
 - [Git](https://git-scm.com/downloads), and a GitHub repository you can connect to Amplify.
 - Permission to create IAM, S3, Lambda, API Gateway, Cognito, Amplify, DynamoDB, Systems Manager Parameter Store, and CloudFormation.
-- Optional, for a model with no vendor key: [Bedrock model access](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-modify.html) for Titan Text Embeddings v2 and a chat model.
+- Strongly recommended, so chat has a model without a vendor key: [Bedrock model access](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-modify.html) for Titan Text Embeddings v2 and a chat model.
 
 Hosted resources can incur AWS charges. Tear the stack down with `npm run infra:down -- --yes`.
 

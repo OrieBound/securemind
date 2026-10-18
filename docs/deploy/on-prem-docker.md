@@ -14,7 +14,7 @@ Cloud hosting uses `infra/` (Amplify + Lambda). This path is the **on-prem produ
 - 8 GB of RAM is a practical floor for the 3B chat model
 - Free ports: `3000`, `5432`, `4566`, `11434`
 
-No AWS account and no model API key. Node.js is only for the host-dev workflow later on this page.
+No AWS account is needed. A model API key is not required, but it is strongly recommended: the built-in local models run on your own computer and, unless it is very powerful, they are slow and will not do well. Groq has a free tier and is a good first key. Node.js is only for the host-dev workflow later on this page.
 
 ## Quick start
 
