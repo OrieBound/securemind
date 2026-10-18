@@ -58,6 +58,12 @@ jobs:
       TF_VAR_env_name: ${{ vars.ENV_NAME || 'sandbox' }}
       TF_VAR_permissions_boundary_arn: ${{ vars.PERMISSIONS_BOUNDARY_ARN }}
       TF_VAR_aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
+      # Monitoring and recovery (modules/monitoring). Set these as GitHub Environment variables.
+      # Deletion protection defaults to ACTIVE so a real install cannot lose its users by accident;
+      # set COGNITO_DELETION_PROTECTION=INACTIVE only for a sandbox you tear down.
+      TF_VAR_alert_email: ${{ vars.ALERT_EMAIL || '' }}
+      TF_VAR_monthly_budget_usd: ${{ vars.MONTHLY_BUDGET_USD || '5' }}
+      TF_VAR_cognito_deletion_protection: ${{ vars.COGNITO_DELETION_PROTECTION || 'ACTIVE' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -128,6 +134,12 @@ jobs:
       TF_VAR_env_name: ${{ vars.ENV_NAME || 'sandbox' }}
       TF_VAR_permissions_boundary_arn: ${{ vars.PERMISSIONS_BOUNDARY_ARN }}
       TF_VAR_aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
+      # Monitoring and recovery (modules/monitoring). Set these as GitHub Environment variables.
+      # Deletion protection defaults to ACTIVE so a real install cannot lose its users by accident;
+      # set COGNITO_DELETION_PROTECTION=INACTIVE only for a sandbox you tear down.
+      TF_VAR_alert_email: ${{ vars.ALERT_EMAIL || '' }}
+      TF_VAR_monthly_budget_usd: ${{ vars.MONTHLY_BUDGET_USD || '5' }}
+      TF_VAR_cognito_deletion_protection: ${{ vars.COGNITO_DELETION_PROTECTION || 'ACTIVE' }}
       AMPLIFY_BRANCH: main
 
     steps:
