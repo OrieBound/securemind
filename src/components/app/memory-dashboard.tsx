@@ -22,6 +22,8 @@ export type MemoryFactRecord = {
   updatedAt: string;
   pinned?: boolean;
   forgotten?: boolean;
+  /** Set when the user corrected, pinned or forgot this fact. */
+  correctedAt?: string | null;
 };
 
 export type MemorySummaryRecord = {
@@ -99,17 +101,26 @@ function formatDayLabel(d: Date): string {
   return d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric", year: "numeric" });
 }
 
-function mergeLiveFacts(
+/**
+ * Stored facts are the record of truth and carry the Correct, Pin and Forget controls. A fact the user
+ * pinned or corrected always wins. Otherwise a live fact from this session replaces the stored one only
+ * when its value is different (a new extraction that has not been saved yet). When the two agree, the
+ * stored fact stays, so its controls stay too.
+ */
+export function mergeLiveFacts(
   workspaceFacts: MemoryFactRecord[],
   liveFacts: Record<string, string>,
 ): MemoryFactRecord[] {
   const byKey = new Map<string, MemoryFactRecord>();
   for (const f of workspaceFacts) byKey.set(f.key.toLowerCase(), f);
   for (const [k, v] of Object.entries(liveFacts)) {
+    const liveValue = typeof v === "string" ? v : formatFactValue(v);
+    const stored = byKey.get(k.toLowerCase());
+    if (stored && (stored.pinned || stored.correctedAt || formatFactValue(stored.value) === liveValue)) continue;
     byKey.set(k.toLowerCase(), {
       id: `live-${k}`,
       key: k,
-      value: typeof v === "string" ? v : formatFactValue(v),
+      value: liveValue,
       confidence: 0.75,
       source: null,
       updatedAt: new Date().toISOString(),
