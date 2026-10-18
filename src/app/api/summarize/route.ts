@@ -15,12 +15,32 @@ import { probeOllama, streamOllamaChat } from "@/lib/models/ollama";
 import { streamGroqChat } from "@/lib/models/groq";
 import { pickInstalledChatModel } from "@/lib/models/local-recommendations";
 import { routeModel } from "@/lib/models/router";
+import { streamChat } from "@/lib/models/provider";
+import { getModelCatalogCached } from "@/lib/models/catalog";
+import { pickBackgroundVendorModel, type BackgroundVendorModel } from "@/lib/models/background-model";
+import { getVendorConsentFlags } from "@/lib/instance-config";
 import { db } from "@/lib/db";
 import { getIdentity } from "@/lib/identity";
 import { usesHostedAppStore } from "@/lib/workspaces/store";
 import { hostedAppStore } from "@/lib/workspaces/hosted-dynamo";
 
 export const runtime = "nodejs";
+
+/** How long the local model gets before the vendor fallback is tried. */
+const LOCAL_BACKGROUND_TIMEOUT_MS = 60_000;
+
+async function pickVendorFallback(): Promise<BackgroundVendorModel | null> {
+  try {
+    const flags = await getVendorConsentFlags();
+    if (!flags.externalRiskAckAt) return null;
+    const catalog = await getModelCatalogCached();
+    return pickBackgroundVendorModel(
+      [catalog.anthropic, catalog.openai, catalog.google, catalog.xai].flatMap(bucket => bucket ?? []),
+    );
+  } catch {
+    return null;
+  }
+}
 
 type HistoryMessage = { role: "user" | "assistant"; content: string };
 
@@ -119,21 +139,46 @@ export async function POST(req: NextRequest) {
 
   let fullResponse = "";
   try {
-    try {
-      const stream = provider === "groq"
-        ? streamGroqChat(msgs, model)
-        : streamOllamaChat(msgs, model);
-      for await (const chunk of stream) fullResponse += chunk;
-    } catch (err) {
-      if (provider !== "groq") throw err;
-      // The documented fast Groq id is not on every key (this install 404s
-      // llama-3.1-8b-instant). Local chat still has to capture user facts.
-      const probe = await probeOllama(2500);
-      const local = pickInstalledChatModel(probe.tags);
-      if (!local) throw err;
-      console.error("[summarize] Groq fast model failed; using local", local);
+    const collect = async (stream: AsyncGenerator<string>) => {
       fullResponse = "";
-      for await (const chunk of streamOllamaChat(msgs, local)) fullResponse += chunk;
+      for await (const chunk of stream) fullResponse += chunk;
+    };
+
+    let primaryError: unknown = null;
+    try {
+      await collect(
+        provider === "groq" ? streamGroqChat(msgs, model) : streamOllamaChat(msgs, model),
+      );
+    } catch (err) {
+      primaryError = err;
+    }
+
+    if (primaryError && provider === "groq") {
+      // The documented fast Groq id is not on every key, and Groq may be blocked. Local chat comes
+      // next because the text stays on this machine; it gets a time limit so a slow CPU cannot
+      // hold the request for minutes.
+      try {
+        const probe = await probeOllama(2500);
+        const local = pickInstalledChatModel(probe.tags);
+        if (local) {
+          console.error("[summarize] Groq fast model failed; using local", local);
+          await collect(streamOllamaChat(msgs, local, AbortSignal.timeout(LOCAL_BACKGROUND_TIMEOUT_MS)));
+          primaryError = null;
+        }
+      } catch (err) {
+        console.error("[summarize] local model failed:", err instanceof Error ? err.message : err);
+      }
+    }
+
+    if (primaryError) {
+      // Last resort: a small vendor model that already answered a test here, and only when the
+      // operator has accepted that detected text is replaced before vendor calls.
+      const vendor = await pickVendorFallback();
+      if (!vendor) throw primaryError;
+      console.error("[summarize] using vendor model", vendor.model);
+      await collect(
+        streamChat({ messages: msgs, model: vendor.model, provider: vendor.provider, lockProvider: true }),
+      );
     }
 
     const jsonMatch = fullResponse.match(/\{[\s\S]*\}/);
