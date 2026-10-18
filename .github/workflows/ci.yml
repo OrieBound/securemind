@@ -55,7 +55,7 @@ jobs:
       id-token: write
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
-      TF_VAR_env_name: sandbox
+      TF_VAR_env_name: ${{ vars.ENV_NAME || 'sandbox' }}
       TF_VAR_aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
     steps:
@@ -93,7 +93,7 @@ jobs:
         run: |
           cat > infra/terraform/backend.hcl <<EOF
           bucket       = "${{ vars.TF_STATE_BUCKET }}"
-          key          = "securemind/sandbox/terraform.tfstate"
+          key          = "securemind/${{ vars.ENV_NAME || 'sandbox' }}/terraform.tfstate"
           region       = "${{ env.AWS_REGION }}"
           use_lockfile = true
           encrypt      = true
@@ -124,7 +124,7 @@ jobs:
       id-token: write
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
-      TF_VAR_env_name: sandbox
+      TF_VAR_env_name: ${{ vars.ENV_NAME || 'sandbox' }}
       TF_VAR_aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
       AMPLIFY_BRANCH: main
 
@@ -163,7 +163,7 @@ jobs:
         run: |
           cat > infra/terraform/backend.hcl <<EOF
           bucket       = "${{ vars.TF_STATE_BUCKET }}"
-          key          = "securemind/sandbox/terraform.tfstate"
+          key          = "securemind/${{ vars.ENV_NAME || 'sandbox' }}/terraform.tfstate"
           region       = "${{ env.AWS_REGION }}"
           use_lockfile = true
           encrypt      = true
@@ -181,7 +181,7 @@ jobs:
         run: |
           DOMAIN="$(terraform -chdir=infra/terraform output -raw amplify_default_domain)"
           export AMPLIFY_SITE_URL="https://main.${DOMAIN}"
-          export ENV_NAME=sandbox
+          export ENV_NAME="${{ vars.ENV_NAME || 'sandbox' }}"
           npm run infra:wire
 
       - name: Trigger Amplify build
