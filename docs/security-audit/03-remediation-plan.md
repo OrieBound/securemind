@@ -104,8 +104,14 @@ For AWS (after P0 item 7 and 8): attach the policy simulator to the compute role
 | Cognito deletion protection | Done in source | Root variable `cognito_deletion_protection` (default `INACTIVE` for sandboxes). **Set `ACTIVE` for a real install.** |
 | CloudTrail | Done in source | `modules/monitoring`: multi-region management trail, private TLS-only versioned bucket, 1-year expiry, log validation. `enable_cloudtrail = false` if an organization trail exists. |
 | Alarms | Done in source | Chat Lambda errors/throttles, API 5xx, API 4xx spike, DynamoDB throttles, to an SNS topic. |
-| Budget | Done in source | Needs `alert_email`; `monthly_budget_usd` default 20. |
+| Budget | Done in source | Needs `alert_email`; `monthly_budget_usd` default 5 (the stack normally costs about $0 to $1 a month, so a low threshold fires early). |
 | API stage access logs | Done in source, **off by default** | `enable_api_access_logs`. Needs the account-level API Gateway CloudWatch role, which this stack does not create. |
 | Deploy role permissions | Done in source | `bootstrap/main.tf` gained scoped CloudTrail, SNS, Budgets, alarm and trail-bucket rights. **Re-apply the bootstrap stack before the next CI deploy**, or `enable_monitoring = false`. |
 
 Not applied and not run against AWS. `terraform validate` passes on an isolated copy. Alarm thresholds are starting points. Email subscriptions need a confirmation click.
+
+## Owner decisions and cost (2026-10-18)
+
+- **AWS WAF: declined.** About $5 to $6 a month plus request charges is too high for an install that otherwise runs near $0. The compensating controls are the Cognito authorizer on `POST /chat` (unauthenticated calls are rejected at the gateway, free), the stage throttle (20 rps / burst 40), the 4xx-spike alarm and the monthly budget alert. Residual risk accepted: an anonymous flood can still use up the shared throttle and briefly deny service to signed-in users (F-10).
+- **Added monthly cost of the monitoring and recovery items:** expected about $0.50 to $1, possibly $0 inside the free tiers, from AWS's published pricing (not checked against a bill). DynamoDB PITR is about $0.20 per GB-month; the first management-event CloudTrail trail is free (S3 storage pennies); 5 alarms are within the 10 always-free alarms; SNS email and the first two budgets are free; API access logs are off by default. Deletion protection, the authorizer, the split IAM role, the audit log and session revocation add nothing measurable. Use the AWS Pricing Calculator for your own figures.
+- **To stay at exactly $0:** `enable_monitoring = false` (keeps PITR). Set `enable_cloudtrail = false` if the account already has a trail, because a second copy of management events is charged.

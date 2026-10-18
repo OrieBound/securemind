@@ -93,7 +93,7 @@ variable "alert_email" {
 
 variable "monthly_budget_usd" {
   type        = number
-  default     = 20
+  default     = 5
   description = "Monthly cost alert in USD (needs alert_email). 0 turns the budget off."
 }
 

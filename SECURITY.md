@@ -31,7 +31,7 @@ Your own install is yours to run. A report about how an operator configured thei
 
 - Keep the repository that deploys your AWS install **private**, with branch protection on `main`.
 - Turn on **required reviewers** for the GitHub environment if your plan allows it. Otherwise restrict deployments to `main`.
-- Set an **AWS Budget** alert, for example at $5 a month.
+- Set an **AWS Budget** alert, for example at $5 a month. Terraform creates one when you set `alert_email` (`monthly_budget_usd`, default 5).
 - Never put an AWS access key in GitHub, and never paste an API key into a public issue.
 
 ## Known limits (read before deploying)
