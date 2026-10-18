@@ -129,3 +129,7 @@ npm run dev
 | `npm test` | Vitest |
 | `npm run docker:onprem` | Full Compose stack, built from this repo |
 | `npm run infra:up` | Apply Terraform in the account your `.env.deploy` profile points at |
+
+## License
+
+SecureMind is released under the [Apache License 2.0](LICENSE). You can use it, change it, and run your own version, including inside your company. It comes as is, with no warranty. Sanitization reduces risk. It does not guarantee that every sensitive value is removed, and it is not a compliance program.
