@@ -27,7 +27,7 @@ Date 2026-10-18, after commit `08c526c` plus a `nodemailer` upgrade. Same method
 | F-07 Amplify role | High | **Closed in source, unapplied** | Needs `terraform plan/apply` and a deploy check. The compute role may need further trimming once its real calls are observed. |
 | F-08 Ollama published | High | **Closed** (config) | |
 | F-09 No TLS | High | **Open, mitigated** | Loopback default limits exposure; no TLS recipe shipped. Documented as a requirement for any remote use. |
-| F-10 Open gateway | Medium | **Closed in source, unapplied** | Cognito authorizer on `POST /chat`. Unverified that real sign-in tokens pass it (scope `aws.cognito.signin.user.admin`); test after apply. No WAF or reserved concurrency. |
+| F-10 Open gateway | Medium | **Closed in source, unapplied** | Cognito authorizer on `POST /chat`. Unverified that real sign-in tokens pass it (scope `aws.cognito.signin.user.admin`); test after apply. No reserved concurrency. WAF declined by the owner on cost; residual flood risk accepted (see 03, Owner decisions). |
 | F-11 Other advisories | Medium | **Reduced** | 20 remain, mostly Prisma CLI and transitive packages. Parsers of untrusted files (`exceljs`, `mammoth`, `pdf-parse`) unchanged. |
 | F-12 Floci as IdP, unpinned | High | **Open** | |
 | F-13 No session revocation | Medium | **Open** | |
@@ -56,3 +56,50 @@ Regressions found: none. Behaviour changes to know about: a production build wit
 1. `terraform plan` then apply in the sandbox; confirm sign-in and chat streaming through the authorizer, and that Amplify still works with the new compute role.
 2. Run `docker compose up --build` from empty volumes; confirm the setup code appears in `docker compose logs init` and the claim works with and without it.
 3. P1: F-13/F-14 (token revocation and strict validation), F-15 (PITR, deletion protection, CloudTrail, alarms), F-16 (audit log), TLS recipe (F-09), image signing and CI gating (F-22).
+
+---
+
+# Round 2 re-assessment (after P1 group 1 and AWS monitoring)
+
+Date 2026-10-18, after commits `d8e1a8e` and `d725d59` plus the budget/WAF documentation update. Same method and blind spots as round 1: no live AWS, no running stack, no image scan, nothing applied.
+
+## Verified this round
+
+| Check | Result |
+|---|---|
+| `npm test` | 128 files, 1016 tests pass (round 1: 1002). |
+| `tsc --noEmit` | Clean. |
+| `npm audit --omit=dev` | 0 critical, 10 high, 9 moderate (round 1: 0 / 11 / 9). All remaining highs are transitive or Prisma CLI tooling; none is `next`, `sharp` or `nodemailer`. |
+| `docker compose config` | Only `app`, on `127.0.0.1:3000`. |
+| `terraform validate` (app stack and bootstrap, isolated copies) | Both valid. |
+
+## Finding status changes since round 1
+
+| ID | Round 1 | Round 2 | Note |
+|---|---|---|---|
+| F-10 Open gateway | Closed in source | **Risk accepted** | Authorizer in place; WAF declined on cost. Residual: an anonymous flood can exhaust the shared throttle. Detected by the 4xx-spike alarm and budget. |
+| F-13 No revocation | Open | **Closed in source** | GlobalSignOut on logout, AdminUserGlobalSignOut on disable, suspended/deleted accounts refused. |
+| F-14 JWT checks | Open | **Closed in source** | `token_use=access` and `client_id` enforced. Floci tokens not observed. |
+| F-15 Monitoring/PITR | Open | **Closed in source, unapplied** | PITR, table deletion protection, CloudTrail, 5 alarms, budget ($5 default). Cognito deletion protection is a variable that must be set `ACTIVE`. Access logs off by default. |
+| F-16 Audit log | Open | **Closed (API)** | No UI view yet. |
+| F-31 Cognito defaults | Open | **Partial** | Deletion protection configurable; MFA still optional, no threat protection. |
+
+Still open: F-09 (no TLS shipped), F-11 (19 dependency advisories; untrusted-file parsers), F-12 (Floci as the Docker identity provider), F-17 (Admin impersonation, documented), F-18 (client-side redaction, documented), F-19 to F-30 (Medium/Low hardening and supply chain).
+
+## Grade, round 2
+
+| Deployment and scope | Round 1 | Round 2 |
+|---|---|---|
+| Self-hosted Docker, single user on localhost | CONDITIONAL GO | **GO** for this scope. Every Critical and High finding that applies to a loopback-only single-user install is closed. Residual: plaintext data at rest on the host (F-21) and the Floci IdP (F-12), both documented. |
+| Self-hosted Docker, shared LAN or internet | NO-GO | **NO-GO**. Unchanged blockers: no TLS (F-09), Floci as identity provider (F-12). |
+| AWS, small invite-only team | CONDITIONAL GO | **CONDITIONAL GO**. The code and IaC now meet the bar. The remaining conditions are operational, not code: (1) re-apply bootstrap, then apply the app stack; (2) confirm sign-in and chat streaming through the authorizer and the new compute role; (3) set `cognito_deletion_protection = "ACTIVE"` and `alert_email`; (4) a read-only check of the live account. Once those pass, this becomes GO. |
+| AWS, public or multi-organization | NO-GO | **NO-GO**. No organization boundary, Admin impersonation, regex-only injection filtering, no WAF. |
+
+**Pass or not:** for the scope SecureMind is built for (one person on their own machine, or a small trusted team on their own AWS account), it now **passes on source evidence**, with the AWS pass depending on the four deployment checks above. It does **not** pass as a shared-network Docker product or a public multi-tenant service, and should not be described that way.
+
+## Recommended next work
+
+1. Apply and verify in the sandbox (bootstrap, app stack, sign-in, chat, an admin disable, the audit endpoint, an alarm firing).
+2. F-09: a TLS reverse-proxy recipe for Docker.
+3. F-22/F-23: gate image publishing on CI, sign images, pin Actions by SHA, move to Node 22.
+4. F-20/F-11: upload quotas and isolating the document parsers.

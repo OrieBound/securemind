@@ -29,7 +29,7 @@ variable "alert_email" {
 
 variable "monthly_budget_usd" {
   type        = number
-  default     = 20
+  default     = 5
   description = "Monthly cost alert threshold in USD. 0 turns the budget off."
 }
 
