@@ -109,6 +109,12 @@ variable "embed_dimensions" {
   default = "1024"
 }
 
+variable "enable_access_logs" {
+  type        = bool
+  default     = false
+  description = "Write stage access logs (request id, caller IP, route, status, latency; no bodies or tokens). Needs the account-level API Gateway CloudWatch role."
+}
+
 variable "avatar_bucket_name" {
   type = string
 }
@@ -492,10 +498,35 @@ resource "aws_api_gateway_deployment" "this" {
   ]
 }
 
+resource "aws_cloudwatch_log_group" "access" {
+  count             = var.enable_access_logs ? 1 : 0
+  name              = "/aws/lambda/securemind-apigw-access-${var.env_name}"
+  retention_in_days = 90
+}
+
 resource "aws_api_gateway_stage" "prod" {
   rest_api_id   = aws_api_gateway_rest_api.this.id
   deployment_id = aws_api_gateway_deployment.this.id
   stage_name    = "prod"
+
+  dynamic "access_log_settings" {
+    for_each = var.enable_access_logs ? [1] : []
+    content {
+      destination_arn = aws_cloudwatch_log_group.access[0].arn
+      format = jsonencode({
+        requestId        = "$context.requestId"
+        ip               = "$context.identity.sourceIp"
+        requestTime      = "$context.requestTime"
+        httpMethod       = "$context.httpMethod"
+        path             = "$context.path"
+        status           = "$context.status"
+        responseLength   = "$context.responseLength"
+        latency          = "$context.responseLatency"
+        authorizerError  = "$context.authorizer.error"
+        integrationError = "$context.integrationErrorMessage"
+      })
+    }
+  }
 }
 
 # OPTIONS and /warm stay open by design (browser preflight and a no-data wake-up), so anyone who

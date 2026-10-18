@@ -95,3 +95,17 @@ For AWS (after P0 item 7 and 8): attach the policy simulator to the compute role
 | 12 (F-13, F-14) | Done | `assertAccessTokenClaims` requires `token_use=access` and the configured `client_id` (real Cognito fails closed if the client id is unset); applied in `getIdentity` and `middleware`. Logout calls Cognito `GlobalSignOut`; admin disable calls `AdminUserGlobalSignOut`; `getIdentity` refuses `suspended`/`deleted` profiles (30 s cache; a failed lookup does not block). The Amplify compute role and the permission boundary gained the Cognito admin actions the console already used (`AdminDisableUser`, `AdminEnableUser`, `AdminRemoveUserFromGroup`, `AdminResetUserPassword`, `AdminSetUserMFAPreference`, `AdminUserGlobalSignOut`). **The bootstrap stack must be re-applied for the boundary change.** Floci token claims were not observed; the Floci path is only held to "if `token_use` is present it must be `access`". |
 | 13 (F-16) | Done (API) | Append-only `AuditEvent` (Postgres, new migration) / `app#_audit` partition (DynamoDB). Recorded: user create, role change, password set, password-reset request, MFA reset, enable/disable/status, cost cap, provider settings, security policy. `GET /api/admin/audit` (Admin only). No UI view yet; Admin password changes by the user themselves and sign-ins are not logged. |
 | 18 (F-17) | Not started | |
+
+## P1 implementation status (AWS monitoring and recovery, 2026-10-18)
+
+| Item | Status | Notes |
+|---|---|---|
+| DynamoDB PITR + deletion protection | Done in source | `fragments.cfn.yaml`. Applies as an in-place stack update. |
+| Cognito deletion protection | Done in source | Root variable `cognito_deletion_protection` (default `INACTIVE` for sandboxes). **Set `ACTIVE` for a real install.** |
+| CloudTrail | Done in source | `modules/monitoring`: multi-region management trail, private TLS-only versioned bucket, 1-year expiry, log validation. `enable_cloudtrail = false` if an organization trail exists. |
+| Alarms | Done in source | Chat Lambda errors/throttles, API 5xx, API 4xx spike, DynamoDB throttles, to an SNS topic. |
+| Budget | Done in source | Needs `alert_email`; `monthly_budget_usd` default 20. |
+| API stage access logs | Done in source, **off by default** | `enable_api_access_logs`. Needs the account-level API Gateway CloudWatch role, which this stack does not create. |
+| Deploy role permissions | Done in source | `bootstrap/main.tf` gained scoped CloudTrail, SNS, Budgets, alarm and trail-bucket rights. **Re-apply the bootstrap stack before the next CI deploy**, or `enable_monitoring = false`. |
+
+Not applied and not run against AWS. `terraform validate` passes on an isolated copy. Alarm thresholds are starting points. Email subscriptions need a confirmation click.

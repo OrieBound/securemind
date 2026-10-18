@@ -263,6 +263,14 @@ data "aws_iam_policy_document" "gha_deploy" {
       "cloudwatch:Describe*",
       "cloudwatch:Get*",
       "cloudwatch:List*",
+      "cloudtrail:Describe*",
+      "cloudtrail:Get*",
+      "cloudtrail:List*",
+      "cloudtrail:LookupEvents",
+      "sns:Get*",
+      "sns:List*",
+      "budgets:Describe*",
+      "budgets:View*",
       "cognito-idp:Describe*",
       "cognito-idp:Get*",
       "cognito-idp:List*",
@@ -358,6 +366,36 @@ data "aws_iam_policy_document" "gha_deploy" {
     sid       = "UserPools"
     actions   = ["cognito-idp:*"]
     resources = ["*"]
+  }
+  statement {
+    sid = "Alarms"
+    actions = [
+      "cloudwatch:DeleteAlarms",
+      "cloudwatch:PutMetricAlarm",
+      "cloudwatch:TagResource",
+      "cloudwatch:UntagResource",
+    ]
+    resources = ["arn:aws:cloudwatch:*:${local.account}:alarm:securemind-*"]
+  }
+  statement {
+    sid       = "AlertTopics"
+    actions   = ["sns:*"]
+    resources = ["arn:aws:sns:*:${local.account}:securemind-*"]
+  }
+  statement {
+    sid       = "Budgets"
+    actions   = ["budgets:*"]
+    resources = ["arn:aws:budgets::${local.account}:budget/securemind-*"]
+  }
+  statement {
+    sid       = "AuditTrail"
+    actions   = ["cloudtrail:*"]
+    resources = ["arn:aws:cloudtrail:*:${local.account}:trail/securemind-*"]
+  }
+  statement {
+    sid       = "AuditTrailBucket"
+    actions   = ["s3:*"]
+    resources = ["arn:aws:s3:::securemind-trail-*", "arn:aws:s3:::securemind-trail-*/*"]
   }
   statement {
     sid       = "Dashboards"
