@@ -62,6 +62,12 @@ variable "create_cognito_domain" {
   default = false
 }
 
+variable "access_contact_url" {
+  type        = string
+  default     = ""
+  description = "Optional page that says how to ask for an invitation. Shown on the sign-in screen of this install."
+}
+
 variable "create_bedrock_dashboard" {
   type    = bool
   default = true
@@ -191,6 +197,7 @@ module "amplify" {
   fragments_table_arn    = module.data_dynamodb.table_arn
   vendor_keys_param_name = module.secrets.vendor_keys_param_name
   vendor_keys_param_arn  = module.secrets.vendor_keys_param_arn
+  access_contact_url     = var.access_contact_url
   avatar_s3_bucket_name  = local.avatar_bucket_name
 }
 
