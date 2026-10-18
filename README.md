@@ -50,7 +50,7 @@ Docker Compose on this computer. Postgres, local sign-in, and Ollama come up tog
 - Enough free memory for a 3B chat model. 8 GB of RAM on the machine is a practical floor.
 - These ports free: `3000` (app), `5432` (Postgres), `4566` (local sign-in), `11434` (Ollama).
 
-No AWS account and no model API key.
+No AWS account is needed. A model API key is not required, but it is strongly recommended: the built-in local models use your own computer's resources and, unless it is very powerful, they are slow. Groq has a free tier and is a good first key. On AWS, use Bedrock or a key, since there is no local model.
 
 ### Run
 

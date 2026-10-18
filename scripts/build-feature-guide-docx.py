@@ -374,7 +374,7 @@ def build() -> None:
     )
     body(
         doc,
-        "Local Ollama models run through Docker in the local installation. The first boot pulls nomic-embed-text for Knowledge embeddings and llama3.2:3b for local chat. They do not need a vendor API key. Their speed depends on available hardware and may be substantially slower than hosted alternatives. Ollama is not part of the cloud configuration.",
+        "Local Ollama models run through Docker in the local installation. The first boot pulls nomic-embed-text for Knowledge embeddings and llama3.2:3b for local chat. They do not need a vendor API key, but a vendor API key (or Bedrock on AWS) is strongly recommended. The local models use the computer's own resources, and unless the machine is very powerful they are slow and will not do well. Their speed depends on available hardware and may be substantially slower than hosted alternatives. Ollama is not part of the cloud configuration.",
     )
     h2(doc, "Voice transcription")
     body(
