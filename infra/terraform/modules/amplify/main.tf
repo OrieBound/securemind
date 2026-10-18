@@ -61,6 +61,12 @@ variable "fragments_table_arn" {
   default = ""
 }
 
+variable "access_contact_url" {
+  type        = string
+  default     = ""
+  description = "Optional page that says how to ask for an invitation. Shown on the sign-in screen."
+}
+
 variable "vendor_keys_param_name" {
   type = string
 }
@@ -326,7 +332,7 @@ resource "aws_amplify_app" "this" {
           - .next/cache/**/*
   EOT
 
-  environment_variables = {
+  environment_variables = merge({
     AUTH_MODE                 = var.auth_mode
     AUTH_ALLOW_LOCAL_FALLBACK = "false"
     COGNITO_USER_POOL_ID      = var.cognito_user_pool_id
@@ -340,7 +346,7 @@ resource "aws_amplify_app" "this" {
     DYNAMODB_FRAGMENTS_TABLE  = var.fragments_table_name
     VENDOR_KEYS_PARAM         = var.vendor_keys_param_name
     AVATAR_S3_BUCKET          = var.avatar_s3_bucket_name
-  }
+  }, var.access_contact_url != "" ? { NEXT_PUBLIC_ACCESS_CONTACT_URL = var.access_contact_url } : {})
 
   tags = {
     Project = "SecureMind"

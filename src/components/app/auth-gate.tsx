@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { AuthSessionProvider } from "@/components/app/auth-session";
 import { InstanceSetupWizard } from "@/components/app/instance-setup-wizard";
 import { ProductMark } from "@/components/app/product-mark";
+import { accessContactUrl } from "@/lib/access-contact";
 import { PRODUCT_NAME, PRODUCT_POSITIONING } from "@/lib/branding";
 import { cn } from "@/lib/utils";
 import { storeClientAccessToken } from "@/lib/client/api-base";
@@ -346,6 +347,7 @@ export function AuthGate({ children }: Props) {
     : "Reset password";
 
   const minPw = setup?.minPasswordLength ?? 8;
+  const contactUrl = accessContactUrl();
 
   return (
     <div className="flex h-dvh items-center justify-center bg-background px-4">
@@ -372,6 +374,23 @@ export function AuthGate({ children }: Props) {
                 : PRODUCT_POSITIONING}
           </p>
         </div>
+
+        {mode === "login" && setup?.edition === "cloud" && !setup.claimAvailable && (
+          <p className="text-ui text-[var(--text-muted)] leading-[var(--leading-body)]">
+            Sign-in is by invitation only.{" "}
+            {contactUrl ? (
+              <>
+                To ask for access, see{" "}
+                <a href={contactUrl} target="_blank" rel="noopener noreferrer" className="text-foreground underline underline-offset-4">
+                  how to reach the person who runs this site
+                </a>
+                .
+              </>
+            ) : (
+              "Ask the person who runs this site for an invitation."
+            )}
+          </p>
+        )}
 
         {mode === "claim" && setup?.claimRequiresCode && !setup.codeConfigured && (
           <p role="alert" className="text-meta text-amber-300/90">
