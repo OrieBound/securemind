@@ -194,6 +194,12 @@ data "aws_iam_policy_document" "boundary" {
     sid = "Directory"
     actions = [
       "cognito-idp:AdminAddUserToGroup",
+      "cognito-idp:AdminDisableUser",
+      "cognito-idp:AdminEnableUser",
+      "cognito-idp:AdminRemoveUserFromGroup",
+      "cognito-idp:AdminResetUserPassword",
+      "cognito-idp:AdminSetUserMFAPreference",
+      "cognito-idp:AdminUserGlobalSignOut",
       "cognito-idp:AdminCreateUser",
       "cognito-idp:AdminGetUser",
       "cognito-idp:AdminListGroupsForUser",

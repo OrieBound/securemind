@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createRemoteJWKSet, jwtVerify } from "jose";
-import { allowLocalFallback, cognitoIssuerCandidates, localIdentityAllowed } from "@/lib/identity";
+import { allowLocalFallback, assertAccessTokenClaims, cognitoIssuerCandidates, localIdentityAllowed } from "@/lib/identity";
 
 /**
  * When AUTH_MODE is cognito (or jwt-hs256), require a valid access token for
@@ -65,7 +65,11 @@ export async function middleware(req: NextRequest) {
         return NextResponse.json({ error: "Cognito is not configured." }, { status: 503 });
       }
       const jwksUrl = process.env.COGNITO_JWKS_URL ?? `${iss.replace(/\/$/, "")}/.well-known/jwks.json`;
-      await jwtVerify(token, jwks(jwksUrl), { issuer: cognitoIssuerCandidates(iss) });
+      const { payload } = await jwtVerify(token, jwks(jwksUrl), { issuer: cognitoIssuerCandidates(iss) });
+      assertAccessTokenClaims(payload as Record<string, unknown>, {
+        clientId: process.env.COGNITO_CLIENT_ID,
+        issuer: iss,
+      });
     } else if (mode === "jwt-hs256") {
       const secret = process.env.AUTH_DEV_JWT_SECRET;
       if (!secret) {

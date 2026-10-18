@@ -1,3 +1,4 @@
+import { recordAudit } from "@/lib/audit-log";
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
@@ -43,6 +44,7 @@ export async function PUT(req: NextRequest) {
 
     if (body.clearPending === true) {
       const policy = await clearPendingProposal();
+      await recordAudit(identity, "security_policy.clear_pending");
       return Response.json({ ...policy, canEdit: true });
     }
 
@@ -64,6 +66,7 @@ export async function PUT(req: NextRequest) {
       piiSensitivity,
       safeTerms,
     });
+    await recordAudit(identity, "security_policy.apply", { detail: `sensitivity=${piiSensitivity}` });
     return Response.json({
       ...result.policy,
       canEdit: true,

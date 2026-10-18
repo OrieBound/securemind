@@ -15,6 +15,7 @@ import {
   ConfirmForgotPasswordCommand,
   AssociateSoftwareTokenCommand,
   GetUserCommand,
+  GlobalSignOutCommand,
   RespondToAuthChallengeCommand,
   SetUserMFAPreferenceCommand,
   VerifySoftwareTokenCommand,
@@ -298,6 +299,11 @@ export async function cognitoMfaCompleteSetup(accessToken: string, code: string)
   } catch (err) {
     throw mapMfaError(err);
   }
+}
+
+/** Ends every session for the token's user (refresh tokens stop working). Best effort for callers. */
+export async function cognitoGlobalSignOut(accessToken: string): Promise<void> {
+  await cip().send(new GlobalSignOutCommand({ AccessToken: accessToken }));
 }
 
 export async function cognitoMfaDisable(accessToken: string): Promise<void> {

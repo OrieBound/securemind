@@ -190,6 +190,22 @@ model SavedItem {
 // ─── Analytics telemetry (sanitized metadata only) ───────────────────────────
 // Never store raw detected values, prompts, or document bodies here.
 
+/// Append-only record of administrative actions. Holds who did what to which account, never a
+/// password, key, token or message text.
+model AuditEvent {
+  id          String   @id @default(cuid())
+  at          DateTime @default(now())
+  actorUserId String?
+  actorEmail  String?
+  actorRole   String?
+  action      String
+  target      String?
+  outcome     String   @default("ok")
+  detail      String?
+
+  @@index([at])
+}
+
 model SecurityEvent {
   id           String   @id @default(cuid())
   userId       String
