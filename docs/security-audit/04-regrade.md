@@ -108,7 +108,7 @@ Still open: F-09 (no TLS shipped), F-11 (19 dependency advisories; untrusted-fil
 
 # Round 3: prod deployment verified (2026-10-18)
 
-What was done, on account `123456789012`, environment `prod`:
+What was done, on the owner's AWS account, environment `prod`:
 
 1. Bootstrap re-applied by the owner (boundary `v2`; deploy role gained the monitoring rights).
 2. App stack applied by the owner, **targeted** to `api`, `amplify`, `auth_cognito`, `data_dynamodb`, `monitoring` (23 added, 10 changed, 8 replaced). The static sites were deliberately excluded: the local `domain.auto.tfvars` marks them disabled while both are live, and a full apply would have switched them off. Reconcile that file before the next untargeted apply.
@@ -188,7 +188,7 @@ No code changed since round 4 (`428bd22` locally and on GitHub). Everything was 
 
 **Live, hosted (HTTP):** anonymous `/api/workspaces` and `/api/admin/audit` 401; forged token 401; anonymous `POST /chat` at the gateway 401; HSTS, CSP, `X-Frame-Options: DENY` and `nosniff` present.
 
-**Live, AWS (read-only, account 123456789012):** `POST /chat` uses the Cognito authorizer; DynamoDB PITR enabled and deletion protection on; Cognito deletion protection ACTIVE; CloudTrail logging; Amplify runs on the separate compute role with no AWS-managed policies attached; 5 alarms, none firing; chat Lambda 16 invocations and 0 errors in 24 h on `nodejs22.x`; avatar and trail buckets block public access; both `/securemind/prod` parameters are SecureString.
+**Live, AWS (read-only, owner's account):** `POST /chat` uses the Cognito authorizer; DynamoDB PITR enabled and deletion protection on; Cognito deletion protection ACTIVE; CloudTrail logging; Amplify runs on the separate compute role with no AWS-managed policies attached; 5 alarms, none firing; chat Lambda 16 invocations and 0 errors in 24 h on `nodejs22.x`; avatar and trail buckets block public access; both `/securemind/prod` parameters are SecureString.
 
 **Gap found:** the alert topic has **0 subscriptions** and **no budget** exists, because `alert_email` was never set. The alarms work but notify nobody.
 

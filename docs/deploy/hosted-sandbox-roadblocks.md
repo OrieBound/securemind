@@ -141,7 +141,7 @@ We did **not** delete `/api/workspaces` or `/api/documents` from the Amplify app
 
 **Symptom:** `admin@example.test` / `<demo-password>!` (and the Floci member/demo aliases) do not work on the Amplify URL. Sign up is visible but Cognito rejects it.
 
-**Cause:** Those users were seeded only by `scripts/floci-cognito-setup.mjs` against **local Floci**. The hosted pool (`us-east-1_zHbYTbq2F`) is invite-only (`allow_admin_create_user_only`) and `list-users` returned **none**. `ADMIN_EMAIL` / `maybeInviteAdmin` was never the product first-user path. `NEW_PASSWORD_REQUIRED` is still unimplemented — do not create users with a temporary password unless that challenge is handled.
+**Cause:** Those users were seeded only by `scripts/floci-cognito-setup.mjs` against **local Floci**. The hosted pool (`us-east-1_XXXXXXXXX`) is invite-only (`allow_admin_create_user_only`) and `list-users` returned **none**. `ADMIN_EMAIL` / `maybeInviteAdmin` was never the product first-user path. `NEW_PASSWORD_REQUIRED` is still unimplemented — do not create users with a temporary password unless that challenge is handled.
 
 **Fix:** Stop seeding product demo users. Empty directory → first visitor claims Owner. Hosted claim requires a high-entropy setup code from `terraform output -raw setup_claim_secret` (not shown on the public page, not the long-term password). On-prem / localhost: email + chosen password only. Public `/api/auth/signup` returns 403; later users are Admin-invited.
 
