@@ -245,6 +245,8 @@ export type SessionPayload = {
 
 export type HostedDriver = {
   put(pk: string, sk: string, item: Record<string, AttributeValue>): Promise<void>;
+  /** Write only if no item has this key. Resolves false when one already exists. */
+  putIfAbsent(pk: string, sk: string, item: Record<string, AttributeValue>): Promise<boolean>;
   get(pk: string, sk: string): Promise<Record<string, AttributeValue> | null>;
   queryPrefix(pk: string, skPrefix: string): Promise<Record<string, AttributeValue>[]>;
   delete(pk: string, sk: string): Promise<void>;
@@ -344,6 +346,25 @@ export function createDynamoDriver(opts?: {
       });
     },
 
+    async putIfAbsent(pk, sk, item) {
+      return withClient(client, async () => {
+        try {
+          await client.send(
+            new PutItemCommand({
+              TableName: tableName,
+              Item: { ...item, [ATTR.workspaceId]: { S: pk }, [ATTR.fragmentId]: { S: sk } },
+              ConditionExpression: "attribute_not_exists(#pk)",
+              ExpressionAttributeNames: { "#pk": ATTR.workspaceId },
+            }),
+          );
+          return true;
+        } catch (err) {
+          if (err instanceof Error && err.name === "ConditionalCheckFailedException") return false;
+          throw err;
+        }
+      });
+    },
+
     async get(pk, sk) {
       return withClient(client, async () => {
         const out = await client.send(
@@ -435,6 +456,11 @@ export function createMemoryDriver(): HostedDriver {
         [ATTR.workspaceId]: { S: pk },
         [ATTR.fragmentId]: { S: sk },
       });
+    },
+    async putIfAbsent(pk, sk, item) {
+      if (rows.has(key(pk, sk))) return false;
+      rows.set(key(pk, sk), { ...item, [ATTR.workspaceId]: { S: pk }, [ATTR.fragmentId]: { S: sk } });
+      return true;
     },
     async get(pk, sk) {
       return rows.get(key(pk, sk)) ?? null;

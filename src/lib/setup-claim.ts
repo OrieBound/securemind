@@ -18,6 +18,8 @@ import {
   completeInstanceSetup,
   getInstanceSetupPersist,
   markSetupClaimUsed,
+  releaseSetupClaim,
+  reserveSetupClaim,
 } from "@/lib/instance-config";
 import {
   isHostedRuntime,
@@ -215,10 +217,16 @@ export async function runFirstAdminClaim(input: ClaimInput): Promise<ClaimResult
     typeof input.passwordConfirm === "string" ? input.passwordConfirm : "";
   assertPassword(password, passwordConfirm);
 
+  // All checks passed: take the one-time lock before creating anything.
+  if (!(await reserveSetupClaim())) {
+    throw new SetupClaimError("This instance already has an owner.", 409);
+  }
+
   let created;
   try {
     created = await claimFirstAdmin({ email, password });
   } catch (err) {
+    await releaseSetupClaim();
     if (err instanceof CognitoAdminError) {
       throw new SetupClaimError(err.message, err.status);
     }

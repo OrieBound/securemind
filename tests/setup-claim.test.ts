@@ -2,6 +2,7 @@
  * First-run claim / setup status. No userId from the body; hosted code never leaks.
  */
 
+import { resetRateLimits } from "@/lib/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
@@ -10,6 +11,8 @@ const cognitoDirectoryIsEmpty = vi.fn();
 const claimFirstAdmin = vi.fn();
 const getInstanceSetupPersist = vi.fn();
 const markSetupClaimUsed = vi.fn();
+const reserveSetupClaim = vi.fn();
+const releaseSetupClaim = vi.fn();
 const completeInstanceSetup = vi.fn();
 const cognitoLogin = vi.fn();
 const ensureUserProfile = vi.fn();
@@ -31,6 +34,8 @@ vi.mock("@/lib/cognito-admin", () => ({
 vi.mock("@/lib/instance-config", () => ({
   getInstanceSetupPersist: (...args: unknown[]) => getInstanceSetupPersist(...args),
   markSetupClaimUsed: (...args: unknown[]) => markSetupClaimUsed(...args),
+  reserveSetupClaim: (...args: unknown[]) => reserveSetupClaim(...args),
+  releaseSetupClaim: (...args: unknown[]) => releaseSetupClaim(...args),
   completeInstanceSetup: (...args: unknown[]) => completeInstanceSetup(...args),
 }));
 
@@ -89,6 +94,9 @@ beforeEach(() => {
   cognitoAdminAvailable.mockReturnValue(true);
   cognitoDirectoryIsEmpty.mockResolvedValue(true);
   markSetupClaimUsed.mockResolvedValue(true);
+  reserveSetupClaim.mockResolvedValue(true);
+  resetRateLimits();
+  releaseSetupClaim.mockResolvedValue(undefined);
   completeInstanceSetup.mockResolvedValue(true);
   cognitoLogin.mockResolvedValue({
     accessToken: "tok",
@@ -177,6 +185,22 @@ describe("POST /api/setup/claim", () => {
       password: "choose-your-own",
     });
     expect(JSON.stringify(claimFirstAdmin.mock.calls)).not.toContain("attacker-sub");
+  });
+
+  it("returns 409 when another claim already holds the reservation", async () => {
+    reserveSetupClaim.mockResolvedValue(false);
+    const { POST } = await import("@/app/api/setup/claim/route");
+    const res = await POST(jsonReq("http://localhost/api/setup/claim", validLocal));
+    expect(res.status).toBe(409);
+    expect(claimFirstAdmin).not.toHaveBeenCalled();
+  });
+
+  it("releases the reservation when creating the owner fails", async () => {
+    claimFirstAdmin.mockRejectedValueOnce(new Error("boom"));
+    const { POST } = await import("@/app/api/setup/claim/route");
+    const res = await POST(jsonReq("http://localhost/api/setup/claim", validLocal));
+    expect(res.status).toBe(502);
+    expect(releaseSetupClaim).toHaveBeenCalled();
   });
 
   it("returns 409 when the directory is not empty", async () => {

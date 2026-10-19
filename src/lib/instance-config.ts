@@ -688,6 +688,34 @@ export async function getInstanceSetupPersist(): Promise<InstanceSetupPersist> {
   }
 }
 
+/**
+ * Reserve the first-run claim so two simultaneous claims cannot both create an Owner.
+ * Exactly one caller gets true. Call releaseSetupClaim() if creating the account then fails.
+ */
+export async function reserveSetupClaim(): Promise<boolean> {
+  if (isHostedRuntime()) {
+    return hostedInstanceConfig().reserveClaim();
+  }
+  await db.instanceConfig.upsert({ where: { id: "singleton" }, create: { id: "singleton" }, update: {} });
+  const res = await db.instanceConfig.updateMany({
+    where: { id: "singleton", setupClaimUsedAt: null },
+    data: { setupClaimUsedAt: new Date() },
+  });
+  return res.count === 1;
+}
+
+export async function releaseSetupClaim(): Promise<void> {
+  try {
+    if (isHostedRuntime()) {
+      await hostedInstanceConfig().releaseClaim();
+      return;
+    }
+    await db.instanceConfig.updateMany({ where: { id: "singleton" }, data: { setupClaimUsedAt: null } });
+  } catch (err) {
+    console.warn("[setup] could not release claim reservation", err instanceof Error ? err.name : err);
+  }
+}
+
 export async function markSetupClaimUsed(ownerUserId: string | null): Promise<boolean> {
   try {
     if (isHostedRuntime()) {
