@@ -1,0 +1,7 @@
+# Used by docker-compose.tls.yml. TLS terminates here; the app is reached on the Compose network.
+# SECUREMIND_TLS_LINE is empty (public certificate) or "tls internal" (local authority, LAN only).
+{$SECUREMIND_DOMAIN} {
+	{$SECUREMIND_TLS_LINE}
+	encode zstd gzip
+	reverse_proxy app:3000
+}

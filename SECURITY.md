@@ -36,7 +36,7 @@ Your own install is yours to run. A report about how an operator configured thei
 
 ## Known limits (read before deploying)
 
-- **The Docker stack is single-user.** It publishes only the app, on `127.0.0.1`. It ships no TLS; add a TLS reverse proxy and a firewall before exposing it. See `docs/deploy/on-prem-docker.md`.
+- **The Docker stack is single-user.** It publishes only the app, on `127.0.0.1`. For other computers, use the included HTTPS front end (`docker-compose.tls.yml`) and a firewall. See `docs/deploy/on-prem-docker.md`.
 - **Admins can impersonate members.** An Admin can set a member's password, which gives access to that member's conversations and documents.
 - **Chat redaction runs in the browser.** The server also replaces SSNs, SINs, card numbers and secrets in any chat request, even one that skips the browser. Other categories (emails, phone numbers, addresses) are only checked in the browser.
 - A security assessment and its open items are in `docs/security-audit/`.

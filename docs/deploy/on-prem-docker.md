@@ -162,7 +162,27 @@ GitHub Actions publishes the app when `main` changes the image inputs:
 ## Network exposure and security defaults
 
 - Only the app is published, on `127.0.0.1:3000`. Postgres, the Floci sign-in service and Ollama are reachable only inside the Compose network.
-- To reach the app from other computers, set `SECUREMIND_BIND_ADDR=0.0.0.0` **and** put a TLS reverse proxy and a firewall in front. The stack ships no TLS; without it, passwords and documents cross the network in clear text.
+- To reach the app from other computers, use the HTTPS front end instead of opening port 3000:
+
+  ```bash
+  echo SECUREMIND_DOMAIN=securemind.example.org >> .env
+  docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
+  ```
+
+  Caddy gets a certificate automatically (needs public DNS and ports 80/443). On a LAN with no public name, also set `SECUREMIND_TLS=internal` and trust Caddy's local authority in each browser. The app turns on HSTS when served this way. Without HTTPS, passwords and documents cross the network in clear text.
+- Containers run with `no-new-privileges`, process and memory limits and rotated logs. The app runs as a non-root user with no Linux capabilities and a read-only filesystem apart from `/data` and scratch paths. Images are pinned by digest; update them deliberately.
 - Optionally set `POSTGRES_PASSWORD` in a `.env` file before the first start. It cannot be changed afterwards without altering the database user.
 - Bedrock through your AWS profile is opt-in (`docker-compose.bedrock.yml`) and mounts only a folder you choose (`./aws-profile`), never your whole `~/.aws`.
 - Treat this stack as single-user. See `docs/security-audit/` for the open items.
+
+## Verifying the published image
+
+Images are published only after CI passes on `main`, are scanned for fixable critical vulnerabilities before they are pushed, carry an SBOM and build provenance, and are signed with Sigstore keyless signing. Besides `:latest` and `:init`, every build has an immutable tag: `:sha-<commit>` and `:init-sha-<commit>`.
+
+Check the signature before running an image ([install cosign](https://docs.sigstore.dev/cosign/system_config/installation/)):
+
+```bash
+cosign verify ghcr.io/oriebound/securemind:latest --certificate-identity-regexp "https://github.com/OrieBound/securemind/.github/workflows/publish-image.yml@.*" --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+To stay on a build you have checked instead of following `latest`, set `SECUREMIND_APP_IMAGE=ghcr.io/oriebound/securemind:sha-<commit>` and `SECUREMIND_INIT_IMAGE=ghcr.io/oriebound/securemind:init-sha-<commit>` in `.env`. Building from source (`docker compose up --build`) avoids trusting the published image at all.

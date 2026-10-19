@@ -14,9 +14,22 @@
 # Tear down (wipes local DB + Floci + Ollama model cache):
 #   docker compose down -v
 
+# Baseline for every container: no privilege escalation, bounded process count, rotated logs.
+x-hardened: &hardened
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 512
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
 services:
   db:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg16@sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a
+    <<: *hardened
+    mem_limit: 1g
     environment:
       POSTGRES_USER: securemind
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-securemind}
@@ -32,7 +45,9 @@ services:
     restart: unless-stopped
 
   floci:
-    image: floci/floci:latest
+    image: floci/floci:latest@sha256:e0b292df4dc9559b7b1bf4f51bdda4bb8e269276236438cd03cae661260ea8a9
+    <<: *hardened
+    mem_limit: 1g
     environment:
       # In-container issuer/JWKS use the Compose service name (not localhost).
       FLOCI_HOSTNAME: floci
@@ -44,7 +59,9 @@ services:
     restart: unless-stopped
 
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:latest@sha256:265409e1d931028a8f7d5a32bcbafddd7bffbc6cc629d77efe9560adf692a5e7
+    <<: *hardened
+    mem_limit: 8g
     volumes:
       - securemind-ollama:/root/.ollama
     healthcheck:
@@ -56,7 +73,8 @@ services:
     restart: unless-stopped
 
   ollama-init:
-    image: ollama/ollama:latest
+    image: ollama/ollama:latest@sha256:265409e1d931028a8f7d5a32bcbafddd7bffbc6cc629d77efe9560adf692a5e7
+    <<: *hardened
     depends_on:
       ollama:
         condition: service_healthy
@@ -72,6 +90,7 @@ services:
     build:
       context: .
       target: init
+    <<: *hardened
     depends_on:
       db:
         condition: service_healthy
@@ -98,6 +117,15 @@ services:
     build:
       context: .
       target: runner
+    <<: *hardened
+    # The app needs no Linux capabilities and writes only to /data and these scratch paths.
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+      - /home/nextjs
+    mem_limit: 2g
     ports:
       # Loopback only by default. Set SECUREMIND_BIND_ADDR=0.0.0.0 only behind TLS and a firewall.
       - "${SECUREMIND_BIND_ADDR:-127.0.0.1}:3000:3000"
