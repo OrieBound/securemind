@@ -107,6 +107,7 @@ export function securityOptionsFromEnv(env: Record<string, string | undefined> =
   return {
     apiOrigins: apiOriginsFromEnv(env),
     dev: env.NODE_ENV !== "production",
-    https: env.SECUREMIND_EDITION === "cloud",
+    // Cloud edition, or a Docker install served over HTTPS (docker-compose.tls.yml sets this).
+    https: env.SECUREMIND_EDITION === "cloud" || env.SECUREMIND_HTTPS === "true",
   };
 }

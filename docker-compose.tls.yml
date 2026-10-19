@@ -1,0 +1,40 @@
+# HTTPS in front of the app with Caddy (automatic certificates).
+#
+#   1. Point a DNS name at this host and open ports 80 and 443 (only those).
+#   2. In .env set SECUREMIND_DOMAIN=securemind.example.org (your name).
+#   3. docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d
+#
+# For a LAN-only name with no public DNS, set SECUREMIND_TLS=internal: Caddy then issues a
+# certificate from its own local authority, which each browser must trust once.
+# The app itself stays bound to 127.0.0.1:3000; only Caddy is reachable from the network.
+
+services:
+  caddy:
+    image: caddy:2.10-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    depends_on:
+      app:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SECUREMIND_DOMAIN: ${SECUREMIND_DOMAIN:?Set SECUREMIND_DOMAIN in .env}
+      SECUREMIND_TLS_LINE: ${SECUREMIND_TLS:+tls ${SECUREMIND_TLS}}
+    volumes:
+      - ./scripts/docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - securemind-caddy-data:/data
+      - securemind-caddy-config:/config
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    restart: unless-stopped
+
+  app:
+    environment:
+      SECUREMIND_HTTPS: "true"
+      APP_PUBLIC_URL: https://${SECUREMIND_DOMAIN:?Set SECUREMIND_DOMAIN in .env}
+
+volumes:
+  securemind-caddy-data:
+  securemind-caddy-config:

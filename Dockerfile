@@ -1,7 +1,8 @@
 # SecureMind on-prem application image (Next.js standalone).
 # Infra (Postgres, Floci, Ollama) uses public images via docker-compose.yml.
 
-FROM node:20-bookworm-slim AS base
+# Node 22 LTS, pinned by digest. Update the digest deliberately (Dependabot proposes it).
+FROM node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 AS base
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 

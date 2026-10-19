@@ -23,3 +23,12 @@ describe("next.config security headers", () => {
     expect(nextConfig.output).toBe("standalone");
   });
 });
+
+import { securityOptionsFromEnv as optionsFromEnv } from "@/lib/security-headers";
+
+describe("HTTPS option for Docker behind the TLS front end", () => {
+  it("turns on HTTPS headers when SECUREMIND_HTTPS is true", () => {
+    expect(optionsFromEnv({ NODE_ENV: "production", SECUREMIND_HTTPS: "true" }).https).toBe(true);
+    expect(optionsFromEnv({ NODE_ENV: "production" }).https).toBe(false);
+  });
+});
