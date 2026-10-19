@@ -5,6 +5,18 @@
 - **Companion files:** [02-findings-register.md](02-findings-register.md), [03-remediation-plan.md](03-remediation-plan.md)
 - **No application code or infrastructure was modified. No secret values appear in these files.**
 
+## Final verdict (2026-10-19, after five rounds)
+
+**PASS for its intended scope.** SecureMind is suitable for production use by **one person or one small, trusted team, on infrastructure they control**: Docker on their own computer, Docker on a trusted LAN behind the included HTTPS front end, or their own AWS account. Every Critical and High finding that applies to that scope is closed, and the AWS install was verified live (see [04-regrade.md](04-regrade.md), round 5). This is a judgment on demonstrated controls, not a guarantee: no software is "fully secure", and product copy should still describe it as risk reduction, not as secure or compliant.
+
+**Out of scope, not a failure:**
+
+- *Docker exposed directly to the public internet.* The Docker install is meant for a computer or a private network, and by default it listens only on the computer itself. If someone puts it on the internet anyway, the sign-in runs on Floci, an AWS emulator that was not built or tested for hostile traffic. Use the AWS install (real Cognito) for anything internet-facing.
+- *Several separate organizations sharing one install.* Each install is one team. Users' data is kept apart from each other, but Admins can see usage across the install and can reset a Member's password (which lets them sign in as that Member). That is normal for one team; it is not a safe way to host unrelated companies on one install. Separate organizations should each run their own install.
+- *AWS WAF.* Declined by the owner on cost (about $5 to $6 a month). The Cognito authorizer, request throttling, the 4xx alarm and the budget alert cover the main risk. Operators who want WAF can add it to their own account.
+
+**Remaining lower-priority items** (none blocks the scope above): transitive dependency advisories (Dependabot proposes updates), regex-based prompt-injection filtering, plaintext data at rest on Docker unless the disk is encrypted, inline scripts allowed by the CSP, two-step verification optional for Admins.
+
 ## What this assessment could and could not verify
 
 | Verified directly | Not verified (stated as such throughout) |
