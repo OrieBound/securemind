@@ -4939,9 +4939,11 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     const agent = workspaces.find(a => a.id === workspaceId);
     if (!agent) return;
 
-    if (activeNav === "thread") {
+    // The page shown is the last work page while Settings is opening or closing, so judge by that.
+    const shownNav = activeNav === "settings" ? lastWorkNavRef.current : activeNav;
+    if (shownNav === "thread") {
       if (workspaceId !== activeWorkspaceId) switchWorkspace(agent);
-    } else if (activeNav === "documents") {
+    } else if (shownNav === "documents") {
       setSelectedDoc(null);
     }
   }, [workspaces, activeNav, activeWorkspaceId, switchWorkspace]);
@@ -6607,8 +6609,9 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       {/* ── Center ───────────────────────────────────────────────────────── */}
       <main className="flex flex-1 min-w-0 flex-col">
 
-        {/* Slim header bar */}
-        <div className="flex items-center gap-3 border-b border-foreground/6 px-5 py-3 shrink-0">
+        {/* Slim header bar. relative z-20 keeps the workspace picker above the chat below it, so
+            its options receive clicks instead of the messages underneath. */}
+        <div className="relative z-20 flex items-center gap-3 border-b border-foreground/6 px-5 py-3 shrink-0">
           <div className="relative flex flex-1 items-center gap-2.5 min-w-0 min-h-[1.75rem]">
             <div className={cn(
               "flex items-center gap-2.5 min-w-0 w-full ease-in-out",
