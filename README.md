@@ -57,19 +57,14 @@ No AWS account is needed. A model API key is not required, but it is strongly re
 ```bash
 git clone https://github.com/OrieBound/securemind.git
 cd securemind
-docker compose -f docker-compose.yml -f docker-compose.pull.yml pull
-docker compose -f docker-compose.yml -f docker-compose.pull.yml up --no-build
+docker compose up --build
 ```
 
 ### Confirm
 
 Open http://localhost:3000 and create the first owner with an email and password you choose. There is no demo account. The first start can sit on the model download for a while. Later starts reuse those models.
 
-To build the app image yourself instead of pulling it:
-
-```bash
-docker compose up --build
-```
+Docker builds the app from this repository on your computer; there is no image to download from the author.
 
 ### Stop
 
