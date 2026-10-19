@@ -177,3 +177,29 @@ Commits `e1f7c88` to `2187b66`. Verified: 132 files / 1035 tests pass, `tsc` cle
 - The first run of the new publish pipeline **blocked** a release: Trivy found fixable criticals in the `init` image (Debian `perl-base`, `proxy-addr` via the `shadcn` CLI, Go stdlib in the `esbuild` binary) and a fake GitHub token from the test corpus inside the app image. Fixed in `df57718` (patched base packages, `shadcn` moved to dev dependencies, `proxy-addr` override, dev dependencies pruned from `init`, sources and fixtures removed from the standalone output in the builder stage so they are in no layer). Both images then scanned clean locally and in CI.
 - Publish run `39188794494` succeeded for both images, with sha tags. `cosign verify` of `ghcr.io/oriebound/securemind:latest` succeeded against the `publish-image.yml` workflow identity.
 - **Open, owner decision:** the GHCR package `securemind` is **private**, so anonymous pulls fail (401) and the documented `docker-compose.pull.yml` path and `cosign verify` do not work for customers. Make the package public, or document building from source as the only path.
+
+---
+
+# Round 5: full re-verification (2026-10-19)
+
+No code changed since round 4 (`428bd22` locally and on GitHub). Everything was re-run fresh.
+
+**Automated:** 132 files / 1035 tests pass; `tsc` clean; `next build` passes; `npm audit --omit=dev` 0 critical (10 high, 9 moderate, all transitive or Prisma tooling); app and bootstrap Terraform validate; compose publishes only `127.0.0.1:3000` and mounts no AWS directory; tracked-tree secret scan finds only marked test fixtures; latest CI and signed publish on `428bd22` succeeded.
+
+**Live, hosted (HTTP):** anonymous `/api/workspaces` and `/api/admin/audit` 401; forged token 401; anonymous `POST /chat` at the gateway 401; HSTS, CSP, `X-Frame-Options: DENY` and `nosniff` present.
+
+**Live, AWS (read-only, account 123456789012):** `POST /chat` uses the Cognito authorizer; DynamoDB PITR enabled and deletion protection on; Cognito deletion protection ACTIVE; CloudTrail logging; Amplify runs on the separate compute role with no AWS-managed policies attached; 5 alarms, none firing; chat Lambda 16 invocations and 0 errors in 24 h on `nodejs22.x`; avatar and trail buckets block public access; both `/securemind/prod` parameters are SecureString.
+
+**Gap found:** the alert topic has **0 subscriptions** and **no budget** exists, because `alert_email` was never set. The alarms work but notify nobody.
+
+## Verdict, round 5
+
+| Deployment and scope | Grade |
+|---|---|
+| AWS, small invite-only team | **GO**, with one operational action: set `ALERT_EMAIL` and re-apply `module.monitoring` so alarms and the $5 budget reach someone |
+| Self-hosted Docker, single user on localhost | **GO** |
+| Self-hosted Docker, small trusted LAN | **CONDITIONAL GO** (HTTPS front end, firewall allowing 80/443 only, disk encryption) |
+| Self-hosted Docker, public internet | **NO-GO** (Floci as identity provider unverified for hostile exposure) |
+| AWS, public or multi-organization | **NO-GO** (no organization boundary; WAF declined) |
+
+Remaining lower-priority items: F-11 transitive advisories (Dependabot now proposes updates), F-12 Floci, F-19 regex injection filter, F-21 plaintext at rest on-prem, F-25 state-bucket KMS, F-29 inline-script CSP, F-31 MFA optional for Admins, F-02 default DB password inside the Compose network, and the static-site setting in the local `domain.auto.tfvars` that disagrees with the live sites.
