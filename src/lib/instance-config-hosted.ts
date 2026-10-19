@@ -220,7 +220,20 @@ export function createHostedInstanceConfigStore(driver: HostedDriver) {
     return next;
   }
 
-  return { get, put, ensure, merge };
+  /** One-time lock for the first-run claim. True for exactly one caller. */
+  async function reserveClaim(): Promise<boolean> {
+    return driver.putIfAbsent(PK, "claim#lock", {
+      [ATTR.userId]: { S: "instance" },
+      [ATTR.category]: { S: CATEGORY },
+      [ATTR.content]: { S: JSON.stringify({ at: new Date().toISOString() }) },
+    });
+  }
+
+  async function releaseClaim(): Promise<void> {
+    await driver.delete(PK, "claim#lock");
+  }
+
+  return { get, put, ensure, merge, reserveClaim, releaseClaim };
 }
 
 export type HostedInstanceConfigStore = ReturnType<typeof createHostedInstanceConfigStore>;
