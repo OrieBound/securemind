@@ -1,3 +1,4 @@
+import { authRateLimit } from "@/lib/rate-limit";
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
@@ -26,6 +27,8 @@ export async function POST(req: NextRequest) {
   }
 
   const email = body.email?.trim().toLowerCase() ?? "";
+  const limited = authRateLimit(req, "forgot", email);
+  if (limited) return limited;
   if (!email) {
     return Response.json({ error: "Email is required." }, { status: 422 });
   }

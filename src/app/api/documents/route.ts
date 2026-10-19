@@ -35,6 +35,7 @@ import { shouldSyncDocumentIngest } from "@/lib/runtime-env";
 import { usesHostedAppStore } from "@/lib/workspaces/store";
 import { ImageExtractError } from "@/lib/image-extract";
 import { inspectImagePrivacy } from "@/lib/image-privacy";
+import { assertUploadQuota, UploadRejected, uploadLimits, withTimeout } from "@/lib/documents/upload-guard";
 
 function listPublicDoc(doc: { content?: string; storageKey?: string | null } & Record<string, unknown>) {
   const { content, storageKey, fragmentIds, chunks, userId, ...rest } = doc;
@@ -100,6 +101,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  try {
+    await assertUploadQuota(userId, file.size);
+  } catch (err) {
+    if (err instanceof UploadRejected) {
+      return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
+    }
+    throw err;
+  }
+
   const existing = await findReusableDocument(userId, file.name, file.size, workspaceId);
 
   if (existing) {
@@ -142,7 +152,11 @@ export async function POST(req: NextRequest) {
   let errorMessage: string | null = null;
 
   try {
-    const extracted = await extractDocument(buffer, mimeType, file.name);
+    const extracted = await withTimeout(
+      extractDocument(buffer, mimeType, file.name),
+      uploadLimits().extractTimeoutMs,
+      "Text extraction took too long and was stopped.",
+    );
     extractedText = extracted.text;
     extractMeta = extracted.extractMeta;
     if (extracted.tables && storageKey) {
@@ -185,6 +199,9 @@ export async function POST(req: NextRequest) {
           textExtracted: false,
         }),
       };
+    } else if (err instanceof UploadRejected) {
+      errorCode = err.code;
+      errorMessage = err.message;
     } else {
       errorCode = "EXTRACT_FAILED";
       errorMessage = err instanceof Error ? err.message : "Text extraction failed";

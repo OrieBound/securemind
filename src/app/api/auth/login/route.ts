@@ -1,3 +1,4 @@
+import { authRateLimit } from "@/lib/rate-limit";
 import { NextRequest } from "next/server";
 import { cognitoLoginStart, cognitoConfigured } from "@/lib/cognito";
 import { completeLogin } from "@/lib/auth-login";
@@ -20,6 +21,8 @@ export async function POST(req: NextRequest) {
   }
 
   const email = body.email?.trim().toLowerCase() ?? "";
+  const limited = authRateLimit(req, "login", email);
+  if (limited) return limited;
   const password = body.password ?? "";
   if (!email || !password) {
     return Response.json({ error: "Email and password are required." }, { status: 422 });

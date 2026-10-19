@@ -1,3 +1,4 @@
+import { authRateLimit } from "@/lib/rate-limit";
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
@@ -22,6 +23,8 @@ export async function POST(req: NextRequest) {
   }
 
   const email = body.email?.trim().toLowerCase() ?? "";
+  const limited = authRateLimit(req, "confirm-forgot", email);
+  if (limited) return limited;
   const code = body.code?.trim() ?? "";
   const newPassword = body.newPassword ?? "";
   const confirmPassword = body.confirmPassword ?? "";

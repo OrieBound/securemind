@@ -46,6 +46,7 @@ vi.mock("@/lib/cognito", async orig => ({
 }));
 
 import { MfaError } from "@/lib/cognito";
+import { resetRateLimits } from "@/lib/rate-limit";
 import { POST as loginPost } from "@/app/api/auth/login/route";
 import { POST as loginMfaPost } from "@/app/api/auth/login/mfa/route";
 import { GET as statusGet } from "@/app/api/auth/mfa/route";
@@ -85,6 +86,7 @@ afterAll(() => {
 });
 
 beforeEach(() => {
+  resetRateLimits();
   process.env.AUTH_MODE = "cognito";
   process.env.COGNITO_CLIENT_ID = "client-1";
   process.env.COGNITO_ISSUER = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_abc";
