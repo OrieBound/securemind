@@ -170,3 +170,10 @@ Commits `e1f7c88` to `2187b66`. Verified: 132 files / 1035 tests pass, `tsc` cle
 | Self-hosted Docker, small trusted LAN | **CONDITIONAL GO** (was NO-GO): only with `docker-compose.tls.yml`, a host firewall allowing 80/443 only, and full-disk encryption. Residual: Floci as identity provider |
 | Self-hosted Docker, public internet | **NO-GO**: Floci as identity provider is unverified for hostile exposure |
 | AWS, public or multi-organization | **NO-GO**: no organization boundary; WAF declined |
+
+## Round 4 deployment and supply-chain check (2026-10-18)
+
+- Prod Lambdas updated (targeted `module.api` apply by the owner; code only) and Amplify job 16 deployed. Live: anonymous and forged requests 401; sign-in limiter returns 429 after 5 failed attempts for one address; public setup status no longer reveals whether the directory is empty.
+- The first run of the new publish pipeline **blocked** a release: Trivy found fixable criticals in the `init` image (Debian `perl-base`, `proxy-addr` via the `shadcn` CLI, Go stdlib in the `esbuild` binary) and a fake GitHub token from the test corpus inside the app image. Fixed in `df57718` (patched base packages, `shadcn` moved to dev dependencies, `proxy-addr` override, dev dependencies pruned from `init`, sources and fixtures removed from the standalone output in the builder stage so they are in no layer). Both images then scanned clean locally and in CI.
+- Publish run `39188794494` succeeded for both images, with sha tags. `cosign verify` of `ghcr.io/oriebound/securemind:latest` succeeded against the `publish-image.yml` workflow identity.
+- **Open, owner decision:** the GHCR package `securemind` is **private**, so anonymous pulls fail (401) and the documented `docker-compose.pull.yml` path and `cosign verify` do not work for customers. Make the package public, or document building from source as the only path.
