@@ -160,6 +160,12 @@ export function terraformEnv() {
     TF_VAR_amplify_branch: process.env.AMPLIFY_BRANCH || "main",
     TF_VAR_embed_dimensions: process.env.EMBED_DIMENSIONS || "1024",
     TF_VAR_auth_mode: process.env.AUTH_MODE || "cognito",
+    // Monitoring and recovery: passed only when set, so the Terraform defaults apply otherwise.
+    ...(process.env.ALERT_EMAIL ? { TF_VAR_alert_email: process.env.ALERT_EMAIL } : {}),
+    ...(process.env.MONTHLY_BUDGET_USD ? { TF_VAR_monthly_budget_usd: process.env.MONTHLY_BUDGET_USD } : {}),
+    ...(process.env.COGNITO_DELETION_PROTECTION
+      ? { TF_VAR_cognito_deletion_protection: process.env.COGNITO_DELETION_PROTECTION }
+      : {}),
   };
 }
 

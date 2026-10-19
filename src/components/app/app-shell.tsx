@@ -6726,6 +6726,68 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
           )}
         </div>
 
+        {/* Phone navigation. The sidebar is hidden below md, so this row is the only way to
+            switch workspace or page there. md:hidden keeps tablet and desktop unchanged. */}
+        {chatWorkspace && (
+          <nav
+            className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-foreground/6 px-3 py-1.5 md:hidden [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)]"
+            aria-label="Workspace sections"
+          >
+            <select
+              aria-label="Workspace"
+              value={chatWorkspace.id}
+              onChange={event => {
+                const next = workspaces.find(w => w.id === event.target.value);
+                if (next) goToWorkspaceNav(onAnalytics || activeNav === "settings" ? "thread" : workNav, next);
+              }}
+              className="shrink-0 rounded-lg border border-border bg-card px-2 py-2 text-xs font-medium"
+            >
+              {workspaces.map(w => (
+                <option key={w.id} value={w.id}>{w.name}</option>
+              ))}
+            </select>
+            {SUB_NAV_ITEMS.map(item => {
+              const active = !onAnalytics && activeNav !== "settings" && workNav === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-current={active ? "page" : undefined}
+                  onClick={() => goToWorkspaceNav(item.id, chatWorkspace)}
+                  className={cn(
+                    "shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium",
+                    active ? "bg-foreground/10 text-foreground" : "text-foreground/60",
+                  )}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              aria-current={activeNav === "workspace-settings" && !onAnalytics ? "page" : undefined}
+              onClick={() => goToWorkspaceNav("workspace-settings", chatWorkspace)}
+              className={cn(
+                "shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium",
+                activeNav === "workspace-settings" && !onAnalytics ? "bg-foreground/10 text-foreground" : "text-foreground/60",
+              )}
+            >
+              Workspace
+            </button>
+            <button
+              type="button"
+              aria-current={activeNav === "settings" || onAnalytics ? "page" : undefined}
+              onClick={() => openSettings()}
+              className={cn(
+                "shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium",
+                activeNav === "settings" || onAnalytics ? "bg-foreground/10 text-foreground" : "text-foreground/60",
+              )}
+            >
+              Settings
+            </button>
+          </nav>
+        )}
+
         {/* Content */}
         <div className="flex flex-1 min-h-0 relative overflow-hidden">
           <div

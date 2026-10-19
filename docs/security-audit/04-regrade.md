@@ -203,3 +203,5 @@ No code changed since round 4 (`428bd22` locally and on GitHub). Everything was 
 | AWS, public or multi-organization | **NO-GO** (no organization boundary; WAF declined) |
 
 Remaining lower-priority items: F-11 transitive advisories (Dependabot now proposes updates), F-12 Floci, F-19 regex injection filter, F-21 plaintext at rest on-prem, F-25 state-bucket KMS, F-29 inline-script CSP, F-31 MFA optional for Admins, F-02 default DB password inside the Compose network, and the static-site setting in the local `domain.auto.tfvars` that disagrees with the live sites.
+
+**Update (2026-10-19):** gap closed. `alert_email` set for the owner's own install only (in the git-ignored `.env.deploy`, never in the repository); targeted `module.monitoring` apply by the owner added a confirmed email subscription on the alert topic and the `securemind-prod-monthly` $5 budget. `infra/scripts/lib.mjs` now passes `ALERT_EMAIL`, `MONTHLY_BUDGET_USD` and `COGNITO_DELETION_PROTECTION` from `.env.deploy`, so a later `npm run infra:up` no longer reverts deletion protection or drops the alerts. AWS, small invite-only team: **GO**, no open operational actions.
