@@ -83,3 +83,45 @@ tfplan*
 
 # Opt-in Bedrock profile folder (docker-compose.bedrock.yml)
 /aws-profile/
+
+# ── Never publish (added after the October 2026 security assessment) ─────────────────────
+# Each rule here was local-only before (.git/info/exclude or a sub-folder ignore file), so a
+# fresh clone or a new contributor would not have had it.
+
+# Editor and assistant working folders (may hold prompts, settings, tokens)
+.claude/
+.vscode/
+.idea/
+*.code-workspace
+
+# Terraform state, plans and variable files: they hold secrets, account numbers and repo IDs
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+*.tfplan
+crash.log
+
+# Database and conversation dumps
+*.dump
+*.sql.gz
+*.sqlite
+*.sqlite3
+
+# Private keys and cloud credential files
+id_rsa*
+id_ed25519*
+*.p8
+*.jks
+*.keystore
+credentials
+.aws/
+.ssh/
+
+# Local probe, scratch and session output
+sample-dev.*
+site-dev.*
+*-dev.out.log
+*-dev.err.log
+scripts/.floci-*.env
