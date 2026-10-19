@@ -103,3 +103,39 @@ Still open: F-09 (no TLS shipped), F-11 (19 dependency advisories; untrusted-fil
 2. F-09: a TLS reverse-proxy recipe for Docker.
 3. F-22/F-23: gate image publishing on CI, sign images, pin Actions by SHA, move to Node 22.
 4. F-20/F-11: upload quotas and isolating the document parsers.
+
+---
+
+# Round 3: prod deployment verified (2026-10-18)
+
+What was done, on account `123456789012`, environment `prod`:
+
+1. Bootstrap re-applied by the owner (boundary `v2`; deploy role gained the monitoring rights).
+2. App stack applied by the owner, **targeted** to `api`, `amplify`, `auth_cognito`, `data_dynamodb`, `monitoring` (23 added, 10 changed, 8 replaced). The static sites were deliberately excluded: the local `domain.auto.tfvars` marks them disabled while both are live, and a full apply would have switched them off. Reconcile that file before the next untargeted apply.
+3. Amplify release job 15 built and deployed commit `db63a35`.
+
+Verified live (read-only AWS calls and HTTP probes):
+
+| Check | Result |
+|---|---|
+| `POST /chat` method | `COGNITO_USER_POOLS`, scope `aws.cognito.signin.user.admin` |
+| Anonymous `POST /chat` to the gateway | 401 |
+| Hosted `/api/workspaces` anonymous / forged token | 401 / 401 |
+| Hosted `/api/admin/audit` anonymous | 401 |
+| Owner sign-in and chat (owner test) | Streams normally; chat Lambda ran 2 invocations, 0 errors |
+| DynamoDB PITR / deletion protection | ENABLED / true |
+| Cognito deletion protection | ACTIVE |
+| CloudTrail `securemind-prod` | Logging |
+| Alarms | 5 created, none in ALARM |
+| Amplify compute role | `securemind-amplify-compute-prod` (separate from the service role) |
+
+Not done: no `alert_email`, so alarms notify nobody and no budget exists; `npm run infra:wire` was not re-run, so the Lambda `ALLOWED_ORIGIN` no longer includes `http://localhost:3000` (production unaffected); no IAM Access Analyzer or full account review.
+
+## Grade, round 3
+
+| Deployment and scope | Grade |
+|---|---|
+| AWS, small invite-only team | **GO**. The four conditions from round 2 are met (bootstrap applied, app stack applied, sign-in and chat verified, deletion protection ACTIVE) and the read-only live checks above passed. Residual risks: no alert email yet, WAF declined (accepted), open Medium/Low items in the register. |
+| Self-hosted Docker, single user on localhost | **GO** (unchanged). |
+| Self-hosted Docker, shared LAN or internet | **NO-GO** (unchanged: F-09, F-12). |
+| AWS, public or multi-organization | **NO-GO** (unchanged). |
