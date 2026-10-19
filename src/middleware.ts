@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createRemoteJWKSet, jwtVerify } from "jose";
-import { allowLocalFallback, assertAccessTokenClaims, cognitoIssuerCandidates, localIdentityAllowed } from "@/lib/identity";
+import { allowLocalFallback, assertAccessTokenClaims, cognitoIssuerCandidates, localIdentityAllowed } from "@/lib/auth-claims";
 
 /**
  * When AUTH_MODE is cognito (or jwt-hs256), require a valid access token for
