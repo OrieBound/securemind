@@ -139,3 +139,34 @@ Not done: no `alert_email`, so alarms notify nobody and no budget exists; `npm r
 | Self-hosted Docker, single user on localhost | **GO** (unchanged). |
 | Self-hosted Docker, shared LAN or internet | **NO-GO** (unchanged: F-09, F-12). |
 | AWS, public or multi-organization | **NO-GO** (unchanged). |
+
+---
+
+# Round 4: remaining hardening (2026-10-18)
+
+Commits `e1f7c88` to `2187b66`. Verified: 132 files / 1035 tests pass, `tsc` clean, `next build` passes, `npm audit --omit=dev` 0 critical (10 high, 9 moderate, all transitive or tooling), all three compose variants valid, both Caddy configurations validate, and the hardened app image (Node 22, read-only, no capabilities, `no-new-privileges`) was built and started locally and served `/` with its security headers. The new publish workflow and the server-side changes have **not yet run** in GitHub or AWS (not pushed or deployed).
+
+| ID | Before | Now |
+|---|---|---|
+| F-04 Owner claim race | Open (Low) | **Closed**: conditional reservation in Postgres and DynamoDB, released on failure |
+| F-09 No TLS for Docker | Open | **Closed** (opt-in): `docker-compose.tls.yml` (Caddy, automatic or internal certificates), HSTS when served over HTTPS |
+| F-12 Floci IdP, unpinned | Open | **Partly closed**: image pinned by digest; app-level sign-in rate limits now apply. Floci itself is still the identity provider and its internals are unverified |
+| F-17 Admin peer takeover | Open | **Closed**: only the Super Admin can change another Admin (Admins can still impersonate Members, documented) |
+| F-18 Client-only redaction | Open | **Closed for high-risk categories**: server replaces SSN, SIN, card numbers and secrets in every chat field; other categories remain browser-side |
+| F-20 Upload/auth limits | Open | **Closed**: zip-bomb checks, per-user daily and storage quotas, extraction time limit, per-address and per-account auth rate limits (per process) |
+| F-22 Image pipeline | Open | **Closed in source**: CI-gated, Trivy-scanned, immutable tags, SBOM + provenance, cosign-signed |
+| F-23 Pinning / EOL Node | Open | **Closed**: Node 22, Actions by SHA, images by digest, Dependabot |
+| F-24, F-26, F-27, F-28, F-30 | Open | **Closed** |
+| F-11 Dependencies | Reduced | Unchanged: 19 transitive advisories; Dependabot now proposes updates |
+| F-02 DB password | Partial | Unchanged: constant default inside the Compose network only (no published port) |
+| F-19, F-21, F-25, F-29, F-31 | Open | Unchanged (P2/P3: regex injection filter, plaintext at rest on-prem, state-bucket KMS, CSP inline scripts, MFA optional) |
+
+## Grade, round 4
+
+| Deployment and scope | Grade |
+|---|---|
+| AWS, small invite-only team | **GO** (after this code is deployed: push, then an Amplify build and a Lambda update) |
+| Self-hosted Docker, single user on localhost | **GO** |
+| Self-hosted Docker, small trusted LAN | **CONDITIONAL GO** (was NO-GO): only with `docker-compose.tls.yml`, a host firewall allowing 80/443 only, and full-disk encryption. Residual: Floci as identity provider |
+| Self-hosted Docker, public internet | **NO-GO**: Floci as identity provider is unverified for hostile exposure |
+| AWS, public or multi-organization | **NO-GO**: no organization boundary; WAF declined |
