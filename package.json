@@ -80,7 +80,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "esbuild": "^0.25.12",
-    "eslint": "^9",
+    "eslint": "^10",
     "eslint-config-next": "16.2.6",
     "happy-dom": "^20.11.1",
     "pdf-lib": "^1.17.1",
