@@ -17,7 +17,7 @@ const nextConfig: NextConfig = {
   // D:\ benchmarks at ~200ms which triggers Next.js's "slow filesystem" warning
   // and causes cache files to land in C:\Temp, breaking cross-drive resolution.
   // In-memory cache = same incremental speed, zero disk I/O overhead, no warning.
-  // To re-enable disk caching: add D:\Projects\web\securemind and its
+  // To re-enable disk caching: add the project folder and its
   // node_modules/.next sub-folders to Windows Defender exclusions (run
   // scripts\fix-defender.ps1 as Administrator), then flip the flag back to true.
   distDir: ".next",
