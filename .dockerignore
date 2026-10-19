@@ -46,3 +46,21 @@ sample-dev.*
 .claude
 *.bak
 *.tfstate*
+
+# Also never in a build context (added after the October 2026 security assessment)
+.terraform
+**/.terraform
+*.tfvars
+*.tfplan
+*.dump
+.idea
+*.code-workspace
+id_rsa*
+id_ed25519*
+*.p8
+*.jks
+*.keystore
+credentials
+.aws
+.ssh
+.github
