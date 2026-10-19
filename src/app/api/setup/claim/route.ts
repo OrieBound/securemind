@@ -1,3 +1,4 @@
+import { authRateLimit } from "@/lib/rate-limit";
 import { NextRequest } from "next/server";
 import { accessCookieHeader } from "@/lib/auth-cookies";
 import { runFirstAdminClaim, SetupClaimError } from "@/lib/setup-claim";
@@ -11,6 +12,9 @@ export async function POST(req: NextRequest) {
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+
+  const limited = authRateLimit(req, "setup-claim", typeof body.email === "string" ? body.email : null);
+  if (limited) return limited;
 
   try {
     const result = await runFirstAdminClaim(body);

@@ -13,6 +13,7 @@
  * The UI polls /api/documents/[id] until status leaves "processing".
  */
 
+import { assertSafeZip, isZip } from "@/lib/documents/zip-guard";
 import { db } from "@/lib/db";
 import { originalExists, readOriginal } from "@/lib/document-storage";
 import { embedDocumentText } from "@/lib/models/embed";
@@ -155,6 +156,8 @@ export async function extractDocument(
   mimeType: string,
   filename = "upload",
 ): Promise<ExtractedDocument> {
+  // docx and xlsx are zip containers: refuse a zip bomb before any parser unpacks it.
+  if (isZip(buffer)) assertSafeZip(buffer);
   if (isSpreadsheetMime(mimeType, filename)) {
     const ext = filename.split(".").pop()?.toLowerCase() ?? "";
     if (mimeType === "text/csv" || ext === "csv") {

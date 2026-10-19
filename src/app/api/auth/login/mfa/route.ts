@@ -1,3 +1,4 @@
+import { authRateLimit } from "@/lib/rate-limit";
 import { NextRequest } from "next/server";
 import { cognitoMfaAvailable, cognitoRespondToMfa, mapMfaError } from "@/lib/cognito";
 import { completeLogin } from "@/lib/auth-login";
@@ -22,6 +23,8 @@ export async function POST(req: NextRequest) {
   }
 
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+  const limited = authRateLimit(req, "login-mfa", email);
+  if (limited) return limited;
   const session = typeof body.session === "string" ? body.session : "";
   const code = typeof body.code === "string" ? body.code.replace(/\s+/g, "") : "";
 
