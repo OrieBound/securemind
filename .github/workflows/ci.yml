@@ -38,6 +38,11 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # The image and Amplify both run next build; catch a broken build (for example a Node-only
+      # import reaching the edge middleware) here instead of at publish or deploy time.
+      - name: Production build
+        run: npm run build
+
       - name: Lint
         continue-on-error: true
         run: npm run lint
