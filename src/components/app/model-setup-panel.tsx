@@ -162,7 +162,7 @@ export function RuntimeStatusBar({
         aria-expanded={open}
         aria-label={open ? "Hide what's running" : "Show what's running"}
         title={open ? "Hide what's running" : "Show what's running"}
-        className="ml-auto mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-md text-foreground/35 hover:bg-foreground/[0.06] hover:text-foreground/70 cursor-pointer"
+        className="ml-auto mt-0.5 flex size-5 pointer-coarse:size-9 shrink-0 items-center justify-center rounded-md text-foreground/35 hover:bg-foreground/[0.06] hover:text-foreground/70 cursor-pointer"
       >
         <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} aria-hidden />
       </button>

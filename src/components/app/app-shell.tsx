@@ -1538,7 +1538,7 @@ const MessageBubble = memo(function MessageBubble({
             onClick={() => onBookmark(message.id)}
             aria-label={message.bookmarked ? "Remove from saved" : "Save conclusion"}
             className={cn(
-              "absolute -top-2 -left-7 rounded-full p-1 transition-all duration-150",
+              "absolute -top-2 -left-7 rounded-full p-1 pointer-coarse:p-2.5 transition-all duration-150",
               "bg-foreground/5 border border-foreground/8 hover:bg-foreground/10",
               hovered || message.bookmarked ? "opacity-100" : "opacity-0 pointer-events-none",
               message.bookmarked && "text-primary",
@@ -1614,7 +1614,7 @@ const MessageBubble = memo(function MessageBubble({
           onClick={() => onBookmark(message.id)}
           aria-label={message.bookmarked ? "Remove from saved" : "Save conclusion"}
           className={cn(
-            "absolute -top-3 right-0 rounded-full p-1 transition-all duration-150",
+            "absolute -top-3 right-0 rounded-full p-1 pointer-coarse:p-2.5 transition-all duration-150",
             "bg-foreground/5 border border-foreground/8 hover:bg-foreground/10",
             hovered || message.bookmarked ? "opacity-100" : "opacity-0 pointer-events-none",
             message.bookmarked && "text-primary",
@@ -1755,6 +1755,19 @@ function WorkspaceSectionHeader({
   );
 }
 
+/** Saved cards show a short plain-text excerpt, so drop the markdown markers it was written with. */
+function previewPlainText(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/(\*\*|__)(.+?)\1/g, "$2")
+    .replace(/(^|[\s(])[*_]([^*_\n]+)[*_](?=[\s).,;:!?]|$)/g, "$1$2")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function BookmarkCard({
   bookmark,
   workspaceEmoji,
@@ -1824,7 +1837,7 @@ function BookmarkCard({
             "text-sm leading-relaxed line-clamp-4",
             bookmark.read ? "text-foreground/55" : "text-foreground/80",
           )}>
-            {bookmark.preview}
+            {previewPlainText(bookmark.preview)}
           </p>
 
           {emojis.length > 0 && (
@@ -2358,9 +2371,16 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       if (settingsChromeRef.current?.contains(target)) return;
       dismissSettingsMenu();
     };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") dismissSettingsMenu();
+    };
 
     document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
   }, [
     activeNav,
     analyticsView,
