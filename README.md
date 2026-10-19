@@ -156,4 +156,4 @@ If you build on SecureMind, a line such as "Based on SecureMind (github.com/Orie
 
 ### Usage data
 
-SecureMind does not report anything to the author. It has no tracking, no usage counter and no phone-home call, so there is no way for the author to know who runs it. The public counts are the ones GitHub shows: stars, forks and package downloads. The securemind.chat website is separate from the software: it counts visits with Google Analytics, but only if a visitor allows it. See its privacy page.
+SecureMind does not report anything to the author. It has no tracking, no usage counter and no phone-home call, so there is no way for the author to know who runs it. The public counts are the ones GitHub shows: stars, forks and package downloads. The securemind.chat website is separate from the software and does not use analytics cookies. See its privacy page.
