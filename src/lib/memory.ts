@@ -69,10 +69,11 @@ export async function storeMemoryFragment(opts: {
   content:      string;
   workspaceId?: string;
   sessionId?:   string;
-  userId?:      string;
+  userId:       string;
   category?:    string;   // "episodic" | "semantic" | "document" — default "episodic"
 }): Promise<string> {
-  const { content, workspaceId, sessionId, userId = "local", category = "episodic" } = opts;
+  const { content, workspaceId, sessionId, userId, category = "episodic" } = opts;
+  if (!userId) throw new Error("userId is required (from getIdentity).");
 
   // Create the record — Prisma manages the cuid
   const fragment = await db.memoryFragment.create({
@@ -111,7 +112,7 @@ const RETRIEVAL_TIMEOUT_MS = 3000;
 export async function retrieveSemanticMemory(
   query:       string,
   workspaceId: string,
-  userId = "local",
+  userId: string,
   limit  = RETRIEVAL_CANDIDATE_LIMIT,
 ): Promise<SemanticHit[]> {
   try {
