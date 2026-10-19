@@ -13,7 +13,7 @@
  */
 
 import { runtimeEdition } from "@/lib/runtime-env";
-import type { ChatMessage } from "./types";
+import type { ChatMessage, StreamFinishCallback } from "./types";
 import { withRealAwsEndpoints } from "@/lib/aws-credentials";
 import {
   getInstanceAwsStatus,
@@ -78,6 +78,7 @@ export async function* streamBedrockChat(
   modelId: string,
   onUsage?: (usage: BedrockTokenUsage) => void,
   signal?: AbortSignal,
+  onFinish?: StreamFinishCallback,
 ): AsyncGenerator<string> {
   const blocked = await bedrockBlockReason();
   if (blocked) throw new Error(blocked);
@@ -145,10 +146,13 @@ export async function* streamBedrockChat(
     throw new Error("Bedrock ConverseStream returned no stream.");
   }
 
+  let truncated = false;
   for await (const event of response.stream) {
+    if (event.messageStop?.stopReason === "max_tokens") truncated = true;
     const delta = event.contentBlockDelta?.delta?.text;
     if (delta) yield delta;
     const usage = usageFromConverseStreamEvent(event);
     if (usage && onUsage) onUsage(usage);
   }
+  onFinish?.({ truncated });
 }

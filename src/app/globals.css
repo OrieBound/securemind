@@ -489,6 +489,49 @@
   overflow-wrap: normal;
   white-space: pre;
 }
+.chat-prose .code-block {
+  margin: 0.85em 0;
+  max-width: 100%;
+  overflow: hidden;
+  border: 1px solid var(--code-border);
+  border-radius: 10px;
+  background: var(--code-bg);
+}
+.chat-prose .code-block-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.3rem 0.5rem 0.3rem 0.85rem;
+  border-bottom: 1px solid var(--code-border);
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+.chat-prose .code-block-lang {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--foreground) 50%, transparent);
+}
+.chat-prose .code-block-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  color: color-mix(in srgb, var(--foreground) 65%, transparent);
+  cursor: pointer;
+}
+.chat-prose .code-block-copy:hover {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--foreground);
+}
+.chat-prose .code-block pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
 .chat-prose table {
   display: block;
   max-width: 100%;

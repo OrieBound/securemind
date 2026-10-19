@@ -1,3 +1,4 @@
+import { MAX_REPLY_TOKENS, type StreamFinishCallback } from "./types";
 /**
  * OpenAI chat provider — direct API key (not Azure).
  */
@@ -45,6 +46,7 @@ export async function* streamOpenAIChat(
   model: string,
   signal?: AbortSignal,
   onUsage?: VendorUsageCallback,
+  onFinish?: StreamFinishCallback,
 ): AsyncGenerator<string> {
   const apiKey = await resolveVendorApiKey("openai");
   if (!apiKey) {
@@ -63,7 +65,7 @@ export async function* streamOpenAIChat(
       messages: toOpenAiMessages(messages),
       stream: true,
       stream_options: { include_usage: true },
-      max_tokens: 1024,
+      max_tokens: MAX_REPLY_TOKENS,
       temperature: 0.8,
     }),
   });
@@ -74,5 +76,5 @@ export async function* streamOpenAIChat(
   }
   if (!res.body) throw new Error("OpenAI returned an empty stream.");
 
-  yield* parseOpenAiSseStream(res.body, onUsage);
+  yield* parseOpenAiSseStream(res.body, onUsage, onFinish);
 }

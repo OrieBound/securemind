@@ -24,7 +24,7 @@ import { streamGoogleChat, hasGoogleRuntime } from "./google";
 import { streamXaiChat, hasXaiRuntime } from "./xai";
 import { ollamaFallbackForMode } from "./router";
 import { resolveRuntimeSecrets } from "@/lib/instance-config";
-import type { ChatMessage, ModelProvider } from "./types";
+import type { ChatMessage, ModelProvider, StreamFinishCallback } from "./types";
 
 export type StreamChatOpts = {
   messages: ChatMessage[];
@@ -33,6 +33,8 @@ export type StreamChatOpts = {
   /** Complexity tier — used only for Ollama fallback model selection. */
   tier?: string;
   onUsage?: (usage: GroqUsage) => void;
+  /** Fired once when the reply ends; `truncated` is true when the model hit its output limit. */
+  onFinish?: StreamFinishCallback;
   /** Fired when the live provider/model is known (including Groq → Ollama fallback). */
   onResolved?: (info: { provider: ModelProvider; model: string }) => void;
   /**
@@ -48,7 +50,7 @@ export type StreamChatOpts = {
  * with Ollama. Ollama runs only when it is the selected provider.
  */
 export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> {
-  const { messages, model, onUsage, tier = "Standard" } = opts;
+  const { messages, model, onUsage, onFinish, tier = "Standard" } = opts;
   let provider = opts.provider;
   const lockProvider = Boolean(opts.lockProvider);
 
@@ -92,7 +94,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
         const bedrockModel =
           opts.provider === "bedrock" ? model : secrets.bedrockChatModel || model;
         opts.onResolved?.({ provider: "bedrock", model: bedrockModel });
-        for await (const delta of streamBedrockChat(messages, bedrockModel, onUsage)) {
+        for await (const delta of streamBedrockChat(messages, bedrockModel, onUsage, undefined, onFinish)) {
           yield delta;
         }
         return;
@@ -124,7 +126,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
     }
     try {
       opts.onResolved?.({ provider: "groq", model });
-      for await (const delta of streamGroqChat(messages, model, onUsage)) {
+      for await (const delta of streamGroqChat(messages, model, onUsage, undefined, onFinish)) {
         yield delta;
       }
       return;
@@ -137,7 +139,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
     if (!(await hasOpenAIRuntime())) {
       throw new Error("OpenAI is not configured. Add an API key in Settings → Models.");
     }
-    for await (const delta of streamOpenAIChat(messages, model, undefined, onUsage)) {
+    for await (const delta of streamOpenAIChat(messages, model, undefined, onUsage, onFinish)) {
       yield delta;
     }
     return;
@@ -147,7 +149,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
     if (!(await hasAnthropicRuntime())) {
       throw new Error("Anthropic is not configured. Add an API key in Settings → Models.");
     }
-    for await (const delta of streamAnthropicChat(messages, model, undefined, onUsage)) {
+    for await (const delta of streamAnthropicChat(messages, model, undefined, onUsage, onFinish)) {
       yield delta;
     }
     return;
@@ -157,7 +159,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
     if (!(await hasGoogleRuntime())) {
       throw new Error("Gemini is not configured. Add an API key in Settings → Models.");
     }
-    for await (const delta of streamGoogleChat(messages, model, undefined, onUsage)) {
+    for await (const delta of streamGoogleChat(messages, model, undefined, onUsage, onFinish)) {
       yield delta;
     }
     return;
@@ -167,7 +169,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
     if (!(await hasXaiRuntime())) {
       throw new Error("Grok is not configured. Add an API key in Settings → Models.");
     }
-    for await (const delta of streamXaiChat(messages, model, undefined, onUsage)) {
+    for await (const delta of streamXaiChat(messages, model, undefined, onUsage, onFinish)) {
       yield delta;
     }
     return;
@@ -186,7 +188,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
     throw new Error(check);
   }
   opts.onResolved?.({ provider: "ollama", model: fallbackModel });
-  for await (const delta of streamOllamaChat(messages, fallbackModel)) {
+  for await (const delta of streamOllamaChat(messages, fallbackModel, undefined, onFinish)) {
     yield delta;
   }
 }

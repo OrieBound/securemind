@@ -1,3 +1,4 @@
+import type { StreamFinishCallback } from "./types";
 /**
  * Google Gemini provider (Google AI Studio / Generative Language API).
  */
@@ -74,6 +75,7 @@ export async function* streamGoogleChat(
   model: string,
   signal?: AbortSignal,
   onUsage?: VendorUsageCallback,
+  onFinish?: StreamFinishCallback,
 ): AsyncGenerator<string> {
   const apiKey = await resolveVendorApiKey("google");
   if (!apiKey) {
@@ -103,6 +105,7 @@ export async function* streamGoogleChat(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let truncated = false;
 
   try {
     while (true) {
@@ -119,8 +122,9 @@ export async function* streamGoogleChat(
         if (!payload) continue;
         try {
           const json = JSON.parse(payload) as {
-            candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+            candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>;
           };
+          if (json.candidates?.[0]?.finishReason === "MAX_TOKENS") truncated = true;
           const usage = usageFromGeminiChunk(json);
           if (usage) onUsage?.(usage);
           const parts = json.candidates?.[0]?.content?.parts ?? [];
@@ -135,4 +139,5 @@ export async function* streamGoogleChat(
   } finally {
     reader.releaseLock();
   }
+  onFinish?.({ truncated });
 }

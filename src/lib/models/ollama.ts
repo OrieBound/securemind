@@ -15,7 +15,7 @@
  *   OLLAMA_EMBED_MODEL    default: nomic-embed-text
  */
 
-import type { ChatMessage } from "./types";
+import type { ChatMessage, StreamFinishCallback } from "./types";
 import { ollamaFallbackForMode } from "./router";
 import { pickInstalledChatModel, probeHardware } from "./local-recommendations";
 
@@ -117,6 +117,7 @@ type OllamaChatLine = {
   model: string;
   message?: { role: string; content: string };
   done: boolean;
+  done_reason?: string;
   error?: string;
 };
 
@@ -128,6 +129,7 @@ export async function* streamOllamaChat(
   messages: ChatMessage[],
   model: string,
   signal?: AbortSignal,
+  onFinish?: StreamFinishCallback,
 ): AsyncGenerator<string> {
   let resp: Response;
 
@@ -142,8 +144,8 @@ export async function* streamOllamaChat(
         stream: true,
         keep_alive: "30m",
         options: {
-          num_ctx: 2048,
-          num_predict: 1024,
+          num_ctx: 4096,
+          num_predict: 2048,
         },
       }),
     });
@@ -196,7 +198,10 @@ export async function* streamOllamaChat(
         yield content;
       }
 
-      if (parsed.done) return;
+      if (parsed.done) {
+        onFinish?.({ truncated: parsed.done_reason === "length" });
+        return;
+      }
     }
   }
 }

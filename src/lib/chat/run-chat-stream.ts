@@ -67,6 +67,7 @@ import {
 } from "@/lib/attachments";
 import type { ChatRequestBody } from "@/lib/chat/types";
 import { sseDataFrame } from "@/lib/chat/sse";
+import { endsInsideCodeFence } from "@/lib/chat/truncation";
 import {
   COST_CAP_EXCEEDED_CODE,
   COST_CAP_EXCEEDED_MESSAGE,
@@ -514,6 +515,7 @@ export async function* iterateChatSseFrames(
   let actualProvider = ctx.provider;
   let actualModel = ctx.model;
   let extraRouteSent = false;
+  let hitOutputLimit = false;
   const usageHold: { current: { promptTokens: number; completionTokens: number } | null } = {
     current: null,
   };
@@ -563,6 +565,7 @@ export async function* iterateChatSseFrames(
       lockProvider: ctx.lockProvider,
       tier: ctx.activeMode,
       onUsage: (u) => { usageHold.current = u; },
+      onFinish: (info) => { hitOutputLimit = info.truncated; },
       onResolved: (info) => {
         actualProvider = info.provider;
         actualModel = info.model;
@@ -618,6 +621,10 @@ export async function* iterateChatSseFrames(
       }
     } else if (!groundingStatus) {
       groundingStatus = "not_applicable";
+    }
+
+    if (hitOutputLimit || endsInsideCodeFence(fullAnswer)) {
+      yield sseDataFrame({ truncated: true });
     }
 
     if (!usageHold.current && actualProvider !== "ollama") {

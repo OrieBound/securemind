@@ -1,3 +1,4 @@
+import { MAX_REPLY_TOKENS, type StreamFinishCallback } from "./types";
 /**
  * Anthropic Messages API provider.
  */
@@ -61,6 +62,7 @@ export async function* streamAnthropicChat(
   model: string,
   signal?: AbortSignal,
   onUsage?: VendorUsageCallback,
+  onFinish?: StreamFinishCallback,
 ): AsyncGenerator<string> {
   const apiKey = await resolveVendorApiKey("anthropic");
   if (!apiKey) {
@@ -78,7 +80,7 @@ export async function* streamAnthropicChat(
     },
     body: JSON.stringify({
       model,
-      max_tokens: 1024,
+      max_tokens: MAX_REPLY_TOKENS,
       stream: true,
       ...(system ? { system } : {}),
       messages: turns,
@@ -95,6 +97,7 @@ export async function* streamAnthropicChat(
   const decoder = new TextDecoder();
   const usageTracker = createAnthropicUsageTracker();
   let buffer = "";
+  let truncated = false;
 
   try {
     while (true) {
@@ -112,8 +115,9 @@ export async function* streamAnthropicChat(
         try {
           const json = JSON.parse(payload) as {
             type?: string;
-            delta?: { type?: string; text?: string };
+            delta?: { type?: string; text?: string; stop_reason?: string | null };
           };
+          if (json.type === "message_delta" && json.delta?.stop_reason === "max_tokens") truncated = true;
           const usage = usageTracker.push(json);
           if (usage) onUsage?.(usage);
           if (json.type === "content_block_delta" && json.delta?.text) {
@@ -127,4 +131,5 @@ export async function* streamAnthropicChat(
   } finally {
     reader.releaseLock();
   }
+  onFinish?.({ truncated });
 }

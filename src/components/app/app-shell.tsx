@@ -174,8 +174,8 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { ChatMarkdown } from "@/components/app/chat-markdown";
+import { CONTINUE_PROMPT, endsInsideCodeFence } from "@/lib/chat/truncation";
 import EmojiPicker, { Theme, type EmojiClickData } from "emoji-picker-react";
 import {
   apiAuthHeaders,
@@ -294,6 +294,8 @@ type ChatMessage = {
   citationAudit?: CitationAuditRef;
   /** When false, hide grounding badge (social / general turns). */
   showGroundingBadge?: boolean;
+  /** The reply stopped at the model's output limit or inside a code block. */
+  truncated?: boolean;
 };
 
 type BookmarkEntry = {
@@ -1382,6 +1384,10 @@ function ThinkingIndicator({
   );
 }
 
+function onChatLinkClick(href: string | undefined) {
+  if (href?.includes("highlight=bedrock")) markBedrockHighlight();
+}
+
 // ─── MessageBubble ────────────────────────────────────────────────────────────
 
 const MessageBubble = memo(function MessageBubble({
@@ -1396,6 +1402,8 @@ const MessageBubble = memo(function MessageBubble({
   isThinking = false,
   thinkingStartedAt,
   onStopThinking,
+  canContinue = false,
+  onContinue,
 }: {
   showTimestamp?: boolean;
   message: ChatMessage;
@@ -1409,6 +1417,9 @@ const MessageBubble = memo(function MessageBubble({
   isThinking?: boolean;
   thinkingStartedAt?: number;
   onStopThinking?: () => void;
+  /** Offer to continue a reply that was cut off (only the latest assistant message). */
+  canContinue?: boolean;
+  onContinue?: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const isUser = message.role === "user";
@@ -1483,27 +1494,10 @@ const MessageBubble = memo(function MessageBubble({
         : displayContent
           ? (
             <div className="chat-prose min-w-0 max-w-full">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                  a: ({ href, children }) => {
-                    const internal = Boolean(href?.startsWith("/") && !href.startsWith("//"));
-                    return (
-                      <a
-                        href={href}
-                        onClick={() => {
-                          if (href?.includes("highlight=bedrock")) markBedrockHighlight();
-                        }}
-                        {...(!internal ? { target: "_blank", rel: "noreferrer noopener" } : {})}
-                      >
-                        {children}
-                      </a>
-                    );
-                  },
-                }}
-              >
-                {isUser ? displayContent : message.content}
-              </ReactMarkdown>
+              <ChatMarkdown
+                content={isUser ? displayContent : message.content}
+                onLinkClick={onChatLinkClick}
+              />
             </div>
           )
           : message.role === "assistant" && isThinking && thinkingStartedAt
@@ -1633,6 +1627,21 @@ const MessageBubble = memo(function MessageBubble({
         <div className="min-w-0 max-w-full overflow-hidden [overflow-wrap:anywhere]">
           {body}
         </div>
+        {canContinue && onContinue && (
+          <div
+            role="status"
+            className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-xl border border-amber-400/25 bg-amber-400/[0.06] px-3 py-2"
+          >
+            <span className="text-[0.78rem] text-foreground/70">This reply was cut off before it finished.</span>
+            <button
+              type="button"
+              onClick={onContinue}
+              className="rounded-lg border border-foreground/12 bg-foreground/[0.06] px-2.5 py-1 text-[0.75rem] font-medium text-foreground/90 hover:bg-foreground/10 cursor-pointer"
+            >
+              Continue
+            </button>
+          </div>
+        )}
 
         {/* Route badge — shows which mode + model handled this turn */}
         {message.routeInfo && !message.error && (
@@ -3188,6 +3197,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   /** When true, keep the thread pinned to the latest tokens (ChatGPT-style). */
   const stickToBottomRef = useRef(true);
   const streamScrollRafRef = useRef<number | null>(null);
+  const glideTopRef = useRef<number | null>(null);
   // Tracks whether the first post-load scroll has happened (instant vs smooth)
   const sessionLoadedRef = useRef(false);
   // Mirrors activeNav for use inside callbacks without stale closures
@@ -3380,17 +3390,31 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     }
     if (!stickToBottomRef.current) return;
 
-    if (isStreaming) {
-      if (streamScrollRafRef.current != null) return;
-      streamScrollRafRef.current = requestAnimationFrame(() => {
-        streamScrollRafRef.current = null;
-        if (stickToBottomRef.current) pinThreadToBottom("auto");
-      });
-      return;
-    }
+    // While streaming, the glide effect below follows the bottom.
+    if (isStreaming) return;
 
     pinThreadToBottom("smooth");
   }, [messages, sessionLoading, isStreaming, pinThreadToBottom]);
+
+  // Glide toward the bottom a little each frame instead of jumping when a chunk lands.
+  useEffect(() => {
+    if (!isStreaming) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let raf = 0;
+    const tick = () => {
+      const el = threadRef.current;
+      if (el && stickToBottomRef.current) {
+        const gap = el.scrollHeight - el.clientHeight - el.scrollTop;
+        if (gap > 0.5) {
+          el.scrollTop += reduce ? gap : Math.max(1, gap * 0.18);
+          glideTopRef.current = el.scrollTop;
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [isStreaming]);
 
   useEffect(() => () => {
     if (streamScrollRafRef.current != null) {
@@ -3407,7 +3431,12 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     const update = () => {
       const distance =
         container.scrollHeight - container.scrollTop - container.clientHeight;
-      stickToBottomRef.current = distance <= NEAR_BOTTOM_PX;
+      // A scroll we made ourselves while gliding says nothing about the reader's intent.
+      const ours = glideTopRef.current;
+      if (ours === null || Math.abs(container.scrollTop - ours) >= 2) {
+        glideTopRef.current = null;
+        stickToBottomRef.current = distance <= NEAR_BOTTOM_PX;
+      }
 
       const containerTop = container.getBoundingClientRect().top;
       const dividers = container.querySelectorAll<HTMLElement>("[data-date-divider]");
@@ -4159,6 +4188,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     const sendStart = Date.now();
     let ttftCaptured = false;
     let asstContent = "";
+    const flushRef: { current: (() => void) | null } = { current: null };
 
     // Pre-wake local Node or remote Lambda before the heavy chat request.
     warmChatConnection();
@@ -4257,6 +4287,19 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       const decoder = new TextDecoder();
       let buf = "";
 
+      // Tokens arrive in tiny bursts. Re-rendering the whole thread for each one makes long
+      // replies stutter, so after the first token they are applied in ~40ms batches.
+      let pendingDelta = "";
+      let flushTimer: ReturnType<typeof setTimeout> | null = null;
+      const flushDelta = () => {
+        if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+        if (!pendingDelta) return;
+        const chunk = pendingDelta;
+        pendingDelta = "";
+        setMessages(p => p.map(m => m.id === asstId ? { ...m, content: m.content + chunk } : m));
+      };
+      flushRef.current = flushDelta;
+
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -4280,7 +4323,12 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
               evidence?: { status: "insufficient" };
               showGroundingBadge?: boolean;
               usage?: { promptTokens: number; completionTokens: number };
+              truncated?: boolean;
             };
+            if (parsed.truncated) {
+              flushDelta();
+              setMessages(p => p.map(m => m.id === asstId ? { ...m, truncated: true } : m));
+            }
             if (parsed.citations?.length) {
               setMessages(p => p.map(m =>
                 m.id === asstId ? { ...m, citations: parsed.citations } : m,
@@ -4387,15 +4435,16 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                     : m,
                 ));
               } else {
-                setMessages(p => p.map(m =>
-                  m.id === asstId ? { ...m, content: m.content + parsed.delta } : m,
-                ));
+                pendingDelta += parsed.delta;
+                if (!flushTimer) flushTimer = setTimeout(flushDelta, 40);
               }
             }
           } catch { /* skip malformed line */ }
         }
       }
+      flushDelta();
     } catch (err) {
+      flushRef.current?.();
       if ((err as Error).name === "AbortError") {
         setMessages(p => p.map(m =>
           m.id === asstId
@@ -7396,6 +7445,15 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                           }
                           thinkingStartedAt={streamStartedAt ?? undefined}
                           onStopThinking={cancelStream}
+                          canContinue={
+                            !isStreaming &&
+                            i === messages.length - 1 &&
+                            msg.role === "assistant" &&
+                            !msg.error &&
+                            Boolean(msg.content.trim()) &&
+                            (msg.truncated ?? endsInsideCodeFence(msg.content))
+                          }
+                          onContinue={() => { void handleSend(CONTINUE_PROMPT); }}
                         />
                       </div>
                     );

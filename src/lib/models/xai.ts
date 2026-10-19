@@ -1,3 +1,4 @@
+import { MAX_REPLY_TOKENS, type StreamFinishCallback } from "./types";
 /**
  * xAI Grok provider — OpenAI-compatible API at api.x.ai.
  * Display name is Grok. The provider id stays `xai` so it never collides with Groq.
@@ -69,6 +70,7 @@ export async function* streamXaiChat(
   model: string,
   signal?: AbortSignal,
   onUsage?: VendorUsageCallback,
+  onFinish?: StreamFinishCallback,
 ): AsyncGenerator<string> {
   const apiKey = await resolveVendorApiKey("xai");
   if (!apiKey) {
@@ -87,7 +89,7 @@ export async function* streamXaiChat(
       messages: toXaiMessages(messages),
       stream: true,
       stream_options: { include_usage: true },
-      max_tokens: 1024,
+      max_tokens: MAX_REPLY_TOKENS,
       temperature: 0.8,
     }),
   });
@@ -98,5 +100,5 @@ export async function* streamXaiChat(
   }
   if (!res.body) throw new Error("Grok returned an empty stream.");
 
-  yield* parseOpenAiSseStream(res.body, onUsage);
+  yield* parseOpenAiSseStream(res.body, onUsage, onFinish);
 }

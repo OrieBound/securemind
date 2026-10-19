@@ -1,3 +1,4 @@
+import type { StreamFinishCallback } from "./types";
 /**
  * Parse OpenAI-compatible SSE streams (OpenAI, Groq-style deltas).
  */
@@ -68,10 +69,12 @@ export function usageFromGeminiChunk(json: unknown): VendorUsage | null {
 export async function* parseOpenAiSseStream(
   body: ReadableStream<Uint8Array>,
   onUsage?: VendorUsageCallback,
+  onFinish?: StreamFinishCallback,
 ): AsyncGenerator<string> {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let truncated = false;
 
   try {
     while (true) {
@@ -88,9 +91,10 @@ export async function* parseOpenAiSseStream(
         if (!payload || payload === "[DONE]") continue;
         try {
           const json = JSON.parse(payload) as {
-            choices?: Array<{ delta?: { content?: string | null } }>;
+            choices?: Array<{ delta?: { content?: string | null }; finish_reason?: string | null }>;
             usage?: Record<string, unknown> | null;
           };
+          if (json.choices?.[0]?.finish_reason === "length") truncated = true;
           const usage = onUsage ? usageFromOpenAiChunk(json) : null;
           if (usage) onUsage?.(usage);
           const delta = json.choices?.[0]?.delta?.content;
@@ -103,6 +107,7 @@ export async function* parseOpenAiSseStream(
   } finally {
     reader.releaseLock();
   }
+  onFinish?.({ truncated });
 }
 
 export async function fetchWithTimeout(

@@ -32,6 +32,12 @@ export type TextContent = {
   text: string;
 };
 
+/** Reported by a provider when its reply ends. `truncated` means the model hit its output limit. */
+export type StreamFinishCallback = (info: { truncated: boolean }) => void;
+
+/** Output cap for one chat reply. Long enough for a real code file; the Continue button covers the rest. */
+export const MAX_REPLY_TOKENS = 3072;
+
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
   content: string | (TextContent | ImageContent)[];

@@ -15,7 +15,7 @@
  */
 
 import Groq from "groq-sdk";
-import type { ChatMessage } from "./types";
+import { MAX_REPLY_TOKENS, type ChatMessage, type StreamFinishCallback } from "./types";
 import { TIER_NAMES } from "./router";
 import { tierGuideForPrompt } from "./tier-definitions";
 import { resolveRuntimeSecrets } from "@/lib/instance-config";
@@ -48,6 +48,7 @@ export async function* streamGroqChat(
   model: string,
   onUsage?: (usage: GroqUsage) => void,
   signal?: AbortSignal,
+  onFinish?: StreamFinishCallback,
 ): AsyncGenerator<string> {
   const client = await getClient();
 
@@ -56,7 +57,7 @@ export async function* streamGroqChat(
   const formattedMessages = messages.map(m => ({ role: m.role, content: m.content as any }));
 
   type GroqStreamChunk = {
-    choices: Array<{ delta?: { content?: string | null } }>;
+    choices: Array<{ delta?: { content?: string | null }; finish_reason?: string | null }>;
     usage?: { prompt_tokens: number; completion_tokens: number };
   };
 
@@ -67,7 +68,7 @@ export async function* streamGroqChat(
     stream: true,
     stream_options: { include_usage: true },
     temperature: 0.8,
-    max_tokens: 1024,
+    max_tokens: MAX_REPLY_TOKENS,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any, { signal }) as unknown as AsyncIterable<GroqStreamChunk>;
 
@@ -76,8 +77,10 @@ export async function* streamGroqChat(
   // final response reaches the client.
   let pending = "";
   let inThink  = false;
+  let truncated = false;
 
   for await (const chunk of stream) {
+    if (chunk.choices[0]?.finish_reason === "length") truncated = true;
     const delta = chunk.choices[0]?.delta?.content ?? "";
     const usage = chunk.usage;
 
@@ -116,6 +119,7 @@ export async function* streamGroqChat(
 
   // Flush any remaining safe content after the stream ends
   if (pending && !inThink) yield pending;
+  onFinish?.({ truncated });
 }
 
 /** Sync check for env-only paths (image extract tests). Prefer hasGroqRuntime in chat. */
