@@ -31,6 +31,10 @@ const nextConfig: NextConfig = {
   // repo trees that are not the Next server out of the traced bundle.
   outputFileTracingExcludes: {
     "/*": [
+      // Test files and the synthetic leak corpus (fake keys and tokens) never ship.
+      "src/**/*.test.ts",
+      "src/**/*.test.tsx",
+      "src/lib/regression/**",
       "infra/**",
       "tests/**",
       "docs/**",
@@ -53,6 +57,9 @@ const nextConfig: NextConfig = {
       "node_modules/@next/swc-linux-x64-musl/**",
     ],
     "/api/**": [
+      "src/**/*.test.ts",
+      "src/**/*.test.tsx",
+      "src/lib/regression/**",
       "infra/**",
       "tests/**",
       "docs/**",
