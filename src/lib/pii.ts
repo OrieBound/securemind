@@ -448,6 +448,8 @@ export type ScrubOptions = {
   sensitivity?: number | PiiSensitivityTier | "extreme";
   /** User-declared values that should not be treated as sensitive. */
   safeTerms?: SafeTerm[];
+  /** Only run these categories (server-side gate). Omit to run every category for the tier. */
+  onlyCategories?: readonly string[];
 };
 
 function resolveTier(sensitivity: ScrubOptions["sensitivity"]): PiiSensitivityTier {
@@ -466,7 +468,8 @@ function resolveTier(sensitivity: ScrubOptions["sensitivity"]): PiiSensitivityTi
 export function scrubPII(text: string, options: ScrubOptions = {}): ScrubResult {
   const tier      = resolveTier(options.sensitivity);
   const safeTerms = options.safeTerms ?? [];
-  const patterns  = patternsForTier(tier);
+  const only      = options.onlyCategories;
+  const patterns  = patternsForTier(tier).filter(p => !only || only.includes(p.category));
 
   const allMatches: RawMatch[] = [];
   const safeHits = new Map<string, SafeTermMatch>();
