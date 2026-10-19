@@ -160,14 +160,26 @@ function parseExtraKeys(raw: unknown): ExtraKey[] {
   return out;
 }
 
+/**
+ * A stored secret that no longer decrypts (different instance key) is treated as missing, so one
+ * unreadable key does not hide the rest of the row or block the Admin from saving a new one.
+ */
+function tryDecrypt(value: string | null | undefined): string | null {
+  try {
+    return decryptSecret(value);
+  } catch {
+    console.warn("[instance-config] a stored vendor key could not be decrypted with the current instance key");
+    return null;
+  }
+}
+
 function decryptConfigRow(row: InstanceConfigRow): InstanceConfigRow {
-  const extras = parseExtraKeys(row.extraProviderKeys).map(k => ({
-    ...k,
-    secret: decryptSecret(k.secret) ?? k.secret,
-  }));
+  const extras = parseExtraKeys(row.extraProviderKeys)
+    .map(k => ({ ...k, secret: tryDecrypt(k.secret) ?? "" }))
+    .filter(k => k.secret !== "");
   return {
     ...row,
-    groqApiKey: decryptSecret(row.groqApiKey),
+    groqApiKey: tryDecrypt(row.groqApiKey),
     extraProviderKeys: extras,
   };
 }
@@ -224,9 +236,12 @@ export async function ensureInstanceConfig(): Promise<InstanceConfigRow> {
     const row = await hostedInstanceConfig().ensure();
     return (await getInstanceConfig()) ?? decryptConfigRow(row);
   }
-  return db.instanceConfig.create({
-    data: { id: "singleton", primaryProvider: "auto" },
+  const row = await db.instanceConfig.upsert({
+    where: { id: "singleton" },
+    create: { id: "singleton", primaryProvider: "auto" },
+    update: {},
   });
+  return decryptConfigRow(row);
 }
 
 function bedrockInventoryItem(
