@@ -1,5 +1,7 @@
 name: Publish app image
 
+# Builds the image into the author's PRIVATE GHCR package, for the author's own use. Customers
+# build from source (docker compose up --build); this is not an install path.
 # Publishes only after CI has passed on main (or by hand). Each image is scanned before it is
 # pushed, pushed with an immutable sha tag as well as the moving tag, signed with Sigstore
 # keyless signing (cosign), and carries an SBOM and build provenance.

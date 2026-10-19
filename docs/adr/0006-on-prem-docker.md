@@ -25,7 +25,7 @@ Ship an **on-prem profile** as Docker Compose in the repo root:
 
 **User command:** `docker compose up --build` → http://localhost:3000
 
-**GitHub ships:** source, `Dockerfile`, and Compose. The app image is also published to GHCR (`ghcr.io/<owner>/securemind` and `:init`). `docker-compose.pull.yml` uses those images. `docker compose up --build` still builds from source.
+**GitHub ships:** source, `Dockerfile`, and Compose. Customers build the app image from source (`docker compose up --build`). The author's CI also builds a signed, scanned image in a **private** GHCR package for the author's own use; it is not an install path, and no pull compose file is shipped.
 
 **Developer workflow:** `docker compose up -d db floci ollama ollama-init` + `npm run dev` on the host for fast iteration; full compose before release.
 

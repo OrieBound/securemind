@@ -18,20 +18,15 @@ No AWS account is needed. A model API key is not required, but it is strongly re
 
 ## Quick start
 
-Pull the published app image:
+Build and start from this repository:
 
 ```bash
 git clone https://github.com/OrieBound/securemind.git
 cd securemind
-docker compose -f docker-compose.yml -f docker-compose.pull.yml pull
-docker compose -f docker-compose.yml -f docker-compose.pull.yml up --no-build
-```
-
-Or build from this repo:
-
-```bash
 docker compose up --build
 ```
+
+The app and its first-boot initializer are built on your computer from the source you cloned, so what runs is exactly what you can read. Only the database, sign-in emulator and Ollama come from their own public images, pinned by digest.
 
 First boot takes longer while Compose downloads default Ollama weights and `init` runs:
 
@@ -46,7 +41,7 @@ Optional Groq (faster chat / vision):
 ```bash
 cp .env.onprem.example .env.onprem
 # edit GROQ_API_KEY=…
-docker compose -f docker-compose.yml -f docker-compose.pull.yml up --no-build
+docker compose up --build
 ```
 
 ---
@@ -55,7 +50,7 @@ docker compose -f docker-compose.yml -f docker-compose.pull.yml up --no-build
 
 | Service | Image | Port |
 |---------|-------|------|
-| **app** | `ghcr.io/oriebound/securemind` or built from the repo `Dockerfile` | 3000 |
+| **app** | Built from the repo `Dockerfile` | 3000 |
 | **db** | `pgvector/pgvector:pg16` | 5432 |
 | **floci** | `floci/floci:latest` | 4566 |
 | **ollama** | `ollama/ollama:latest` | 11434 |
@@ -140,14 +135,11 @@ docker compose down -v    # DESTROYS Postgres, Floci, Ollama cache, uploads, enc
 
 ---
 
-## Published image
+## Updating
 
-GitHub Actions publishes the app when `main` changes the image inputs:
+Run `git pull`, then rebuild the initializer and the app as described in [Migrations / upgrades](#migrations--upgrades). Your volumes (database, uploads, models, sign-in directory) are kept.
 
-- `ghcr.io/oriebound/securemind:latest` — the app
-- `ghcr.io/oriebound/securemind:init` — first-boot schema and local sign-in
-
-`docker-compose.pull.yml` uses those tags. `docker compose up --build` builds from this repo instead. Postgres, Floci, and Ollama stay on their own public images.
+To review a release before running it, check out a specific commit (`git checkout <commit>`) instead of following `main`.
 
 ---
 
@@ -174,15 +166,3 @@ GitHub Actions publishes the app when `main` changes the image inputs:
 - Optionally set `POSTGRES_PASSWORD` in a `.env` file before the first start. It cannot be changed afterwards without altering the database user.
 - Bedrock through your AWS profile is opt-in (`docker-compose.bedrock.yml`) and mounts only a folder you choose (`./aws-profile`), never your whole `~/.aws`.
 - Treat this stack as single-user. See `docs/security-audit/` for the open items.
-
-## Verifying the published image
-
-Images are published only after CI passes on `main`, are scanned for fixable critical vulnerabilities before they are pushed, carry an SBOM and build provenance, and are signed with Sigstore keyless signing. Besides `:latest` and `:init`, every build has an immutable tag: `:sha-<commit>` and `:init-sha-<commit>`.
-
-Check the signature before running an image ([install cosign](https://docs.sigstore.dev/cosign/system_config/installation/)):
-
-```bash
-cosign verify ghcr.io/oriebound/securemind:latest --certificate-identity-regexp "https://github.com/OrieBound/securemind/.github/workflows/publish-image.yml@.*" --certificate-oidc-issuer https://token.actions.githubusercontent.com
-```
-
-To stay on a build you have checked instead of following `latest`, set `SECUREMIND_APP_IMAGE=ghcr.io/oriebound/securemind:sha-<commit>` and `SECUREMIND_INIT_IMAGE=ghcr.io/oriebound/securemind:init-sha-<commit>` in `.env`. Building from source (`docker compose up --build`) avoids trusting the published image at all.
