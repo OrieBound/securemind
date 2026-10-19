@@ -468,7 +468,6 @@
   border-radius: 4px;
   padding: 0.12em 0.4em;
   overflow-wrap: anywhere;
-  word-break: break-all;
 }
 .chat-prose pre {
   background: var(--code-bg);
