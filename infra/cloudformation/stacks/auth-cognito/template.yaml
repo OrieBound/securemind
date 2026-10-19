@@ -1,0 +1,129 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  SecureMind Cognito (invite-only). No public self-signup.
+  Outputs feed the api + amplify stacks. Floci remains the local Cognito path.
+
+Parameters:
+  EnvName:
+    Type: String
+    Default: lab
+  CallbackUrls:
+    Type: CommaDelimitedList
+    Default: "http://localhost:3000/,http://localhost:3000/login"
+    Description: Allowed OAuth/app callback URLs (add Amplify URL after hosting exists).
+  LogoutUrls:
+    Type: CommaDelimitedList
+    Default: "http://localhost:3000/,http://localhost:3000/login"
+  CreateDomain:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Optional Cognito hosted UI domain prefix (securemind-<env>-<account>).
+
+Conditions:
+  WantDomain: !Equals [!Ref CreateDomain, "true"]
+
+Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub "securemind-${EnvName}"
+      UsernameAttributes:
+        - email
+      AutoVerifiedAttributes:
+        - email
+      MfaConfiguration: "OFF"
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 12
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+        InviteMessageTemplate:
+          EmailSubject: "Your SecureMind invite"
+          EmailMessage: "You have been invited to SecureMind. Username: {username} Temporary password: {####}"
+      Schema:
+        - Name: email
+          Required: true
+          Mutable: true
+      UserPoolTags:
+        Project: SecureMind
+        Env: !Ref EnvName
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub "securemind-web-${EnvName}"
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      PreventUserExistenceErrors: ENABLED
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      SupportedIdentityProviders:
+        - COGNITO
+      CallbackURLs: !Ref CallbackUrls
+      LogoutURLs: !Ref LogoutUrls
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows:
+        - code
+      AllowedOAuthScopes:
+        - email
+        - openid
+        - profile
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Admin
+      Description: SecureMind administrators (providers, users)
+      UserPoolId: !Ref UserPool
+      Precedence: 1
+
+  MemberGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: Member
+      Description: Ordinary SecureMind users
+      UserPoolId: !Ref UserPool
+      Precedence: 10
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Condition: WantDomain
+    Properties:
+      Domain: !Sub "securemind-${EnvName}-${AWS::AccountId}"
+      UserPoolId: !Ref UserPool
+
+Outputs:
+  UserPoolId:
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub "securemind-${EnvName}-UserPoolId"
+  UserPoolArn:
+    Value: !GetAtt UserPool.Arn
+  ClientId:
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub "securemind-${EnvName}-ClientId"
+  Issuer:
+    Description: Set COGNITO_ISSUER (or derive from region + pool id)
+    Value: !Sub "https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}"
+  HostedUiDomain:
+    Condition: WantDomain
+    Value: !Sub "https://securemind-${EnvName}-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com"
+  StackMode:
+    Value: auth-cognito-invite-only
+  NextSteps:
+    Value: "Invite users with AdminCreateUser; set AUTH_MODE=cognito on api/Amplify; add Amplify URL to CallbackUrls."

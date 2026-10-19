@@ -1,0 +1,176 @@
+# SecureMind — on-prem Docker stack
+#
+#   docker compose up --build
+#
+# First boot runs `ollama-init` (default chat + embed weights) then `init`
+# (schema, Floci Cognito) then starts the app.
+# Open http://localhost:3000 — first visit creates the Owner (your email + password).
+#
+# Host dev (app on npm run dev, infra only in Docker):
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db floci ollama ollama-init
+# (the dev file publishes db/floci/ollama on 127.0.0.1 only; the default stack publishes
+#  nothing but the app, on 127.0.0.1:3000)
+#
+# Tear down (wipes local DB + Floci + Ollama model cache):
+#   docker compose down -v
+
+# Baseline for every container: no privilege escalation, bounded process count, rotated logs.
+x-hardened: &hardened
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 512
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  db:
+    image: pgvector/pgvector:pg16@sha256:7b822b0aac60967beb1ea5e576b8602c94c300a157d187f385ae3e0da199b90a
+    <<: *hardened
+    mem_limit: 1g
+    environment:
+      POSTGRES_USER: securemind
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-securemind}
+      POSTGRES_DB: securemind
+    volumes:
+      - securemind-pgdata:/var/lib/postgresql/data
+      - ./scripts/docker-init-pgvector.sql:/docker-entrypoint-initdb.d/10-pgvector.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U securemind -d securemind"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  floci:
+    image: floci/floci:latest@sha256:e0b292df4dc9559b7b1bf4f51bdda4bb8e269276236438cd03cae661260ea8a9
+    <<: *hardened
+    mem_limit: 1g
+    environment:
+      # In-container issuer/JWKS use the Compose service name (not localhost).
+      FLOCI_HOSTNAME: floci
+      FLOCI_DEFAULT_REGION: us-east-1
+      FLOCI_STORAGE_MODE: persistent
+      FLOCI_STORAGE_PERSISTENT_PATH: /app/data
+    volumes:
+      - securemind-floci:/app/data
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest@sha256:265409e1d931028a8f7d5a32bcbafddd7bffbc6cc629d77efe9560adf692a5e7
+    <<: *hardened
+    mem_limit: 8g
+    volumes:
+      - securemind-ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  ollama-init:
+    image: ollama/ollama:latest@sha256:265409e1d931028a8f7d5a32bcbafddd7bffbc6cc629d77efe9560adf692a5e7
+    <<: *hardened
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      ollama pull nomic-embed-text &&
+      ollama pull llama3.2:3b
+    restart: "no"
+
+  init:
+    build:
+      context: .
+      target: init
+    <<: *hardened
+    depends_on:
+      db:
+        condition: service_healthy
+      floci:
+        condition: service_started
+      ollama-init:
+        condition: service_completed_successfully
+    environment:
+      BOOTSTRAP_DIR: /bootstrap
+      DATABASE_URL: postgresql://securemind:${POSTGRES_PASSWORD:-securemind}@db:5432/securemind
+      DIRECT_URL: postgresql://securemind:${POSTGRES_PASSWORD:-securemind}@db:5432/securemind
+      AWS_ENDPOINT_URL: http://floci:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_EMBED_MODEL: nomic-embed-text
+      OLLAMA_CHAT_MODEL: llama3.2:3b
+    volumes:
+      - securemind-bootstrap:/bootstrap
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      target: runner
+    <<: *hardened
+    # The app needs no Linux capabilities and writes only to /data and these scratch paths.
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+      - /home/nextjs
+    mem_limit: 2g
+    ports:
+      # Loopback only by default. Set SECUREMIND_BIND_ADDR=0.0.0.0 only behind TLS and a firewall.
+      - "${SECUREMIND_BIND_ADDR:-127.0.0.1}:3000:3000"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    env_file:
+      - path: .env.onprem
+        required: false
+    environment:
+      SECUREMIND_EDITION: local
+      SECUREMIND_RUNTIME: docker
+      STORAGE_BACKEND: postgres
+      DATABASE_URL: postgresql://securemind:${POSTGRES_PASSWORD:-securemind}@db:5432/securemind
+      DIRECT_URL: postgresql://securemind:${POSTGRES_PASSWORD:-securemind}@db:5432/securemind
+      AUTH_MODE: cognito
+      AUTH_ALLOW_LOCAL_FALLBACK: "false"
+      AWS_ENDPOINT_URL: http://floci:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_CHAT_MODEL: llama3.2:3b
+      OLLAMA_EMBED_MODEL: nomic-embed-text
+      OLLAMA_FALLBACK_MODEL: llama3.2:3b
+      DOCUMENT_STORAGE_PATH: /data/uploads
+      AVATAR_STORAGE_PATH: /data/avatars
+      INSTANCE_KEY_FILE: /data/instance.key
+      # Bedrock on this computer's AWS profile is opt-in: see docker-compose.bedrock.yml.
+      HOME: /home/nextjs
+    volumes:
+      - securemind-bootstrap:/bootstrap:ro
+      - securemind-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+volumes:
+  securemind-pgdata:
+  securemind-floci:
+  securemind-ollama:
+  securemind-bootstrap:
+  securemind-data:

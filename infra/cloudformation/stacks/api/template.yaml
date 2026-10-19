@@ -1,0 +1,305 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  SecureMind streaming API — API Gateway REST + chat/warm Lambdas.
+  Vector store is DynamoDB (ADR 0007). Relational chat/workspaces still use a
+  Postgres URL when provided (Compose locally; optional Neon hosted).
+
+Parameters:
+  EnvName:
+    Type: String
+    Default: lab
+  AllowedOrigin:
+    Type: String
+    Default: http://localhost:3000
+    Description: CORS allowlist (comma-separated). Add Amplify URL after hosting exists.
+  DatabaseMode:
+    Type: String
+    Default: dynamodb
+    AllowedValues: [dynamodb, external, aurora]
+    Description: dynamodb = hosted vector store (ADR 0007). external = optional Neon relational. aurora = parked.
+  FragmentsTableName:
+    Type: String
+    Default: ""
+  FragmentsTableArn:
+    Type: String
+    Default: ""
+  FragmentsSecretArn:
+    Type: String
+    Default: ""
+  StorageBackend:
+    Type: String
+    Default: dynamodb
+    AllowedValues: [postgres, dynamodb]
+  # Plain env fallback (lab). Prefer DatabaseSecretArn in real deploys.
+  DatabaseUrl:
+    Type: String
+    NoEcho: true
+    Default: ""
+  DatabaseSecretArn:
+    Type: String
+    Default: ""
+    Description: From secrets stack DatabaseUrlSecretArn (preferred).
+  GroqApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+  GroqSecretArn:
+    Type: String
+    Default: ""
+    Description: From secrets stack GroqApiKeySecretArn (optional).
+  AuthMode:
+    Type: String
+    Default: cognito
+    AllowedValues: [cognito, local, jwt-hs256]
+  AuthAllowLocalFallback:
+    Type: String
+    Default: "false"
+  CognitoUserPoolId:
+    Type: String
+    Default: ""
+  CognitoClientId:
+    Type: String
+    Default: ""
+  CognitoRegion:
+    Type: String
+    Default: us-east-1
+  CognitoIssuer:
+    Type: String
+    Default: ""
+  EmbedProvider:
+    Type: String
+    Default: bedrock
+    AllowedValues: [bedrock, ollama]
+  EmbedDimensions:
+    Type: String
+    Default: "1024"
+
+Conditions:
+  HasDatabaseSecret: !Not [!Equals [!Ref DatabaseSecretArn, ""]]
+  HasGroqSecret: !Not [!Equals [!Ref GroqSecretArn, ""]]
+  HasFragmentsTable: !Not [!Equals [!Ref FragmentsTableArn, ""]]
+  HasFragmentsSecret: !Not [!Equals [!Ref FragmentsSecretArn, ""]]
+
+Globals:
+  Function:
+    Runtime: nodejs22.x
+    Architectures: [arm64]
+    Timeout: 120
+    MemorySize: 1024
+    Environment:
+      Variables:
+        NODE_OPTIONS: --enable-source-maps
+        DATABASE_URL: !Ref DatabaseUrl
+        DATABASE_SECRET_ARN: !Ref DatabaseSecretArn
+        DATABASE_MODE: !Ref DatabaseMode
+        AUTH_MODE: !Ref AuthMode
+        AUTH_ALLOW_LOCAL_FALLBACK: !Ref AuthAllowLocalFallback
+        COGNITO_USER_POOL_ID: !Ref CognitoUserPoolId
+        COGNITO_CLIENT_ID: !Ref CognitoClientId
+        COGNITO_REGION: !Ref CognitoRegion
+        COGNITO_ISSUER: !Ref CognitoIssuer
+        EMBED_PROVIDER: !Ref EmbedProvider
+        EMBED_DIMENSIONS: !Ref EmbedDimensions
+        ALLOWED_ORIGIN: !Ref AllowedOrigin
+        GROQ_API_KEY: !Ref GroqApiKey
+        GROQ_SECRET_ARN: !Ref GroqSecretArn
+        DOCUMENT_INGEST_SYNC: "true"
+        ENV_NAME: !Ref EnvName
+        STORAGE_BACKEND: !Ref StorageBackend
+        DYNAMODB_FRAGMENTS_TABLE: !Ref FragmentsTableName
+        FRAGMENTS_TABLE_SECRET_ARN: !Ref FragmentsSecretArn
+
+Resources:
+  SecureMindApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub "securemind-api-${EnvName}"
+      StageName: prod
+      EndpointConfiguration: REGIONAL
+      DefinitionBody:
+        openapi: "3.0.1"
+        info:
+          title: !Sub "SecureMind API (${EnvName})"
+          version: "1.0"
+        paths:
+          /warm:
+            get:
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WarmFunction.Arn}/invocations
+              responses: {}
+            post:
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WarmFunction.Arn}/invocations
+              responses: {}
+            options:
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WarmFunction.Arn}/invocations
+              responses: {}
+          /chat:
+            post:
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2021-11-15/functions/${ChatFunction.Arn}/response-streaming-invocations
+                responseTransferMode: STREAM
+                timeoutInMillis: 900000
+              responses: {}
+            options:
+              x-amazon-apigateway-integration:
+                type: aws_proxy
+                httpMethod: POST
+                uri:
+                  Fn::Sub: arn:aws:apigateway:${AWS::Region}:lambda:path/2021-11-15/functions/${ChatFunction.Arn}/response-streaming-invocations
+                responseTransferMode: STREAM
+              responses: {}
+
+  WarmFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "securemind-warm-${EnvName}"
+      CodeUri: ../../../lambda/warm/
+      Handler: handler.handler
+      Timeout: 10
+      MemorySize: 128
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - handler.ts
+        Minify: true
+        Target: es2022
+        Format: cjs
+        Sourcemap: true
+
+  ChatFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "securemind-chat-${EnvName}"
+      CodeUri: ../../../
+      Handler: lambda/chat/handler.handler
+      Timeout: 300
+      MemorySize: 1536
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - bedrock:InvokeModel
+                - bedrock:InvokeModelWithResponseStream
+                - bedrock:ListFoundationModels
+                - bedrock:ListInferenceProfiles
+              Resource: "*"
+            - !If
+              - HasDatabaseSecret
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref DatabaseSecretArn
+              - !Ref AWS::NoValue
+            - !If
+              - HasGroqSecret
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref GroqSecretArn
+              - !Ref AWS::NoValue
+            - !If
+              - HasFragmentsSecret
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref FragmentsSecretArn
+              - !Ref AWS::NoValue
+            - !If
+              - HasFragmentsTable
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:GetItem
+                  - dynamodb:Query
+                  - dynamodb:DeleteItem
+                  - dynamodb:DescribeTable
+                  - dynamodb:SearchVectors
+                Resource:
+                  - !Ref FragmentsTableArn
+                  - !Sub "${FragmentsTableArn}/index/*"
+              - !Ref AWS::NoValue
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - lambda/chat/handler.ts
+        Minify: true
+        Target: es2022
+        Format: cjs
+        Sourcemap: true
+        External:
+          - "@aws-sdk/client-bedrock"
+          - "@aws-sdk/client-bedrock-runtime"
+          - "@aws-sdk/client-cognito-identity-provider"
+          - "@aws-sdk/client-secrets-manager"
+          - "@aws-sdk/client-sts"
+          - "@aws-sdk/credential-providers"
+        Alias:
+          "@": src
+
+  WarmLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/securemind-warm-${EnvName}"
+      RetentionInDays: 14
+
+  ChatLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/securemind-chat-${EnvName}"
+      RetentionInDays: 14
+
+  WarmFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref WarmFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${SecureMindApi}/*
+
+  ChatFunctionPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ChatFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${SecureMindApi}/*
+
+  ChatFunctionStreamPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ChatFunction
+      Action: lambda:InvokeFunctionWithResponseStream
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${SecureMindApi}/*
+
+Outputs:
+  ApiBaseUrl:
+    Description: Set NEXT_PUBLIC_API_BASE_URL to this value (no trailing slash)
+    Value: !Sub "https://${SecureMindApi}.execute-api.${AWS::Region}.amazonaws.com/prod"
+    Export:
+      Name: !Sub "securemind-${EnvName}-ApiBaseUrl"
+  ChatFunctionArn:
+    Value: !GetAtt ChatFunction.Arn
+  WarmFunctionArn:
+    Value: !GetAtt WarmFunction.Arn
+  DatabaseMode:
+    Value: !Ref DatabaseMode
+  StackMode:
+    Value: hosted-api

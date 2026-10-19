@@ -1,0 +1,132 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  SecureMind Amplify Hosting (UI). Chat/warm stay on API Gateway — set
+  NEXT_PUBLIC_API_BASE_URL to the api stack ApiBaseUrl.
+  EnableConnectRepo=true only when you have a GitHub token + repo URL.
+
+Parameters:
+  EnvName:
+    Type: String
+    Default: lab
+  AppName:
+    Type: String
+    Default: securemind
+  EnableConnectRepo:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: false = create Amplify app shell only (connect repo in console later).
+  Repository:
+    Type: String
+    Default: ""
+    Description: HTTPS GitHub repo URL (required when EnableConnectRepo=true).
+  AccessToken:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: GitHub personal access token with repo scope (never commit).
+  BranchName:
+    Type: String
+    Default: main
+  ApiBaseUrl:
+    Type: String
+    Default: ""
+    Description: From api stack output ApiBaseUrl (no trailing slash).
+  CognitoUserPoolId:
+    Type: String
+    Default: ""
+  CognitoClientId:
+    Type: String
+    Default: ""
+  CognitoRegion:
+    Type: String
+    Default: us-east-1
+  CognitoIssuer:
+    Type: String
+    Default: ""
+  AuthMode:
+    Type: String
+    Default: cognito
+    AllowedValues: [cognito, local]
+
+Conditions:
+  ConnectRepo: !Equals [!Ref EnableConnectRepo, "true"]
+  HasApiBase: !Not [!Equals [!Ref ApiBaseUrl, ""]]
+
+Resources:
+  AmplifyApp:
+    Type: AWS::Amplify::App
+    Properties:
+      Name: !Sub "${AppName}-${EnvName}"
+      Description: SecureMind UI (API stays on API Gateway + Lambda)
+      Platform: WEB_COMPUTE
+      BuildSpec: |
+        version: 1
+        frontend:
+          phases:
+            preBuild:
+              commands:
+                - npm ci
+                - npx prisma generate
+            build:
+              commands:
+                - npm run build
+          artifacts:
+            baseDirectory: .next
+            files:
+              - "**/*"
+          cache:
+            paths:
+              - node_modules/**/*
+              - .next/cache/**/*
+      EnvironmentVariables:
+        - Name: AMPLIFY_MONOREPO_APP_ROOT
+          Value: .
+        - Name: AUTH_MODE
+          Value: !Ref AuthMode
+        - Name: AUTH_ALLOW_LOCAL_FALLBACK
+          Value: "false"
+        - Name: COGNITO_USER_POOL_ID
+          Value: !Ref CognitoUserPoolId
+        - Name: COGNITO_CLIENT_ID
+          Value: !Ref CognitoClientId
+        - Name: COGNITO_REGION
+          Value: !Ref CognitoRegion
+        - Name: COGNITO_ISSUER
+          Value: !Ref CognitoIssuer
+        - Name: NEXT_PUBLIC_API_BASE_URL
+          Value: !If [HasApiBase, !Ref ApiBaseUrl, ""]
+      Repository: !If [ConnectRepo, !Ref Repository, !Ref AWS::NoValue]
+      AccessToken: !If [ConnectRepo, !Ref AccessToken, !Ref AWS::NoValue]
+      Tags:
+        - Key: Project
+          Value: SecureMind
+        - Key: Env
+          Value: !Ref EnvName
+
+  AmplifyBranch:
+    Type: AWS::Amplify::Branch
+    Condition: ConnectRepo
+    Properties:
+      AppId: !GetAtt AmplifyApp.AppId
+      BranchName: !Ref BranchName
+      EnableAutoBuild: true
+      Stage: PRODUCTION
+      EnvironmentVariables:
+        - Name: NEXT_PUBLIC_API_BASE_URL
+          Value: !If [HasApiBase, !Ref ApiBaseUrl, ""]
+
+Outputs:
+  AmplifyAppId:
+    Value: !GetAtt AmplifyApp.AppId
+    Export:
+      Name: !Sub "securemind-${EnvName}-AmplifyAppId"
+  AmplifyDefaultDomain:
+    Description: https://<branch>.<this>/ when a branch is connected
+    Value: !GetAtt AmplifyApp.DefaultDomain
+  AmplifyConsoleHint:
+    Value: !Sub "https://console.aws.amazon.com/amplify/home?region=${AWS::Region}#/${AmplifyApp.AppId}"
+  StackMode:
+    Value: amplify-ui
+  Note:
+    Value: "After first deploy, add the Amplify URL to auth-cognito CallbackUrls and api AllowedOrigin."

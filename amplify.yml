@@ -1,0 +1,28 @@
+# Amplify Hosting buildspec (UI). Amplify runs this after GitHub Actions StartJob.
+# Chat/warm use API Gateway when NEXT_PUBLIC_API_BASE_URL is set.
+# prisma generate still wants a URL string at build time. That dummy is never
+# written into .env.production — hosted runtime has no Postgres.
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - export DATABASE_URL="${DATABASE_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
+        - export DIRECT_URL="${DIRECT_URL:-$DATABASE_URL}"
+        - npm ci
+        - npx prisma generate
+    build:
+      commands:
+        - export DATABASE_URL="${DATABASE_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
+        - export DIRECT_URL="${DIRECT_URL:-$DATABASE_URL}"
+        - node -e "const fs=require('fs'); const k=JSON.parse(fs.readFileSync('infra/scripts/amplify-production-env-keys.json','utf8')); fs.appendFileSync('.env.production', k.map(n=>n+'='+(process.env[n]||'')).join('\n')+'\nSECUREMIND_EDITION=cloud\nSTORAGE_BACKEND=dynamodb\n');"
+        - npm run build
+        - node infra/scripts/amplify-prune-compute.mjs
+  artifacts:
+    baseDirectory: .next
+    files:
+      - "**/*"
+  cache:
+    paths:
+      - node_modules/**/*
+      - .next/cache/**/*

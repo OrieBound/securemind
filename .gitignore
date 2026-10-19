@@ -1,0 +1,85 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+*.pem
+*.key
+*.p12
+*.pfx
+Thumbs.db
+
+# Cursor MCP config contains DB credentials — keep local only.
+# (Rules in .cursor/rules/ ARE safe to commit.)
+.cursor/mcp.json
+
+# debug
+dev-server.err.log
+dev-server.out.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Local database dumps — contain conversation content
+/backups/
+
+# Local originals + generated instance encryption key
+/.data/
+
+# Floci Cognito provisioning output (pool/client ids for local emulator)
+scripts/.floci-cognito.env
+scripts/.floci-dynamodb.env
+
+# Secrets / credentials — never commit these.
+# .env.example is the one exception: it documents required variables with no values.
+.env*
+!.env.example
+!.env.onprem.example
+!infra/env.deploy.example
+# Credential dumps at repo root — not src/lib/aws-credentials.ts (SDK chain helper).
+/aws-credentials*
+/aws-credentials.json
+serviceAccountKey*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+/src/generated/prisma
+infra/terraform/backend.hcl
+infra/terraform/.build/
+COMMIT_MSG.tmp
+
+# Local scratch (never commit)
+cursor-history/
+build-log.txt
+*.log
+*.bak
+scripts/_*.ts
+tfplan*
+
+# Opt-in Bedrock profile folder (docker-compose.bedrock.yml)
+/aws-profile/

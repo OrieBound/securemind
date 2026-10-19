@@ -1,0 +1,360 @@
+// SecureMind — Prisma schema
+// Storage decision and alternatives considered: docs/adr/0002-storage-choice.md
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Workspaces ──────────────────────────────────────────────────────────────
+// A workspace is a bounded operational context — "Production Payments",
+// "Customer Portal", "Internal AWS Platform". It owns its own documents,
+// conversation history, and extracted facts, and nothing crosses between them.
+
+model Workspace {
+  id            String    @id @default(cuid())
+  userId        String    @default("local")
+  name          String    @default("Mindy Locke")
+  emoji         String    @default("🛡️")       // visual identification in the sidebar
+  color         String    @default("#6366f1")
+  context       String?                          // what this workspace covers → system prompt
+  description   String?                          // short UI subtitle
+  modelOverride String?                          // null = use complexity-tier routing
+  isDefault     Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  sessions      Session[]
+  facts         WorkspaceFact[]
+  fragments     MemoryFragment[]
+  documents     Document[]
+  savedItems    SavedItem[]
+  securityEvents  SecurityEvent[]
+  inferenceEvents InferenceEvent[]
+
+  @@index([userId, updatedAt])
+}
+
+// ─── Sessions ────────────────────────────────────────────────────────────────
+// One session = one continuous conversation thread within a workspace.
+
+model Session {
+  id          String   @id @default(cuid())
+  userId      String   @default("local")
+  workspaceId String
+  title       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  messages    Message[]
+  summary     SessionSummary?
+
+  @@index([userId, workspaceId, updatedAt])
+}
+
+// ─── Messages ────────────────────────────────────────────────────────────────
+
+model Message {
+  id        String   @id @default(cuid())
+  sessionId String
+  role      String   // "user" | "assistant"
+  content   String   // sanitized — no raw sensitive values ever stored
+  createdAt DateTime @default(now())
+
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+}
+
+// ─── Session summary ─────────────────────────────────────────────────────────
+
+model SessionSummary {
+  id           String   @id @default(cuid())
+  sessionId    String   @unique
+  summary      String
+  turnsCovered Int      @default(0)
+  updatedAt    DateTime @updatedAt
+
+  session      Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+// ─── Workspace facts ─────────────────────────────────────────────────────────
+// Facts extracted from conversation within one workspace. Scoped so operational
+// detail about one system never leaks into answers about another.
+
+model WorkspaceFact {
+  id          String   @id @default(cuid())
+  workspaceId String
+  userId      String   @default("local")
+  key         String
+  value       String
+  confidence  Float    @default(0.8)
+  source      String?
+  /// User pinned — summarizer must not overwrite.
+  pinned      Boolean  @default(false)
+  /// Soft-hidden from retrieval and prompt injection.
+  forgotten   Boolean  @default(false)
+  correctedAt DateTime?
+  correctedByUserId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, key])
+  @@index([workspaceId])
+}
+
+// ─── Documents ───────────────────────────────────────────────────────────────
+// Uploaded operational knowledge — runbooks, postmortems, architecture notes.
+
+model Document {
+  id             String   @id @default(cuid())
+  userId         String   @default("local")
+  workspaceId    String?                          // which workspace owns this document
+  name           String
+  mimeType       String
+  sizeBytes      Int
+  content        String   // sanitized extracted text — scrubbed at ingest; raw binary never stored
+  description    String?  // user-supplied annotation
+  status         String   @default("processing") // processing | ready | failed
+  chunkCount     Int      @default(0)             // number of embedded MemoryFragment chunks
+  redactionCount Int      @default(0)             // placeholders applied at ingest
+  scrubEvents    Json?                            // [{ category, count }] aggregate at ingest
+  /// Relative key under DOCUMENT_STORAGE_PATH. Original bytes stay off the database.
+  storageKey     String?
+  /// Safe diagnostic code (VISION_UNAVAILABLE, EXTRACT_FAILED, …). Never a raw provider body.
+  processingError String?
+  processedAt    DateTime?
+  /// Sheet names, headers, row counts — no raw cell dumps of unsanitized values.
+  extractMeta    Json?
+  createdAt      DateTime @default(now())
+
+  workspace      Workspace?     @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  fragments      MemoryFragment[]
+
+  @@index([userId])
+  @@index([userId, workspaceId])
+  @@index([userId, status])
+}
+
+// ─── Memory fragments (vector embeddings) ────────────────────────────────────
+// Unified vector store for both conversation memory and document chunks.
+// Requires pgvector: see scripts/add-vector-embedding.sql.
+// nomic-embed-text produces 768-dim vectors.
+
+model MemoryFragment {
+  id          String                     @id @default(cuid())
+  userId      String                     @default("local")
+  workspaceId String?
+  documentId  String?
+  sessionId   String?
+  content     String
+  category    String                     @default("episodic")  // "episodic" | "semantic" | "document"
+  /// Sheet/cell/page locator for citations, e.g. { kind, sheet, range }.
+  provenance  Json?
+  embedding   Unsupported("vector(768)")?                       // set via raw SQL
+  createdAt   DateTime                   @default(now())
+
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+  document    Document?  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([userId, workspaceId])
+  @@index([userId, category])
+}
+
+// ─── Saved items (bookmarks) ─────────────────────────────────────────────────
+// Server-persisted bookmarks. localStorage is only a one-time migration source.
+
+model SavedItem {
+  id          String   @id @default(cuid())
+  userId      String
+  workspaceId String
+  messageId   String
+  label       String
+  preview     String
+  role        String?
+  heavy       Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId, messageId])
+  @@index([userId, workspaceId, createdAt])
+}
+
+// ─── Analytics telemetry (sanitized metadata only) ───────────────────────────
+// Never store raw detected values, prompts, or document bodies here.
+
+/// Append-only record of administrative actions. Holds who did what to which account, never a
+/// password, key, token or message text.
+model AuditEvent {
+  id          String   @id @default(cuid())
+  at          DateTime @default(now())
+  actorUserId String?
+  actorEmail  String?
+  actorRole   String?
+  action      String
+  target      String?
+  outcome     String   @default("ok")
+  detail      String?
+
+  @@index([at])
+}
+
+model SecurityEvent {
+  id           String   @id @default(cuid())
+  userId       String
+  workspaceId  String?
+  at           DateTime @default(now())
+  source       String   // investigate | knowledge_document | image_ocr
+  category     String
+  riskLevel    String   // low | medium | high | critical
+  outcome      String   // redacted | blocked | safe_listed | dismissed | reviewed
+  count        Int      @default(1)
+  sensitivity  String?  // low | balanced | high (legacy extreme → high)
+  resourceKind String?  // message | document
+  resourceId   String?
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([userId, at])
+  @@index([userId, workspaceId, at])
+  @@index([userId, category])
+  @@index([userId, outcome])
+  @@index([userId, source])
+  @@index([at])
+}
+
+// Singleton row for instance-level provider settings (Admin-managed).
+// Secrets are stored server-side only — never returned in full to the browser.
+//
+// AWS credentials are intentionally NOT stored here. They resolve from the
+// deployment environment through the AWS SDK provider chain. Long-lived IAM
+// keys in a database survive backups and cannot be rotated from AWS.
+model InstanceConfig {
+  id                String    @id @default("singleton")
+  /// auto | groq | bedrock | ollama
+  primaryProvider   String    @default("auto")
+  groqApiKey        String?
+  /// Non-secret Bedrock preferences only.
+  /// awsProfile is a pointer into the operator's ~/.aws config, not a credential.
+  awsProfile        String?
+  /// Admin opt-in for billable AWS calls. Env ALLOW_REAL_AWS=false overrides to off.
+  allowRealAws      Boolean   @default(false)
+  bedrockRegion     String?
+  bedrockChatModel  String?
+  /// Extra / future vendor keys: [{ id, kind, label, secret, region?, createdAt }]
+  /// Secrets stay server-side; API returns hints only. AWS keys are refused.
+  extraProviderKeys Json?
+  externalRiskAckAt DateTime?
+  /// Instance PII policy (Admin-owned). low | balanced | high (legacy extreme → high)
+  piiSensitivity    String    @default("balanced")
+  /// SafeTerm[] JSON. Merged with DEFAULT_SAFE_TERMS at scrub time. Never from client request body on ingest.
+  safeTerms         Json?
+  /// Pending stricter (or alternate) policy awaiting Admin accept + optional re-scrub.
+  pendingPiiSensitivity String?
+  pendingSafeTerms      Json?
+  pendingProposedByUserId String?
+  pendingProposedAt     DateTime?
+  pendingNote           String?
+  /// Default monthly estimated spend cap (USD) applied when creating new user profiles.
+  defaultMonthlyCostCapUsd Float @default(10)
+  /// Cognito `sub` (or local userId) of the single protected Owner account.
+  ownerUserId       String?
+  /// First-run wizard finished (data plane choice + risk acknowledgement).
+  setupCompletedAt  DateTime?
+  /// First-admin claim succeeded. Further claims are refused even if listing lags.
+  setupClaimUsedAt  DateTime?
+  /// Recorded vector-plane preference: postgres | dynamodb. Env STORAGE_BACKEND still wins at runtime.
+  storageBackend    String?
+  /// Opt-in speech-to-text: groq | transcribe. Null until the first-mic chooser is saved.
+  voiceSttChoice    String?
+  /// Operator acknowledged that spoken audio is sent to the STT vendor before any text redaction.
+  voiceSttAudioAckAt DateTime?
+  /// Sidebar portal name. Null keeps the SecureMind wordmark.
+  portalName        String?
+  /// Sidebar phrase. Null keeps the default phrase. Empty string hides the line.
+  portalTagline     String?
+  /// Custom portal logo timestamp. Image bytes live on disk or S3, not in this row.
+  portalLogoAt      DateTime?
+  updatedAt         DateTime  @updatedAt
+  updatedByUserId   String?
+}
+
+/// App-owned profile for a Cognito `sub` or local userId. Auth identity stays in Cognito.
+model UserProfile {
+  userId              String    @id
+  email               String?
+  displayName         String?
+  /// Optional unique handle (normalized lowercase). Not the Cognito username.
+  handle              String?   @unique
+  jobTitle            String?
+  bio                 String?
+  timezone            String?
+  locale              String?
+  /// Curated preset id (see src/lib/avatar-presets.ts). Custom photos are files, not this column.
+  avatarPreset        String    @default("shield")
+  themePreference     String?
+  density             String?
+  defaultLanding      String?
+  defaultWorkspaceId  String?
+  preferredModelId    String?
+  notificationPrefs   Json?
+  /// active | invited | suspended | deleted (soft — Cognito disable; no hard wipe yet)
+  status              String    @default("active")
+  /// Monthly estimated inference spend cap in USD. null = unlimited.
+  monthlyCostCapUsd   Float?
+  lastSignInAt        DateTime?
+  deletedAt           DateTime?
+  deletedByUserId     String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([status])
+  @@index([email])
+}
+
+model InferenceEvent {
+  id                String   @id @default(cuid())
+  userId            String
+  workspaceId       String?
+  sessionId         String?
+  messageId         String?
+  at                DateTime @default(now())
+  provider          String
+  model             String
+  tier              String
+  promptTokens      Int?
+  completionTokens  Int?
+  latencyMs         Int?
+  status            String   // ok | error | aborted
+  retrievalHitCount Int      @default(0)
+  citationCount     Int      @default(0)
+  groundingStatus   String?  // not_applicable | grounded | partial | uncited | invalid | declined | insufficient_evidence | n/a
+  estimatedCostUsd  Float?
+  pricingVersion    String?
+  // Turn-policy telemetry (sanitized metadata only — no prompts/chunks)
+  turnMode              String?
+  retrievalAttempted    Boolean  @default(false)
+  retrievalReasonCode   String?
+  candidateCount        Int      @default(0)
+  evidenceCount         Int      @default(0)
+  sourcesCited          Int      @default(0)
+  retrievalMs           Int?
+  insufficientEvidence  Boolean  @default(false)
+  attachmentUsed        Boolean  @default(false)
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: SetNull)
+
+  @@index([userId, at])
+  @@index([userId, workspaceId, at])
+  @@index([userId, model])
+  @@index([userId, groundingStatus])
+  @@index([userId, turnMode])
+  @@index([at])
+}

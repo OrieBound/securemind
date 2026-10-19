@@ -1,0 +1,13 @@
+Incident notes (synthetic) — do not treat as real.
+Reporter jordan.hale@northwind-industries.io called (415) 555-0142.
+Public resolver 8.8.8.8 timed out; internal probe 10.0.4.12 (RFC1918, default safe term).
+Credential paste: AKIAIOSFODNN7EXAMPLE
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+Bank routing-shaped value (not a detection family): 110000000
+Password field (not a detection family): Winter-Lake-94!
+Control trace id (fails Luhn, not a card): 1234567890123456
+Date of birth (not a detection family): 1978-04-12
+the deploy finished and the queue drained normally
+Control ticket INC-1042 closed after review.
+Repeat email jordan.hale@northwind-industries.io appeared in the follow-up.
+Documentation mailbox (shipped Safe term, not a real person): docs@example.com

@@ -1,0 +1,48 @@
+# Dependencies & build output
+node_modules
+.next
+out
+build
+coverage
+
+# Secrets & local env
+.env
+.env.*
+!.env.onprem.example
+scripts/.floci-cognito.env
+
+# Git & IDE
+.git
+.gitignore
+.cursor
+.vscode
+
+# Logs & local artifacts
+.data
+backups
+*.log
+dev-server.*.log
+
+# Infra (cloud-only — not baked into on-prem app image)
+infra
+
+# Docs & tests (not needed in production image)
+docs
+tests
+*.md
+!README.md
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+
+# Opt-in Bedrock profile folder (docker-compose.bedrock.yml)
+/aws-profile/
+
+# Local working files that must never enter a build context
+cursor-history
+build-log.txt
+sample-dev.*
+.claude
+*.bak
+*.tfstate*

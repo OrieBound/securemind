@@ -1,0 +1,227 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Test · Typecheck · Lint
+    runs-on: ubuntu-latest
+
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+      AUTH_MODE: local
+      # IMDS hangs ~5s on GitHub-hosted runners and flakes aws-credentials tests.
+      AWS_EC2_METADATA_DISABLED: "true"
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npm test
+
+      # The image and Amplify both run next build; catch a broken build (for example a Node-only
+      # import reaching the edge middleware) here instead of at publish or deploy time.
+      - name: Production build
+        run: npm run build
+
+      - name: Lint
+        continue-on-error: true
+        run: npm run lint
+
+  terraform-plan:
+    name: Terraform plan
+    needs: test
+    # Off unless the repository variable AWS_DEPLOY_ENABLED is 'true'. A skipped job leaves no
+    # deployment record, so a fork or a public clone sees nothing from this job.
+    if: github.event_name == 'pull_request' && vars.AWS_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ vars.AWS_ENVIRONMENT || 'aws' }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      TF_VAR_env_name: ${{ vars.ENV_NAME || 'sandbox' }}
+      TF_VAR_permissions_boundary_arn: ${{ vars.PERMISSIONS_BOUNDARY_ARN }}
+      TF_VAR_aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
+      # Monitoring and recovery (modules/monitoring). Set these as GitHub Environment variables.
+      # Deletion protection defaults to ACTIVE so a real install cannot lose its users by accident;
+      # set COGNITO_DELETION_PROTECTION=INACTIVE only for a sandbox you tear down.
+      TF_VAR_alert_email: ${{ vars.ALERT_EMAIL || '' }}
+      TF_VAR_monthly_budget_usd: ${{ vars.MONTHLY_BUDGET_USD || '5' }}
+      TF_VAR_cognito_deletion_protection: ${{ vars.COGNITO_DELETION_PROTECTION || 'ACTIVE' }}
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Package Lambdas
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y zip
+          node infra/scripts/package-lambda.mjs
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "1.14.5"
+
+      - name: Configure AWS (OIDC)
+        if: vars.AWS_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Write backend.hcl
+        if: vars.TF_STATE_BUCKET != ''
+        run: |
+          cat > infra/terraform/backend.hcl <<EOF
+          bucket       = "${{ vars.TF_STATE_BUCKET }}"
+          key          = "securemind/${{ vars.ENV_NAME || 'sandbox' }}/terraform.tfstate"
+          region       = "${{ env.AWS_REGION }}"
+          use_lockfile = true
+          encrypt      = true
+          EOF
+
+      - name: Terraform init / plan
+        if: vars.AWS_ROLE_ARN != '' && vars.TF_STATE_BUCKET != ''
+        working-directory: infra/terraform
+        run: |
+          terraform init -backend-config=backend.hcl -input=false
+          terraform plan -input=false -no-color
+
+      - name: Skip plan (OIDC not configured)
+        if: vars.AWS_ROLE_ARN == '' || vars.TF_STATE_BUCKET == ''
+        run: echo "Set GitHub vars AWS_ROLE_ARN, TF_STATE_BUCKET, and AWS_REGION after bootstrap. Skipping plan."
+
+  # Optional. Off unless the repository variable AWS_DEPLOY_ENABLED is 'true'. To use it for your
+  # own AWS account, set that variable, name your GitHub Environment in AWS_ENVIRONMENT (default
+  # 'aws'), and fill in that Environment's variables after bootstrap.
+  deploy:
+    name: Terraform apply · Amplify StartJob
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AWS_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ vars.AWS_ENVIRONMENT || 'aws' }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      TF_VAR_env_name: ${{ vars.ENV_NAME || 'sandbox' }}
+      TF_VAR_permissions_boundary_arn: ${{ vars.PERMISSIONS_BOUNDARY_ARN }}
+      TF_VAR_aws_region: ${{ vars.AWS_REGION || 'us-east-1' }}
+      # Monitoring and recovery (modules/monitoring). Set these as GitHub Environment variables.
+      # Deletion protection defaults to ACTIVE so a real install cannot lose its users by accident;
+      # set COGNITO_DELETION_PROTECTION=INACTIVE only for a sandbox you tear down.
+      TF_VAR_alert_email: ${{ vars.ALERT_EMAIL || '' }}
+      TF_VAR_monthly_budget_usd: ${{ vars.MONTHLY_BUDGET_USD || '5' }}
+      TF_VAR_cognito_deletion_protection: ${{ vars.COGNITO_DELETION_PROTECTION || 'ACTIVE' }}
+      AMPLIFY_BRANCH: main
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Package Lambdas
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y zip
+          node infra/scripts/package-lambda.mjs
+
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: "1.14.5"
+
+      - name: Configure AWS (OIDC)
+        if: vars.AWS_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Write backend.hcl
+        if: vars.TF_STATE_BUCKET != ''
+        run: |
+          cat > infra/terraform/backend.hcl <<EOF
+          bucket       = "${{ vars.TF_STATE_BUCKET }}"
+          key          = "securemind/${{ vars.ENV_NAME || 'sandbox' }}/terraform.tfstate"
+          region       = "${{ env.AWS_REGION }}"
+          use_lockfile = true
+          encrypt      = true
+          EOF
+
+      - name: Terraform apply
+        if: vars.AWS_ROLE_ARN != '' && vars.TF_STATE_BUCKET != ''
+        working-directory: infra/terraform
+        run: |
+          terraform init -backend-config=backend.hcl -input=false
+          terraform apply -auto-approve -input=false
+
+      - name: Wire Amplify origin into API CORS
+        if: vars.AWS_ROLE_ARN != '' && vars.TF_STATE_BUCKET != ''
+        run: |
+          DOMAIN="$(terraform -chdir=infra/terraform output -raw amplify_default_domain)"
+          export AMPLIFY_SITE_URL="https://main.${DOMAIN}"
+          export ENV_NAME="${{ vars.ENV_NAME || 'sandbox' }}"
+          npm run infra:wire
+
+      - name: Trigger Amplify build
+        if: vars.AWS_ROLE_ARN != '' && vars.TF_STATE_BUCKET != ''
+        run: |
+          APP_ID="$(terraform -chdir=infra/terraform output -raw amplify_app_id)"
+          digit_id() { printf '%s' "$1" | tr -d '\r' | grep -oE '[0-9]+' | head -1; }
+          RUNNING="$(digit_id "$(aws amplify list-jobs --app-id "$APP_ID" --branch-name "$AMPLIFY_BRANCH" --query "jobSummaries[?status=='RUNNING' || status=='PENDING'] | [0].jobId" --output text)")"
+          if [ -n "$RUNNING" ]; then
+            JOB_ID="$RUNNING"
+            echo "Amplify already has job $JOB_ID — waiting instead of StartJob"
+          else
+            JOB_ID="$(digit_id "$(aws amplify start-job --app-id "$APP_ID" --branch-name "$AMPLIFY_BRANCH" --job-type RELEASE --query jobSummary.jobId --output text)")"
+            echo "Started Amplify job $JOB_ID on $APP_ID"
+          fi
+          if [ -z "$JOB_ID" ]; then
+            echo "StartJob did not return a numeric job id" >&2
+            exit 1
+          fi
+          node infra/scripts/amplify-wait-job.mjs --app-id "$APP_ID" --branch "$AMPLIFY_BRANCH" --job-id "$JOB_ID"
+
+      - name: Skip apply (OIDC not configured)
+        if: vars.AWS_ROLE_ARN == '' || vars.TF_STATE_BUCKET == ''
+        run: echo "Set the GitHub Environment variables after bootstrap. Skipping apply."
