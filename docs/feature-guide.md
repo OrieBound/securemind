@@ -16,6 +16,8 @@ This is why SecureMind is not offered as a live service that holds keys for the 
 
 One install can have more than one person. The administrator creates those accounts, sets a monthly cost cap for each, and can open Usage, Cost, and Security for the whole install or for one person. Those people share the install’s model sources. They do not each bring a private key that SecureMind stores on someone else’s server.
 
+SecureMind is intended for small to mid-sized teams. One install serves one organization: **1 to 25 people is the recommended range**, and it can serve **up to about 100 people** with a few adjustments (an AWS concurrency limit, a realistic budget, and two-step verification for admins). Separate organizations should each run their own install.
+
 ## Workspaces
 
 A workspace is the boundary for one body of work. Chat, Knowledge, memory, and saved items belong to the workspace that is open. A search in one workspace does not read another.
@@ -44,7 +46,7 @@ Why it is there: the conversation is the place the other controls meet. Review h
 
 The review is a pattern scan. It is not a language model reading the sentence for meaning. It looks for shapes that usually mean a personal detail or a secret. When a shape matches and passes that family’s extra check, the span is replaced before the text is stored or sent. A sentence that describes a person without one of these shapes is not caught. A string that almost matches, but fails the extra check, is left as written.
 
-The same procedure runs in two places. In chat it runs in the browser, on the draft, before the message leaves the page. In Knowledge it runs on the server, after the file’s text is extracted and before that text is saved or made searchable. A picture is turned into text first, then scanned the same way. A voice transcript is scanned when you send it, the same as typed text. The model’s reply is not scanned. Chat is not scanned a second time on the server. Older messages and files are not scanned again when the rule changes, because the original matched text was never kept.
+The same procedure runs in two places. In chat it runs in the browser, on the draft, before the message leaves the page. In Knowledge it runs on the server, after the file’s text is extracted and before that text is saved or made searchable. A picture is turned into text first, then scanned the same way. A voice transcript is scanned when you send it, the same as typed text. The model’s reply is not scanned. On the server, chat is checked again for the highest-risk values only (social security and social insurance numbers, card numbers and secrets), so a request that skips the browser cannot send them. Other details are reviewed in the browser. Older messages and files are not scanned again when the rule changes, because the original matched text was never kept.
 
 ### The steps
 

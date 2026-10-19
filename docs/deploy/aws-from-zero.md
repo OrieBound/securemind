@@ -15,7 +15,7 @@ Install these first. Each link is the official installer for that tool.
 | Tool | Why | Check it worked |
 |---|---|---|
 | [Git](https://git-scm.com/downloads) | Clone the repository | `git --version` |
-| [Node.js 20 or newer](https://nodejs.org/) | Runs the Terraform helper scripts and the app build | `node --version` |
+| [Node.js 22 or newer](https://nodejs.org/) | Runs the Terraform helper scripts and the app build | `node --version` |
 | [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) | Signs you in to AWS and runs commands against it | `aws --version` |
 | [Terraform 1.14 or newer](https://developer.hashicorp.com/terraform/install) | Creates the AWS resources | `terraform -version` |
 
@@ -204,3 +204,21 @@ npm run infra:down -- --yes
 ```
 
 This runs `terraform destroy` against the backend file from Phase 2. It does not remove the GitHub repository variables from Phase 3 or the bootstrap state bucket from Phase 2 — those are small, inert, and safe to leave, or you can delete the Amplify-console connection and the GitHub Environment by hand if you want a completely clean account.
+
+## Alerts, backups and team size
+
+Set these in `.env.deploy` before you apply (they stay in that git-ignored file and in your account):
+
+```bash
+ALERT_EMAIL="you@example.org"          # alarms and the monthly budget notice; confirm the email AWS sends
+MONTHLY_BUDGET_USD="5"                 # raise it to match your team's expected model spend
+COGNITO_DELETION_PROTECTION="ACTIVE"   # a real install: deleting the user pool would delete every user
+```
+
+The install then creates five CloudWatch alarms, a monthly AWS Budget, a CloudTrail trail, and turns on point-in-time recovery and deletion protection for the DynamoDB table. An AWS web application firewall is not included; add one to your own account if you want it.
+
+One install serves one organization. **1 to 25 people is the recommended range**; it can serve **up to about 100**:
+
+- **Concurrency.** Each streaming chat reply holds one Lambda slot for up to five minutes. New AWS accounts are often limited to **10** at once (check with `aws lambda get-account-settings`). For more than about 10 people chatting at the same time, request a higher "Lambda concurrent executions" quota in Service Quotas (free; usually approved within a day or two).
+- **Admins.** Keep two or three Admins, have them turn on two-step verification, and review the audit log.
+- **Spend.** Each person's default model cap is $10 a month; set caps and `MONTHLY_BUDGET_USD` to match.

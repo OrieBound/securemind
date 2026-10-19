@@ -27,7 +27,7 @@ Chat/workspaces/settings still use Prisma in application code. That leftover is 
 - An [AWS account](https://aws.amazon.com/) you administer. Keep the app out of an organization management account.
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) version 2 and a named profile.
 - [Terraform 1.14](https://developer.hashicorp.com/terraform/install) or newer. The state lock is an S3 lock file.
-- [Node.js 20](https://nodejs.org/) or newer.
+- [Node.js 22](https://nodejs.org/) or newer.
 - [Git](https://git-scm.com/downloads), and a GitHub repository you can connect to Amplify.
 - Permission to create IAM, S3, Lambda, API Gateway, Cognito, Amplify, DynamoDB, Systems Manager Parameter Store, and CloudFormation.
 - Strongly recommended, so chat has a model without a vendor key: [Bedrock model access](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-modify.html) for Titan Text Embeddings v2 and a chat model.
@@ -90,6 +90,7 @@ Open the site, enter that code plus the email and password **you** choose. The s
 | `modules/data_dynamodb` | Fragments table + vector index (1024, immutable) |
 | `modules/secrets` | `vendor-keys` parameter (Parameter Store, Advanced tier); optional bootstrap Groq parameter |
 | `modules/api` | API Gateway + streaming `/chat` + `/warm` |
+| `modules/monitoring` | CloudTrail trail and its private bucket, five CloudWatch alarms on an SNS topic, a monthly AWS Budget (`alert_email`, `monthly_budget_usd`, `enable_cloudtrail`) |
 | `modules/amplify` | Amplify app (no GitHub token); the `app-secrets` Parameter Store parameter (instance encryption key and first-run setup code) |
 
 ## Secrets model

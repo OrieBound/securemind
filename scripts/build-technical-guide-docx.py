@@ -176,7 +176,7 @@ def header_footer(section) -> None:
     add_text(hp, "SECUREMIND", size=9, color=VIOLET, bold=True)
     add_text(hp, "   ·   Technical guide", size=9, color=MUTED)
     hp.add_run("\t")
-    add_text(hp, "Version  1.0", size=9, color=MUTED)
+    add_text(hp, "Version  1.1", size=9, color=MUTED)
 
     footer = section.footer
     footer.is_linked_to_previous = False
@@ -196,7 +196,7 @@ def header_footer(section) -> None:
     top_el.set(qn("w:color"), RULE)
     top.append(top_el)
     p_pr.append(top)
-    add_text(fp, "Version 1.0", size=9, color=MUTED)
+    add_text(fp, "Version 1.1", size=9, color=MUTED)
     fp.add_run("\t")
     add_text(fp, "Page ", size=9, color=MUTED)
     add_field(fp, " PAGE ")
@@ -245,12 +245,13 @@ def build() -> None:
     meta = doc.add_paragraph()
     meta.paragraph_format.space_before = Pt(10)
     meta.paragraph_format.space_after = Pt(8)
-    add_text(meta, "Version 1.0", size=11, color=VIOLET, bold=True)
-    add_text(meta, "   ·   29 September 2026", size=11, color=MUTED)
+    add_text(meta, "Version 1.1", size=11, color=VIOLET, bold=True)
+    add_text(meta, "   ·   19 October 2026", size=11, color=MUTED)
 
     body(doc, "This guide explains how SecureMind works. The feature guide describes what a person uses. This one describes the decisions the software makes, the data that moves, and the rules behind complexity tiers and estimated cost.")
     body(doc, "It is written for developers, technical hiring managers, and the person operating an installation. File and function names are included so a reader can find the rule in the source. The prose stands on its own.")
     body(doc, "Detection reduces exposure. It does not certify that content is free of sensitive data, and it is not a compliance program. Cost figures are estimates from recorded tokens and a curated rate table. They are not invoices.")
+    body(doc, "Version 1.1 reflects the October 2026 security assessment and its fixes: authentication that fails closed, a server-side check for the highest-risk values, sign-in and upload limits, an audit log, a locked-down Docker stack, and monitoring and recovery on AWS. The assessment itself is in docs/security-audit/.")
 
     h1(doc, "1  How to read this guide")
     body(doc, "Read section 3 first. It is the path of one chat message. Later sections expand one step of that path. Complexity routing is section 8. Cost is section 15.")
@@ -258,6 +259,7 @@ def build() -> None:
 
     h1(doc, "2  What the system is")
     body(doc, "SecureMind is a single-operator AI workspace. One installation has its own users, vendor keys, detection policy, and stored conversations. It is not a shared public service that holds every customer's keys.")
+    body(doc, "One installation serves one organisation. It is recommended for 1 to 25 people and can serve up to about 100 with the adjustments in section 19. Users' data is kept apart from each other, but Admins act across the whole installation, so separate organisations should each run their own installation.")
     body(doc, "The useful layer is detection before a typed message is sent, workspace memory, Knowledge with citations, complexity-tier model choice, and a visible estimate of spend and detected-risk. The product name in the chrome is SecureMind. The name shown as the speaker in a chat is the workspace name. That name is a label. It is not a personality, and it is not injected into social or general turns.")
     body(doc, "A browser-supplied model id is a preference. The server accepts it only through resolveAllowedModel() in src/lib/models/allowlist.ts. Anything else is ignored and the router's choice stands. The server does not infer a provider from a substring of a client-supplied id.")
 
@@ -268,9 +270,10 @@ def build() -> None:
         ["Step", "What happens"],
         [
             ["1. Composer", "The user can type the next message while a reply is still generating. The queue holds the already-reviewed text and a snapshot of its attachments. Stop aborts the current stream. Switching workspace clears the queue and the composer."],
-            ["2. Detection", "For typed text, pattern detection runs in the browser. A match opens a review dialog. The text that continues is the reviewed replacement. There is no UI path that sends the original matched value."],
-            ["3. Identity", "The server takes the user id from the session (getIdentity). It does not read a user id from the body, the query string, or a client header."],
+            ["2. Detection", "For typed text, pattern detection runs in the browser. A match opens a review dialog. The text that continues is the reviewed replacement. There is no UI path that sends the original matched value. On arrival, the server checks every text field again for the categories that can never be exempted (step 4b)."],
+            ["3. Identity", "The server takes the user id from the session (getIdentity). It does not read a user id from the body, the query string, or a client header. A missing, forged, expired or wrong-client token is refused, and a suspended or deleted account is refused even while its token is still valid."],
             ["4. Cap", "If this user's UTC-month estimate is already at the cap, and the call is billable, the server returns 402 and does not call the model. Local Ollama is not in that cap."],
+            ["4b. Server check", "scrubChatRequestServerSide (src/lib/chat/server-scrub.ts) replaces any US Social Security number, Canadian SIN, card number or secret it finds in the message, history, attachments, summary or facts, so a request that skipped the browser cannot send them. Other categories stay a browser-side review decision."],
             ["5. Turn policy", "decideTurn classifies the message. That decision controls retrieval, citations, and whether workspace context is added to the prompt. It does not choose the model, except when it forces the Micro tier."],
             ["6. Tier", "routeMessage scores the message and picks Max, Plus, Standard, Light, or Micro. A narrow ambiguous band may ask a small Groq model to break the tie."],
             ["7. Model", "The tier selects the assigned model. A fixed-model choice assigns that same model to every tier. An image forces the vision model. The allowlist can reject the assignment."],
@@ -283,8 +286,9 @@ def build() -> None:
 
     h1(doc, "4  Identity and access")
     body(doc, "userId comes from getIdentity(req) in src/lib/identity.ts and from nowhere else. Every read of a workspace, session, message, document, or memory fragment is scoped by that id. A record that exists but belongs to someone else is returned as 404, not 403, so the response does not confirm that the id exists.")
-    body(doc, "Default local development can run with AUTH_MODE=local. The Docker installation uses a local stand-in for Cognito (Floci) with AUTH_MODE=cognito. A hosted installation uses an invite-only Cognito user pool with email usernames and the groups Owner, Admin, and Member. Roles are enforced on admin routes through requireAdmin. Members use the shared provider connections and cannot read or change the secret keys.")
-    body(doc, "The first account on an empty pool is claimed through the setup flow: a setup code on the hosted install, or email and password on a local install. After that, an administrator creates accounts, assigns roles, sets passwords, and can suspend an account. Delete removes sign-in. It does not wipe Knowledge or history.")
+    body(doc, "Default local development can run with AUTH_MODE=local. A production build refuses that fixed local identity unless ALLOW_INSECURE_LOCAL_IDENTITY=true is set, and an unset fallback setting no longer turns a bad token into the local owner: authentication fails closed. The Docker installation uses a local stand-in for Cognito (Floci) with AUTH_MODE=cognito. A hosted installation uses an invite-only Cognito user pool with email usernames and the groups Owner, Admin, and Member. Roles are enforced on admin routes through requireAdmin. Members use the shared provider connections and cannot read or change the secret keys.")
+    body(doc, "Tokens are checked for signature, issuer, token use (access tokens only) and the app client (src/lib/auth-claims.ts, shared by the edge middleware and getIdentity). On the hosted install, API Gateway also checks the Cognito token before the chat Lambda runs. Signing out revokes the session at Cognito, disabling an account revokes its refresh tokens, and getIdentity refuses a suspended or deleted account within about 30 seconds. Sign-in, the two-step code, password reset and the first-run claim are rate limited per address and per account (src/lib/rate-limit.ts); Cognito's own lockout is the backstop on AWS.")
+    body(doc, "The first account on an empty pool is claimed through the setup flow with a one-time setup code: Terraform creates it on the hosted install, and the Docker init container prints it (docker compose logs init). The claim is reserved with a conditional write, so two simultaneous claims cannot both create an Owner. After that, an administrator creates accounts, assigns roles, sets passwords, and can suspend an account. Only the Super Admin can change another Admin's role, status, password or two-step verification. Every administrative change is written to an append-only audit log, read through /api/admin/audit. Delete removes sign-in. It does not wipe Knowledge or history.")
 
     h1(doc, "5  Workspaces, sessions, and the queue")
     body(doc, "A workspace is the boundary for chat history, Knowledge, facts, and saved items. Retrieval does not cross workspaces. One signed-in user can own many workspaces. The emoji and color are visual identity only. They are not sent to the model as a personality, and they do not select a model.")
@@ -294,7 +298,7 @@ def build() -> None:
 
     h1(doc, "6  Detection")
     body(doc, "Detection is a pattern scan in scrubPII (src/lib/pii.ts), not a model. It redacts a span it recognizes. A detail outside those shapes is left as written. That is best effort. It is not a certification that the text is clear, and it is not a compliance program.")
-    body(doc, "Chat runs it in the browser before the draft leaves the page. Knowledge ingest runs the same function on the server after text extraction and before the text is stored or embedded (scrubDocumentText in src/lib/documents.ts). The server reads sensitivity and safe terms from the administrator-owned instance policy. It does not take them from the upload. A picture is turned into text first, then scanned the same way. A voice transcript is scanned when it is sent. The model's reply is not scanned. A crafted request can skip the browser, so the client is not a security boundary. There is no second server scrub of chat text that has already left the browser.")
+    body(doc, "Chat runs it in the browser before the draft leaves the page. Knowledge ingest runs the same function on the server after text extraction and before the text is stored or embedded (scrubDocumentText in src/lib/documents.ts). The server reads sensitivity and safe terms from the administrator-owned instance policy. It does not take them from the upload. A picture is turned into text first, then scanned the same way. A voice transcript is scanned when it is sent. The model's reply is not scanned. A crafted request can skip the browser, so the client is not a security boundary. For that reason the server checks chat requests again, for the non-exemptible categories only (SSN, SIN, card number, secrets), and replaces any match before the model call. Emails, phone numbers, addresses and the other exemptible categories remain a browser-side decision, because the person may have reviewed and kept them on purpose.")
     body(doc, "When the browser finds a match, the user sees a review dialog. The raw matched value is not written to the database, localStorage, logs, or the model call. There is no restore path. Dismissing or deleting a finding removes the log entry. It does not put the original text back.")
     h2(doc, "How a match is decided")
     body(doc, "The function walks a fixed order. First it resolves the tier. Balanced is the default. A slider value at or below 0.25 is Low, at or below 0.60 is Balanced, and above that is High. A stored value of extreme is treated as High. Second, it keeps only the families whose minimum tier is at or below the active tier. Tiers are cumulative. Third, each family searches the whole text. An empty match is skipped. Fourth, a family with an extra check drops a hit that fails it. Fifth, if that family allows an exemption, safe terms are tested and a covered hit is dropped. The exemption is counted by term and category. The value is not recorded. Families that cannot be exempted skip this step. Sixth, surviving hits are sorted by where they start, and overlaps are merged into one span. The category kept is the one that started first. Seventh, each span is replaced with a label such as [email redacted]. The label names the category and contains none of the original characters. If nothing survived, the original text continues.")
@@ -337,11 +341,11 @@ def build() -> None:
             ["Attachment compared with workspace Knowledge", "Yes", "Yes, if cited", "Operational framing."],
             ["Names this workspace, a file, or an investigation", "Yes", "Only sources the answer cites", "Operational framing, including workspace context."],
             ["Follow-up after a cited or grounded turn", "Yes, scoped to prior sources", "Yes, if cited", "Operational framing."],
-            ["General question", "Silent search", "Only if a hit clears similarity 0.5", "Conversational unless a hit upgrades the turn."],
+            ["General question", "Silent search", "Only if a hit reaches the fused score 0.55", "Conversational unless a hit upgrades the turn."],
         ],
         [2.2, 1.6, 1.4, 1.5],
     )
-    body(doc, "A general question does not show Sources by default. If the silent search returns a hit at or above EVIDENCE_MIN_SIMILARITY (0.5), applySpeculativeKnowledgeHits upgrades the turn to workspace-grounded and Sources become available. A miss stays general, with no Sources and no announcement that Knowledge was empty.")
+    body(doc, "A general question does not show Sources by default. If the silent search returns a hit whose fused score reaches SPECULATIVE_MIN_SCORE (0.55), the turn is upgraded to workspace-grounded and Sources become available. A miss stays general, with no Sources and no announcement that Knowledge was empty. Workspace-grounded and investigation turns accept hits at GROUNDED_MIN_SCORE (0.40).")
     body(doc, "needsOperationalPrompt is true for retrieval, investigation, workspace-grounded turns, grounded follow-ups, and attachments. Those turns receive operational instructions and the workspace context. Other turns receive only the conversational base, so a greeting is not wrapped in the workspace mission.")
     body(doc, "When preferMicroTier is set, the chat path uses Micro even if the complexity score would have chosen a higher tier. That flag is set for social turns, application help, provenance questions, corrections, jokes, requests to leave a topic, ambiguous short turns, and an attachment that arrives with almost no instruction. Images are a separate override and are described in section 9.")
 
@@ -411,12 +415,13 @@ def build() -> None:
     body(doc, "buildConversationalBase() applies on every turn: natural, concise, and not forced into an operations pitch. Operational instructions and the workspace context are appended only when the turn policy says the turn needs them. The workspace name is the speaker the user sees. It is not pasted into a social prompt as a persona.")
     body(doc, "Retrieved text is treated as evidence, not as instructions. src/lib/prompt-guard.ts neutralizes injection patterns in that text and fences it so a passage inside a document cannot retask the model as if it were the system prompt. Conversation history is included as continuity. It is not a Source, and the model is not told to cite a prior exchange or its own general knowledge as a document.")
     body(doc, "When Sources are shown, they are the passages that were packed for that turn and that the answer actually cited. After the answer, auditCitations in src/lib/citation-audit.ts checks the [n] markers. A marker that does not match a packed index is invalid. Packed sources the answer never cites are unused. An answer that admits it does not have the evidence, and cites nothing, is recorded as declined rather than as a successful citation. The audit does not use a second model to judge whether a claim is true.")
-    body(doc, "Similarity uses cosine distance against the workspace's embeddings. The floor is 0.5. Hits below that floor are not offered as sources. The search is limited to the current user's documents in the current workspace, and to the document category. Fact rows are not in that index.")
+    body(doc, "Ranking uses a fused score (src/lib/retrieval-rank.ts): cosine similarity against the workspace's embeddings plus a small keyword bonus. Candidates must clear a vector floor of 0.30 before scoring. A grounded turn accepts a fused score of 0.40, and a silent search on a general question needs 0.55. There is no single fixed similarity floor, because one dropped correct passages. The search is limited to the current user's documents in the current workspace, and to the document category. Fact rows are not in that index.")
 
     h1(doc, "12  Knowledge")
     body(doc, "A file added in Knowledge, or attached in chat, belongs to the current workspace. The server extracts text, scrubs it with the instance detection policy, chunks the scrubbed text, and embeds the chunks. On a local installation the original file is also stored on disk, outside Postgres. The hosted path does not use that local file step. Converting an image into a vector does not make the image safe. The extracted text is what gets scrubbed, then embedded.")
     body(doc, "Chunks are about 1,500 characters, with about 200 characters of overlap, and pieces shorter than 80 characters are dropped. Breaks prefer a paragraph or a sentence boundary. Local embeddings use nomic-embed-text through Ollama, 768 dimensions. Hosted embeddings target Amazon Titan v2, 1,024 dimensions, and that dimension is fixed when the DynamoDB vector index is created. The two stores are not mixed in one installation.")
     body(doc, "Spreadsheets can be queried through a constrained analyze route rather than by handing the model the whole grid. Images are described with Groq vision when a key exists, otherwise the ingest keeps a filename stub, and that text is scrubbed like any other extract. Reprocess retries extract and embed from the stored original on the local path.")
+    body(doc, "Uploads are untrusted, so limits apply before a parser runs (src/lib/documents/upload-guard.ts). A file is at most 10 MB. A Word or Excel file is a zip container, and its directory is checked first: more than 100 MB unpacked, an expansion above 100 times, more than 5,000 parts, or a ZIP64 archive is refused. Extraction has a 60-second limit. Each person can add 200 files a day and store 1 GB in total. The limits can be raised with environment variables on a larger installation.")
 
     h1(doc, "13  Memory and saved items")
     body(doc, "Memory has two layers, and they are not the same store. Working context is recent messages plus a session summary. It keeps a conversation continuous. It is not a citation. Long-term facts are created from what the user wrote, through the summarize route. Assistant replies are not stored as facts and are not embedded as memory fragments.")
@@ -451,18 +456,36 @@ def build() -> None:
     body(doc, "My Profile stores a display name, a description, and an avatar for the signed-in user. Password change and forgot-password use Cognito when that is the sign-in service. Forgot-password responses are written so they do not reveal whether the email exists. Theme is light or dark, stored on the device under the key sm_theme. Dark is the default until a choice is saved. The choice does not follow the user to another browser.")
     body(doc, "The status chips above the composer report detection, document parsing, routing, and voice. They are visible until the user collapses them. That collapse is stored on the device. It is not an account setting.")
     body(doc, "The administrator's directory shows email, role, month-to-date estimate against the cap, and sign-in status. Centralized Insights on that screen are installation totals. Per-user drill-down reuses the same Usage, Cost, and Security views, scoped to that member.")
+    body(doc, "An Admin can set a Member's password, which lets that Admin sign in as the Member and see their conversations. That is normal inside one team, and it is why separate organisations should not share an installation. Keep the number of Admins small and have them turn on two-step verification.")
 
     h1(doc, "18  Where data is stored")
-    body(doc, "Local path. The browser talks to Next.js on port 3000. Postgres holds workspaces, messages, documents, facts, profiles, and analytics. pgvector holds 768-dimension embeddings. The vector column is created outside Prisma and queried with raw SQL that must filter by user id. Sign-in in Docker goes to Floci. Chat and embeddings can go to Ollama on port 11434. Uploads, avatars, and the instance encryption key are files under the data directory. Optional Bedrock uses the machine's AWS credential chain. Optional vendor calls use the stored key.")
-    body(doc, "Hosted path. Amplify serves the UI, sign-in, workspaces, settings, and the non-chat APIs. The chat stream goes to API Gateway and the chat Lambda. Application records and the vector index use DynamoDB. Cognito is the user pool. Systems Manager Parameter Store holds the hosted secrets as encrypted SecureString parameters: the instance encryption key and first-run setup code, the vendor keys an administrator saves, and an optional bootstrap Groq key. Standard parameters have no monthly charge. The table name is a plain setting, not a secret. Profile photos use a private bucket. CloudWatch holds Lambda logs. Prompt and response content logging is not turned on for that dashboard. There is no custom VPC in the current shape. The region is chosen in the infrastructure configuration. The in-app setup wizard asks for a storage preference and a risk acknowledgement. It does not ask for a region.")
-    body(doc, "A push to the application main branch runs tests and, when the sandbox role and state bucket are configured, applies Terraform and starts an Amplify release. Pull requests plan only. Neon and Aurora are not the current database. They are not mixed with DynamoDB.")
+    body(doc, "Local path. The browser talks to Next.js on port 3000. Postgres holds workspaces, messages, documents, facts, profiles, and analytics. pgvector holds 768-dimension embeddings. The vector column is created outside Prisma and queried with raw SQL that must filter by user id. Sign-in in Docker goes to Floci. Chat and embeddings can go to Ollama on port 11434. Uploads, avatars, and the instance encryption key are files under the data directory. Optional Bedrock uses one AWS profile folder the operator chooses to mount (docker-compose.bedrock.yml), never the whole ~/.aws directory. Optional vendor calls use the stored key.")
+    body(doc, "Docker exposure. Only the app is published, on 127.0.0.1:3000. Postgres, Floci and Ollama are reachable only inside the Compose network. To reach the app from other computers, the operator adds the included HTTPS front end (docker-compose.tls.yml, Caddy), which also turns on HSTS. Containers run with no-new-privileges, process and memory limits and rotated logs. The app runs as a non-root user with no Linux capabilities and a read-only filesystem apart from /data and scratch paths. Images are pinned by digest, the app runs on Node.js 22, and the shipped image contains no source files or test fixtures. Customers build the image from source.")
+    body(doc, "Hosted path. Amplify serves the UI, sign-in, workspaces, settings, and the non-chat APIs. The chat stream goes to API Gateway and the chat Lambda. Application records and the vector index use DynamoDB. Cognito is the user pool. Systems Manager Parameter Store holds the hosted secrets as encrypted SecureString parameters: the instance encryption key and first-run setup code, the vendor keys an administrator saves, and an optional bootstrap Groq key. Standard parameters have no monthly charge. The table name is a plain setting, not a secret. Profile photos use a private bucket. CloudWatch holds Lambda logs. Prompt and response content logging is not turned on for that dashboard. The Amplify server runs on its own compute role, separate from the build role, with only the runtime permissions it needs. DynamoDB has point-in-time recovery and deletion protection; the Cognito pool has deletion protection when the operator sets it to ACTIVE. A CloudTrail trail records account activity to a private, encrypted, versioned bucket. Five CloudWatch alarms (chat errors and throttles, API 5xx, an API 4xx spike, DynamoDB throttles) and a monthly AWS Budget notify the email set as ALERT_EMAIL. There is no custom VPC in the current shape. The region is chosen in the infrastructure configuration. The in-app setup wizard asks for a storage preference and a risk acknowledgement. It does not ask for a region.")
+    body(doc, "A push to the application main branch runs tests, a type check and a production build. Deploying from GitHub Actions is opt-in: only when the repository variable AWS_DEPLOY_ENABLED is true and the role and state bucket are configured does it apply Terraform and start an Amplify release. Pull requests plan only. GitHub Actions are pinned by commit, and Dependabot proposes updates. Neon and Aurora are not the current database. They are not mixed with DynamoDB.")
 
-    h1(doc, "19  What this system does not do")
+    h1(doc, "19  Operating an installation")
+    body(doc, "Team size. One installation is for one organisation. It is recommended for 1 to 25 people and can serve up to about 100 people with the adjustments below. Beyond that, or for several unrelated organisations, run separate installations.")
+    add_table(
+        doc,
+        ["To support", "What to do"],
+        [
+            ["More than about 10 people chatting at once (AWS)", "Ask AWS to raise Lambda concurrent executions (Service Quotas, free). New accounts often start at 10, and each streaming reply holds one slot for up to five minutes."],
+            ["Larger teams in general", "Keep two or three Admins and have them turn on two-step verification. Review the audit log."],
+            ["Spend", "Each person's default cap is 10 dollars a month, so 100 heavy users could reach about 1,000 dollars in model costs. Set caps and the monthly budget to match."],
+            ["Docker beyond a few people", "Run it on a server, add a model API key (the local model serves only a few people), and use the HTTPS front end and a firewall that allows ports 80 and 443 only."],
+        ],
+        [2.4, 4.3],
+    )
+    body(doc, "Monitoring. On AWS, set ALERT_EMAIL (and optionally MONTHLY_BUDGET_USD) in .env.deploy before applying, then confirm the email AWS sends. COGNITO_DELETION_PROTECTION=ACTIVE belongs in the same file for a real installation. These values stay in that git-ignored file and in the operator's own account.")
+    body(doc, "Web application firewall. AWS WAF is not included, to keep an idle installation near zero cost. The gateway's Cognito check, its request throttle, the 4xx alarm and the budget cover the main risk. An operator who wants WAF can add it to their own account.")
+
+    h1(doc, "20  What this system does not do")
     body(doc, "It does not judge answers with a second model. It does not scan the model's output for sensitive data. It does not re-scrub old chat when the detection tier changes. It does not restore a redacted value. It does not offer a public avatar URL, a hard purge of a user's data, a per-workspace provider policy, or Bedrock Guardrails as a product feature.")
     body(doc, "It does not accept a pasted AWS access key. It does not ship a product-owned Groq key as a silent default on a hosted install. It does not query the provider's billing API to draw the cost charts. It does not treat a region setting as a promise that every connected service processes data only in that region.")
-    body(doc, "KMS, Macie, and a production multi-tenant auth system are not features of this application. An operator who needs those controls provides them outside this product.")
+    body(doc, "KMS, Macie, and a production multi-tenant auth system are not features of this application. One installation is not a boundary between separate organisations, and the Docker sign-in (Floci) is not meant to face the public internet. An operator who needs those controls provides them outside this product.")
 
-    h1(doc, "20  Where the rules live")
+    h1(doc, "21  Where the rules live")
     add_table(
         doc,
         ["Rule", "Where"],
@@ -475,12 +498,17 @@ def build() -> None:
             ["Chat orchestration, vision override, 402", "src/lib/chat/run-chat-stream.ts"],
             ["Detection families and safe terms", "src/lib/pii.ts"],
             ["Document scrub, chunk sizes", "src/lib/documents.ts"],
-            ["Similarity floor 0.5", "src/lib/memory.ts"],
+            ["Fused retrieval score and thresholds", "src/lib/retrieval-rank.ts"],
             ["Citation check", "src/lib/citation-audit.ts"],
             ["Evidence fencing", "src/lib/prompt-guard.ts"],
             ["Rate tables and uplift", "src/lib/pricing/index.ts"],
             ["Monthly cap", "src/lib/cost-cap.ts"],
             ["Session user id", "src/lib/identity.ts"],
+            ["Token claims, fail-closed defaults", "src/lib/auth-claims.ts"],
+            ["Server-side chat check", "src/lib/chat/server-scrub.ts"],
+            ["Sign-in rate limits", "src/lib/rate-limit.ts"],
+            ["Upload limits", "src/lib/documents/upload-guard.ts"],
+            ["Admin audit log", "src/lib/audit-log.ts"],
             ["AWS credential chain", "src/lib/aws-credentials.ts"],
         ],
         [3.2, 3.5],

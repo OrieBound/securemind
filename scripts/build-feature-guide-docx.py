@@ -192,7 +192,7 @@ def header_footer(section) -> None:
     add_text(hp, "SECUREMIND", size=9, color=VIOLET, bold=True)
     add_text(hp, "   ·   Feature guide", size=9, color=MUTED)
     hp.add_run("\t")
-    add_text(hp, "Version  1.0", size=9, color=MUTED)
+    add_text(hp, "Version  1.1", size=9, color=MUTED)
 
     footer = section.footer
     footer.is_linked_to_previous = False
@@ -212,7 +212,7 @@ def header_footer(section) -> None:
     top_el.set(qn("w:color"), RULE)
     top.append(top_el)
     p_pr.append(top)
-    add_text(fp, "Version 1.0", size=9, color=MUTED)
+    add_text(fp, "Version 1.1", size=9, color=MUTED)
     fp.add_run("\t")
     add_text(fp, "Page ", size=9, color=MUTED)
     add_field(fp, " PAGE ")
@@ -284,8 +284,8 @@ def build() -> None:
     meta = doc.add_paragraph()
     meta.paragraph_format.space_before = Pt(10)
     meta.paragraph_format.space_after = Pt(8)
-    add_text(meta, "Version 1.0", size=11, color=VIOLET, bold=True)
-    add_text(meta, "   ·   29 September 2026", size=11, color=MUTED)
+    add_text(meta, "Version 1.1", size=11, color=VIOLET, bold=True)
+    add_text(meta, "   ·   19 October 2026", size=11, color=MUTED)
 
     body(
         doc,
@@ -316,6 +316,10 @@ def build() -> None:
     body(
         doc,
         "An administrator manages provider keys, access, and shared settings. Members use that setup and can have individual estimated spending caps. Stored application data is held within the installation’s environment. Configured external providers can still receive content needed for model responses, transcription, or other processing.",
+    )
+    body(
+        doc,
+        "SecureMind is intended for small to mid-sized teams. One installation serves one organization: 1 to 25 people is the recommended range, and it can serve up to about 100 people with a few adjustments, mainly an AWS concurrency limit and a realistic budget. The technical guide lists them. Separate organizations should each run their own installation.",
     )
 
     h1(doc, "2  How to use this guide")
@@ -389,10 +393,18 @@ def build() -> None:
         doc,
         "The local option uses Docker and includes Ollama, as described above. Users can configure external providers when they want hosted models or transcription. Running the application locally does not make external provider calls local.",
     )
+    body(
+        doc,
+        "Docker builds SecureMind from the source you download, and by default it is reachable only from that computer. The first account needs a one-time setup code, which the installation prints when it starts. To use it from other computers on your network, add the included HTTPS front end and a firewall. Docker is meant for a computer or a private network, not for the public internet.",
+    )
     h2(doc, "In your cloud environment")
     body(
         doc,
         "The cloud option runs in the administrator’s own AWS environment. The region is set in the infrastructure configuration. The in-app setup wizard does not ask for a region. Ollama is not part of SecureMind’s cloud configuration. Provider availability and any cross-region processing depend on the services and models configured.",
+    )
+    body(
+        doc,
+        "The cloud option includes backups of the data (point-in-time recovery), protection against deleting the database or the user directory by mistake, an AWS activity trail, alarms, and a monthly budget alert sent to an email the administrator chooses. Sign-in is invite-only and is checked again at the API before any chat runs.",
     )
     body(
         doc,
@@ -420,7 +432,7 @@ def build() -> None:
     )
     body(
         doc,
-        "The normal path does not send the original detected value. Detection is best effort: a value that is not detected may remain in the submitted text. A request that skips the browser can also skip this review. The scan is risk reduction, not a guarantee.",
+        "The normal path does not send the original detected value. Detection is best effort: a value that is not detected may remain in the submitted text. A request that skips the browser skips this review, so the server checks every chat message again for the highest-risk values (social security and social insurance numbers, card numbers and secrets) and replaces them. Other details are reviewed in the browser only. The scan is risk reduction, not a guarantee.",
     )
     h2(doc, "Choosing the answering model")
     body(
@@ -628,6 +640,10 @@ def build() -> None:
     )
     body(
         doc,
+        "Only the Owner can change another administrator’s role, status, password, or two-step verification, so one administrator cannot take over another. A suspended person is signed out within seconds. Every administrative change is kept in an audit log. Setting a member’s password lets an administrator sign in as that member, so keep the number of administrators small and have them turn on two-step verification.",
+    )
+    body(
+        doc,
         "Cost caps are precautionary limits based on estimated use. The application blocks covered billable requests when the estimate reaches the cap. Administrators should still review actual charges with the provider. These limits are not provider-enforced billing budgets.",
     )
     figure(doc, "6", "Admin. Directory, roles, and estimated caps.")
@@ -661,7 +677,7 @@ def build() -> None:
     )
     body(
         doc,
-        "Detection is best effort. A value that is not detected may be processed or stored. Browser review is the path inside the application. It is not protection against a request that bypasses that path.",
+        "Detection is best effort. A value that is not detected may be processed or stored. Browser review is the path inside the application. For a request that bypasses it, the server catches only the highest-risk values, not every category.",
     )
     body(
         doc,
@@ -669,7 +685,7 @@ def build() -> None:
     )
     body(
         doc,
-        "Each installation is independently operated. SecureMind is not intended to run a shared public service that holds every customer’s API keys. A region set for the deployment does not, by itself, mean that every connected service processes data only there.",
+        "Each installation is independently operated. SecureMind is not intended to run a shared public service that holds every customer’s API keys, and one installation is not a boundary between separate organizations. A region set for the deployment does not, by itself, mean that every connected service processes data only there. An AWS web application firewall is not included; an administrator can add one to their own account.",
     )
     body(
         doc,

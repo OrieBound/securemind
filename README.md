@@ -52,6 +52,10 @@ Docker Compose on this computer. Postgres, local sign-in, and Ollama come up tog
 
 No AWS account is needed. A model API key is not required, but it is strongly recommended: the built-in local models use your own computer's resources and, unless it is very powerful, they are slow. Groq has a free tier and is a good first key. On AWS, use Bedrock or a key, since there is no local model.
 
+### Who it is for
+
+SecureMind is intended for small to mid-sized teams. One install serves one organization: **1 to 25 people is the recommended range**, and it can serve **up to about 100 people** with a few adjustments (an AWS concurrency limit, a realistic budget, and two-step verification for admins). Separate organizations should each run their own install. See [Operating an installation](docs/SecureMind-Technical-Guide.docx) in the technical guide and the [security assessment](docs/security-audit/).
+
 ### Run
 
 ```bash
@@ -62,7 +66,7 @@ docker compose up --build
 
 ### Confirm
 
-Open http://localhost:3000 and create the first owner with an email and password you choose. There is no demo account. The first start can sit on the model download for a while. Later starts reuse those models.
+Open http://localhost:3000 and create the first owner with an email and password you choose. The first owner also needs the one-time setup code the install printed when it started; show it again with `docker compose logs init`. There is no demo account. The first start can sit on the model download for a while. Later starts reuse those models.
 
 Docker builds the app from this repository on your computer; there is no image to download from the author.
 
@@ -88,7 +92,7 @@ These resources can incur AWS charges. Remove them with `npm run infra:down -- -
 - An [AWS account](https://aws.amazon.com/) you administer. Keep the app out of an organization management account.
 - [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) version 2, with a named profile (`aws configure` or IAM Identity Center).
 - [Terraform 1.14](https://developer.hashicorp.com/terraform/install) or newer. State locking uses an S3 lock file.
-- [Node.js 20](https://nodejs.org/) or newer. The apply scripts package the chat Lambda.
+- [Node.js 22](https://nodejs.org/) or newer. The apply scripts package the chat Lambda.
 - [Git](https://git-scm.com/downloads)
 - A GitHub repository you control, so you can connect the Amplify GitHub App to your copy.
 - Permission in that account to create IAM, S3, Lambda, API Gateway, Cognito, Amplify, DynamoDB, Systems Manager Parameter Store, and CloudFormation.
@@ -111,7 +115,7 @@ The user pool starts empty. Print the one-time setup code with `terraform -chdir
 
 ## Contributing on the host
 
-Node.js 20 or newer.
+Node.js 22 or newer.
 
 ```bash
 npm install

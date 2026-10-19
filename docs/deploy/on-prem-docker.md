@@ -32,9 +32,9 @@ First boot takes longer while Compose downloads default Ollama weights and `init
 
 1. `ollama-init` pulls `nomic-embed-text` (Knowledge embeddings) and `llama3.2:3b` (local chat)  
 2. Postgres schema (`prisma db push` + pgvector column)  
-3. Floci Cognito pool (empty — first visitor becomes Owner)  
+3. Floci Cognito pool (empty) and a one-time setup code for the first Owner  
 
-Open **http://localhost:3000** and create the first Owner (your email and a password you choose). There is no demo account. If you already ran an older Compose stack that seeded `admin@example.test`, `docker compose down -v` and bring it up again for an empty directory.
+Open **http://localhost:3000** and create the first Owner (your email, a password you choose, and the setup code). Show the setup code with `docker compose logs init | grep "setup code"`. There is no demo account. If you already ran an older Compose stack that seeded `admin@example.test`, `docker compose down -v` and bring it up again for an empty directory.
 
 Optional Groq (faster chat / vision):
 
@@ -73,7 +73,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Host dev needs [Node.js 20](https://nodejs.org/) or newer and `npm install`. An optional Groq key goes in `.env.local` or in `.env.onprem` when the app itself runs in Compose.
+Host dev needs [Node.js 22](https://nodejs.org/) or newer and `npm install`. An optional Groq key goes in `.env.local` or in `.env.onprem` when the app itself runs in Compose.
 
 **Validate the shipping path** before release:
 
@@ -165,4 +165,4 @@ To review a release before running it, check out a specific commit (`git checkou
 - Containers run with `no-new-privileges`, process and memory limits and rotated logs. The app runs as a non-root user with no Linux capabilities and a read-only filesystem apart from `/data` and scratch paths. Images are pinned by digest; update them deliberately.
 - Optionally set `POSTGRES_PASSWORD` in a `.env` file before the first start. It cannot be changed afterwards without altering the database user.
 - Bedrock through your AWS profile is opt-in (`docker-compose.bedrock.yml`) and mounts only a folder you choose (`./aws-profile`), never your whole `~/.aws`.
-- Treat this stack as single-user. See `docs/security-audit/` for the open items.
+- Team size: one install serves one organization; 1 to 25 people is recommended and it can serve up to about 100. Beyond a few people, run it on a server, add a model API key (the built-in local model serves only a few people at a time), and use the HTTPS front end. Docker is for a computer or a private network, not for the public internet. See `docs/security-audit/` for the assessment.

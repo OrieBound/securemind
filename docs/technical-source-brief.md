@@ -159,7 +159,9 @@ Secrets match known forms only: a PEM private-key block, Stripe-style `sk_live_`
 
 What is recorded for Insights is the category, the source (chat or document), the outcome, a count, and the sensitivity in force. The matched string is not recorded.
 
-What is not implemented: a second server scrub of chat text that already left the browser, scanning the model’s output, Bedrock Guardrails, and historical re-scrub when policy changes.
+Server-side gate: `scrubChatRequestServerSide` (`src/lib/chat/server-scrub.ts`) replaces SSN, SIN, card numbers and secrets in every text field of a chat request before the model call. Exemptible categories stay browser-side.
+
+What is not implemented: a full-policy server scrub of chat text, scanning the model’s output, Bedrock Guardrails, and historical re-scrub when policy changes.
 
 ## Knowledge and memory
 
@@ -206,9 +208,13 @@ Every response from the app carries a Content-Security-Policy and the usual prot
 
 The hosted edition can be served from a custom domain: the app on a subdomain, the chat API optionally on another, and the registrar stays where it is with only its nameservers pointed at a Route53 zone. It is staged and off by default. See `docs/deploy/custom-domain.md`.
 
+## Security posture and team size
+
+See `docs/security-audit/` (five rounds, October 2026). Auth fails closed; tokens must be Cognito access tokens for the app client; sessions are revoked on sign-out and suspension; sign-in is rate limited; the first-run claim needs a setup code on Docker and AWS and is atomic; uploads are zip-bomb, quota and time limited; Admin changes are audited and Admins cannot change other Admins. Docker publishes only the app on loopback, with an optional HTTPS front end and hardened containers. AWS adds a Cognito authorizer on `POST /chat`, a separate Amplify compute role, DynamoDB PITR and deletion protection, CloudTrail, alarms and a budget. WAF is not included. Intended size: one organization per install, 1 to 25 people recommended, up to about 100 with a raised Lambda concurrency quota.
+
 ## Explicitly absent
 
-LLM-as-judge verification of claims. KMS and Macie as product features. A public avatar URL. Hard purge of user data. Per-workspace provider policy. Server-side re-scrub of chat. Output scanning. Aurora or Neon as the hosted database. A pasted AWS access key. A product-owned Groq key on the hosted install.
+LLM-as-judge verification of claims. KMS and Macie as product features. A public avatar URL. Hard purge of user data. Per-workspace provider policy. Full-policy server-side re-scrub of chat. Output scanning. Aurora or Neon as the hosted database. A pasted AWS access key. A product-owned Groq key on the hosted install.
 
 ## Suggested shape for the professional document
 
