@@ -323,16 +323,28 @@ export async function listDirectoryUsers(): Promise<DirectoryUser[]> {
   });
 }
 
-function assertCanMutateOwner(
+/**
+ * Who may change an account's role, status, password or two-step verification.
+ * The Super Admin account: only the Super Admin. Another Admin account: only the Super Admin,
+ * so one Admin cannot take over or lock out another (an Admin may still manage Members).
+ */
+export function assertCanMutateOwner(
   target: DirectoryUser,
   actor: { role: AppRole; userId?: string | null },
 ): void {
-  if (!target.isOwner && target.role !== "super_admin") return;
   if (actor.role === "super_admin") return;
-  throw new CognitoAdminError(
-    "Only the Super Admin can change the Super Admin account’s role, status, password, or spend limit.",
-    403,
-  );
+  if (target.isOwner || target.role === "super_admin") {
+    throw new CognitoAdminError(
+      "Only the Super Admin can change the Super Admin account’s role, status, password, or spend limit.",
+      403,
+    );
+  }
+  if (target.role === "admin" && !(actor.userId && actor.userId === target.sub)) {
+    throw new CognitoAdminError(
+      "Only the Super Admin can change another Admin’s role, status, password, or two-step verification.",
+      403,
+    );
+  }
 }
 
 export async function createDirectoryUser(input: {

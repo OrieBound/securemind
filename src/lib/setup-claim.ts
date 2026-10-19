@@ -141,7 +141,8 @@ export async function getSetupStatus(opts?: {
     authMode: process.env.AUTH_MODE ?? "local",
     edition: runtimeEdition(),
     cognitoConfigured,
-    directoryEmpty,
+    // Public endpoint: say whether the directory is empty only while a claim is possible.
+    directoryEmpty: claimAvailable ? directoryEmpty : null,
     claimAvailable,
     claimRequiresCode: claimRequiresSetupCode(),
     codeConfigured: setupClaimSecretConfigured(),

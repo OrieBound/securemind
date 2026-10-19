@@ -38,3 +38,11 @@ docker-compose*.yml
 
 # Opt-in Bedrock profile folder (docker-compose.bedrock.yml)
 /aws-profile/
+
+# Local working files that must never enter a build context
+cursor-history
+build-log.txt
+sample-dev.*
+.claude
+*.bak
+*.tfstate*
