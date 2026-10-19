@@ -3,6 +3,7 @@
  * Used by Next.js /api/chat and the API Gateway streaming Lambda.
  */
 
+import { scrubChatRequestServerSide } from "@/lib/chat/server-scrub";
 import { checkOllamaModel, isOllamaEmbedModel, probeOllama } from "@/lib/models/ollama";
 import { bedrockBlockReason } from "@/lib/models/bedrock";
 import {
@@ -114,8 +115,12 @@ export type ChatPrepareResult = ChatPrepareFailure | ChatPrepareSuccess;
 
 export async function prepareChatTurn(
   userId: string,
-  body: ChatRequestBody,
+  incoming: ChatRequestBody,
 ): Promise<ChatPrepareResult> {
+  const { body, redactions } = scrubChatRequestServerSide(incoming);
+  if (redactions > 0) {
+    console.warn(`[chat] server-side gate replaced ${redactions} high-risk value(s) the browser did not`);
+  }
   const {
     message: rawMessage,
     mode = DEFAULT_TIER,
