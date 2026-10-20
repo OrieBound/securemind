@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, Cloud, ExternalLink, HardDrive, LayoutList, Mic, RefreshCw, Shield, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ChevronDown, Cloud, ExternalLink, HardDrive, KeyRound, LayoutList, Mic, RefreshCw, Shield, SlidersHorizontal, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SelectMenu } from "@/components/ui/select-menu";
 import {
@@ -769,18 +769,21 @@ export function InferenceSettings(props: Props) {
           {riskAck && (
             <div className="rounded-lg border border-[var(--border-strong)] bg-elevated px-3.5 py-3.5 space-y-3">
               {canEdit && (
-                <div className="rounded-lg border border-dashed border-[var(--border-strong)] bg-muted px-3 py-3 space-y-2.5">
-                  <p className="text-[0.65rem] uppercase tracking-wider text-muted-foreground font-semibold">
-                    Add a vendor API key
-                  </p>
+                <div className="rounded-lg border border-[var(--primary-border)] bg-[var(--primary-soft)] px-4 py-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <KeyRound className="size-4 shrink-0 text-primary" aria-hidden />
+                    <p className="text-sm font-semibold text-foreground">Add a vendor API key</p>
+                  </div>
+                  <label htmlFor="vendor-key-input" className="sr-only">Vendor API key</label>
                   <input
+                    id="vendor-key-input"
                     type="password"
                     value={keyDraft}
                     onChange={e => setKeyDraft(e.target.value)}
                     placeholder="Paste a vendor API key (Groq, Gemini, Grok, OpenAI…)"
                     autoComplete="off"
                     disabled={busy}
-                    className="w-full h-10 rounded-lg border border-[var(--border-strong)] bg-elevated px-3 text-sm font-mono text-foreground placeholder:text-[var(--text-subtle)] focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full h-11 rounded-lg border border-[var(--primary-border)] bg-card px-3 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                   {keyDraft.trim() && (
                     <div className="rounded-md bg-card border border-border px-2.5 py-2">
