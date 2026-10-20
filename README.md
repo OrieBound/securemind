@@ -134,6 +134,14 @@ npm run dev
 | `npm run docker:onprem` | Full Compose stack, built from this repo |
 | `npm run infra:up` | Apply Terraform in the account your `.env.deploy` profile points at |
 
+## Contact
+
+SecureMind is a personal project shared as is, with no support agreement. If you want to reach the author:
+
+- Questions and ideas: open a [discussion](https://github.com/OrieBound/securemind/discussions) or an [issue](https://github.com/OrieBound/securemind/issues).
+- Anything else: use the [Contact page](https://securemind.chat/contact/) or message the author on [LinkedIn](https://www.linkedin.com/in/orie-hulan).
+- Security reports: follow [SECURITY.md](SECURITY.md). Please do not put details in a public issue or a LinkedIn message.
+
 ## License
 
 SecureMind is released under the [Apache License 2.0](LICENSE). You can use it, change it, and run your own version, including inside your company. It comes as is, with no warranty. Sanitization reduces risk. It does not guarantee that every sensitive value is removed, and it is not a compliance program.
