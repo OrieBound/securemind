@@ -1,0 +1,42 @@
+name: Bug report
+description: Something does not work as described.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. SecureMind is shared as is, so there is no promised response time.
+        **Do not paste API keys, setup codes, passwords or private data.** For a security problem, use the private link on the previous page instead.
+  - type: dropdown
+    id: edition
+    attributes:
+      label: How do you run it?
+      options:
+        - Local Docker
+        - Host dev server (npm run dev)
+        - My own AWS account
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: The output of `git rev-parse --short HEAD`, or the image tag.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: Remove anything private first.
+      render: text

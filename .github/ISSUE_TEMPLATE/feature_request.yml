@@ -1,0 +1,17 @@
+name: Feature request
+description: Suggest an improvement.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like to see?
+  - type: markdown
+    attributes:
+      value: SecureMind is a personal project with a deliberately small scope. A request may be declined even if it is reasonable.

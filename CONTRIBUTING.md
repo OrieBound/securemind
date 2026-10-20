@@ -22,6 +22,8 @@ Please keep a change focused on one thing. New detection patterns need test case
 
 By contributing, you agree that your work is released under the [Apache License 2.0](LICENSE).
 
+Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Contact
 
 Use the [Contact page](https://securemind.chat/contact/) or [LinkedIn](https://www.linkedin.com/in/orie-hulan).
