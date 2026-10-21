@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AuthSessionProvider } from "@/components/app/auth-session";
 import { InstanceSetupWizard } from "@/components/app/instance-setup-wizard";
@@ -43,6 +44,37 @@ type GateMode = "login" | "claim" | "forgot" | "reset" | "mfa";
  * When the server is in Cognito mode, require a session before showing the app.
  * Local mode still runs the first-run wizard until setup is complete.
  */
+/** True once `active` has stayed on for `afterMs`. Used to explain a long wait instead of leaving a spinner unexplained. */
+function useSlowHint(active: boolean, afterMs: number): boolean {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (!active) return;
+    const timer = setTimeout(() => setSlow(true), afterMs);
+    return () => {
+      clearTimeout(timer);
+      setSlow(false);
+    };
+  }, [active, afterMs]);
+  return slow;
+}
+
+/** Full-screen wait with motion, so a slow start never looks like a frozen page. */
+function GateLoading({ message }: { message: string }) {
+  const slow = useSlowHint(true, 4000);
+  return (
+    <div className="flex h-dvh flex-col items-center justify-center gap-5 bg-background px-6 text-center" role="status" aria-live="polite">
+      <ProductMark size={56} className="size-14 shrink-0 animate-pulse" />
+      <div className="flex items-center gap-2.5 text-sm text-foreground/70">
+        <Loader2 className="size-4 animate-spin shrink-0" aria-hidden />
+        <span>{message}</span>
+      </div>
+      <p className={cn("max-w-xs text-xs text-foreground/45 transition-opacity duration-500", slow ? "opacity-100" : "opacity-0")}>
+        Still working. The first visit after a quiet period can take a few seconds.
+      </p>
+    </div>
+  );
+}
+
 export function AuthGate({ children }: Props) {
   const [me, setMe] = useState<MeResponse | null>(null);
   const [setup, setSetup] = useState<SetupStatus | null>(null);
@@ -62,6 +94,7 @@ export function AuthGate({ children }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const slowSubmit = useSlowHint(busy, 3000);
 
   async function refreshMe(): Promise<MeResponse | null> {
     try {
@@ -309,11 +342,7 @@ export function AuthGate({ children }: Props) {
   );
 
   if (loading) {
-    return (
-      <div className="flex h-dvh items-center justify-center bg-background text-sm text-foreground/40">
-        Checking session…
-      </div>
-    );
+    return <GateLoading message="Checking your session…" />;
   }
 
   const setupComplete = Boolean(setup?.setupComplete);
@@ -538,10 +567,24 @@ export function AuthGate({ children }: Props) {
           {notice && (
             <p role="status" className="text-meta text-emerald-300/90">{notice}</p>
           )}
+          {busy && slowSubmit && (
+            <p role="status" className="text-meta text-foreground/50">
+              Still working. The first sign-in after a quiet period can take a few seconds.
+            </p>
+          )}
 
-          <Button type="submit" disabled={busy} className="w-full h-10 text-sm font-medium">
+          <Button type="submit" disabled={busy} aria-busy={busy} className="w-full h-10 text-sm font-medium">
             {busy
-              ? "Working…"
+              ? (
+                <span className="inline-flex items-center justify-center gap-2">
+                  <Loader2 className="size-4 animate-spin shrink-0" aria-hidden />
+                  {mode === "login" ? "Signing in…"
+                    : mode === "claim" ? "Creating account…"
+                    : mode === "forgot" ? "Sending code…"
+                    : mode === "mfa" ? "Verifying…"
+                    : "Saving…"}
+                </span>
+              )
               : mode === "login" ? "Sign in"
               : mode === "claim" ? "Create owner account"
               : mode === "forgot" ? "Send reset code"
