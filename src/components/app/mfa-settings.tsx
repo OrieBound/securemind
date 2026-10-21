@@ -130,7 +130,7 @@ export function MfaSettings() {
   }
 
   const heading = (
-    <h3 className="text-[0.72rem] font-semibold uppercase tracking-wider text-foreground/55">
+    <h3 className="text-section">
       Two-step verification
     </h3>
   );

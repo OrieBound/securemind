@@ -61,6 +61,7 @@ export function ProfileSettings() {
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [tab, setTab] = useState<"profile" | "security">("profile");
 
   const [displayName, setDisplayName] = useState("");
   const [handle, setHandle] = useState("");
@@ -314,6 +315,38 @@ export function ProfileSettings() {
 
   return (
     <div className="space-y-8 max-w-2xl">
+      <div role="tablist" aria-label="Profile sections" className="flex gap-1 border-b border-foreground/10">
+        {([
+          ["profile", "Profile"],
+          ["security", "Security"],
+        ] as const).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            id={`profile-tab-${id}`}
+            aria-selected={tab === id}
+            aria-controls={`profile-panel-${id}`}
+            tabIndex={tab === id ? 0 : -1}
+            onClick={() => setTab(id)}
+            onKeyDown={event => {
+              if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
+                event.preventDefault();
+                setTab(id === "profile" ? "security" : "profile");
+              }
+            }}
+            className={cn(
+              "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium cursor-pointer transition-colors",
+              tab === id
+                ? "border-[var(--primary)] text-foreground"
+                : "border-transparent text-foreground/50 hover:text-foreground/80",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {(notice || error) && (
         <p
           role="status"
@@ -328,6 +361,8 @@ export function ProfileSettings() {
         </p>
       )}
 
+      {tab === "profile" && (
+        <div id="profile-panel-profile" role="tabpanel" aria-labelledby="profile-tab-profile" className="space-y-8">
       {/* Profile information */}
       <section className="space-y-4">
         <div>
@@ -574,10 +609,14 @@ export function ProfileSettings() {
           Appearance also has a quick toggle. Detection policy is Admin-owned under Settings → Detection.
         </p>
       </section>
+        </div>
+      )}
 
+      {tab === "security" && (
+        <div id="profile-panel-security" role="tabpanel" aria-labelledby="profile-tab-security" className="space-y-8">
       {/* Security */}
       <section className="space-y-3">
-        <h3 className="text-section">Security</h3>
+        <h3 className="text-section">Password</h3>
         <p className="text-xs text-foreground/40">{security?.note}</p>
         {security?.passwordChangeAvailable ? (
           <form onSubmit={changePassword} className="space-y-2.5 max-w-md">
@@ -628,8 +667,16 @@ export function ProfileSettings() {
             A multi-device session list is not available from Cognito in this build.
           </p>
         )}
+      </section>
+
+      <section>
         <MfaSettings />
-        {authSession && (
+      </section>
+
+      {authSession && (
+        <section className="space-y-3">
+          <h3 className="text-section">This session</h3>
+          <p className="text-xs text-foreground/40">Signs you out on this device. Other devices stay signed in until they expire.</p>
           <button
             type="button"
             onClick={() => void authSession.logout()}
@@ -637,12 +684,12 @@ export function ProfileSettings() {
           >
             Sign out of this session
           </button>
-        )}
-      </section>
+        </section>
+      )}
 
       {/* Privacy */}
       <section className="space-y-2 rounded-2xl border border-foreground/[0.07] px-4 py-4">
-        <h3 className="text-section">Privacy & lifecycle</h3>
+        <h3 className="text-section">Closing your account</h3>
         <p className="text-[0.7rem] text-foreground/40 leading-relaxed">
           Account deletion is performed by an Administrator (they turn off sign-in; data
           stays until a future purge). Contact an Admin if you need your account closed.
@@ -653,6 +700,8 @@ export function ProfileSettings() {
           <li>Security and Data Handling (placeholder)</li>
         </ul>
       </section>
+        </div>
+      )}
       {cropFile && (
         <AvatarCropDialog
           file={cropFile}
