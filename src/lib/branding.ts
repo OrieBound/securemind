@@ -18,3 +18,7 @@ export const PRODUCT_CHROME_TAGLINE = "Privacy-aware workspace";
 
 /** Served from `public/brand/` (Next.js static files). */
 export const PRODUCT_LOGO_SRC = "/brand/securemind-logo.png";
+
+/** Public pages about the software. They live on the project website and the public repository. */
+export const PRIVACY_PAGE_URL = "https://securemind.chat/privacy/";
+export const SECURITY_POLICY_URL = "https://github.com/OrieBound/securemind/blob/main/SECURITY.md";

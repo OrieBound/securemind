@@ -10,6 +10,7 @@ import { useAuthSession } from "@/components/app/auth-session";
 import { notifyAvatarChanged, UserAvatarFace } from "@/components/app/user-avatar";
 import { AvatarCropDialog } from "@/components/app/avatar-crop-dialog";
 import { MfaSettings } from "@/components/app/mfa-settings";
+import { PRIVACY_PAGE_URL, SECURITY_POLICY_URL } from "@/lib/branding";
 import type { DirectoryPasswordPolicy } from "@/lib/auth-password";
 
 type WorkspaceBrief = { id: string; name: string; emoji: string; isDefault: boolean };
@@ -694,10 +695,17 @@ export function ProfileSettings() {
           Account deletion is performed by an Administrator (they turn off sign-in; data
           stays until a future purge). Contact an Admin if you need your account closed.
         </p>
-        <ul className="text-[0.7rem] text-foreground/35 space-y-1 list-disc pl-4">
-          <li>Privacy Policy (placeholder)</li>
-          <li>Terms of Service (placeholder)</li>
-          <li>Security and Data Handling (placeholder)</li>
+        <ul className="text-[0.7rem] text-foreground/55 space-y-1 list-disc pl-4">
+          <li>
+            <a href={PRIVACY_PAGE_URL} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-foreground/80">
+              Privacy: what the software and the website collect
+            </a>
+          </li>
+          <li>
+            <a href={SECURITY_POLICY_URL} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-foreground/80">
+              Security: how to report a problem and what is covered
+            </a>
+          </li>
         </ul>
       </section>
         </div>
