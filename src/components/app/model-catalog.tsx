@@ -755,8 +755,9 @@ export function useModelTester() {
   const [results, setResults] = useState<Record<string, ModelTestResult>>({});
   const { refresh } = useModelCatalog();
 
-  const test = useCallback(async (model: CatalogModel) => {
+  const test = useCallback(async (model: CatalogModel, opts?: { refresh?: boolean }): Promise<ModelTestResult> => {
     setResults(prev => ({ ...prev, [modelKey(model)]: { ok: false, pending: true } }));
+    let outcome: ModelTestResult = { ok: false, pending: false };
     try {
       const res = await fetch("/api/models/test", {
         method: "POST",
@@ -765,24 +766,20 @@ export function useModelTester() {
         body: JSON.stringify({ modelId: model.id, provider: model.provider }),
       });
       const data = (await res.json()) as ModelTestResult & { error?: string };
-      setResults(prev => ({
-        ...prev,
-        [modelKey(model)]: res.ok
-          ? { ...data, pending: false }
-          : { ok: false, pending: false, message: data.error ?? `Request failed (${res.status})` },
-      }));
+      outcome = res.ok
+        ? { ...data, pending: false }
+        : { ok: false, pending: false, message: data.error ?? `Request failed (${res.status})` };
     } catch (err) {
-      setResults(prev => ({
-        ...prev,
-        [modelKey(model)]: {
-          ok: false,
-          pending: false,
-          message: err instanceof Error ? err.message : "Test failed",
-        },
-      }));
+      outcome = {
+        ok: false,
+        pending: false,
+        message: err instanceof Error ? err.message : "Test failed",
+      };
     } finally {
-      await refresh();
+      setResults(prev => ({ ...prev, [modelKey(model)]: outcome }));
+      if (opts?.refresh !== false) await refresh();
     }
+    return outcome;
   }, [refresh]);
 
   return { results, test };

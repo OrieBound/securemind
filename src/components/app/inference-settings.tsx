@@ -21,6 +21,7 @@ import {
 } from "@/lib/models/groq-connectivity";
 import { consumeBedrockHighlight, HIGHLIGHT_BEDROCK_KEY } from "@/lib/onboarding";
 import { deriveKeyHealth, keyNeedsAttention, relativeTime, type KeyHealth } from "@/lib/models/key-health";
+import { planRecommendedBedrock, recommendedNeedingConsole } from "@/lib/models/bedrock-recommended";
 import { VoiceSttSetupDialog } from "@/components/app/voice-stt-setup";
 import {
   voiceProviderDestination,
@@ -152,6 +153,7 @@ export function InferenceSettings(props: Props) {
   const pickedProviderDefault = useRef(false);
   const { results, test } = useModelTester();
   const sharedCatalog = useModelCatalog();
+  const [recommendedRun, setRecommendedRun] = useState<{ busy: boolean; message: string | null }>({ busy: false, message: null });
   // modelFilter only scopes the picker chips when a credential row is selected.
 
   const [keyDraft, setKeyDraft] = useState("");
@@ -546,6 +548,39 @@ export function InferenceSettings(props: Props) {
 
   const inMenuModels = useMemo(() => chatSelectableModels(allModels), [allModels]);
 
+  /** Tests the newest listed version of each recommended Bedrock family and keeps the ones that answer. */
+  const enableRecommendedBedrock = useCallback(async () => {
+    const plan = planRecommendedBedrock(allModels);
+    if (plan.length === 0) return;
+    setRecommendedRun({ busy: true, message: "Starting…" });
+    const added: string[] = [];
+    const missed: string[] = [];
+    for (const family of plan) {
+      let done = false;
+      for (const candidate of family.candidates) {
+        setRecommendedRun({ busy: true, message: `Checking ${candidate.name}…` });
+        const outcome = await test(candidate, { refresh: false });
+        if (outcome.ok) {
+          added.push(candidate.name);
+          done = true;
+          break;
+        }
+      }
+      if (!done) missed.push(family.label);
+    }
+    await sharedCatalog.refresh();
+    const needConsole = recommendedNeedingConsole(allModels);
+    const parts: string[] = [];
+    if (added.length > 0) parts.push(`Added to chat: ${added.join(", ")}.`);
+    if (missed.length > 0) {
+      parts.push(`Could not add ${missed.join(" or ")}. Check that the model is turned on for your AWS account (Bedrock, Discover, Model catalog), then try again.`);
+    }
+    if (needConsole.length > 0) {
+      parts.push(`${needConsole.join(" and ")} must be turned on in the Bedrock console first.`);
+    }
+    setRecommendedRun({ busy: false, message: parts.join(" ") || "Nothing to add." });
+  }, [allModels, test, sharedCatalog]);
+
   function openAvailableModels(provider: "groq" | "google" | "openai" | "anthropic" | "xai") {
     setModelFilter(provider);
     setOpenModule("models");
@@ -643,6 +678,12 @@ export function InferenceSettings(props: Props) {
           errors={[...new Set([...errors, ...sharedCatalog.catalog.errors])]}
           complexityTiers={complexityTiers}
           onTest={canEdit ? m => void test(m) : undefined}
+          onEnableRecommendedBedrock={canEdit ? () => void enableRecommendedBedrock() : undefined}
+          recommendedBedrock={{
+            available: planRecommendedBedrock(allModels).length > 0,
+            busy: recommendedRun.busy,
+            message: recommendedRun.message,
+          }}
           onToggleVisibility={canEdit ? async m => {
             const res = await fetch("/api/models/catalog", {
               method: "PATCH",

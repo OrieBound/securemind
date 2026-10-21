@@ -5,7 +5,7 @@
  * Assignment stays on Complexity tiers — this list does not pick a route.
  */
 
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   ModelPickerList,
@@ -148,6 +148,8 @@ export function ModelInventory({
   blockedNotice,
   providerFilter = "all",
   onProviderFilterChange,
+  onEnableRecommendedBedrock,
+  recommendedBedrock,
 }: {
   models: CatalogModel[];
   loading?: boolean;
@@ -161,7 +163,12 @@ export function ModelInventory({
   blockedNotice?: string | null;
   providerFilter?: ModelProviderId | "all";
   onProviderFilterChange?: (next: ModelProviderId | "all") => void;
+  /** One click: test and turn on the recommended Bedrock models. Admin only. */
+  onEnableRecommendedBedrock?: () => void;
+  recommendedBedrock?: { available: boolean; busy: boolean; message: string | null };
 }) {
+  const [notCheckedOpen, setNotCheckedOpen] = useState(false);
+  const notCheckedRef = useRef<HTMLDivElement>(null);
   const groups = useMemo(() => partitionModels(models), [models]);
   const inMenus = groups.inMenus;
   const notInMenus = useMemo(
@@ -242,6 +249,19 @@ export function ModelInventory({
         </div>
       )}
 
+      {onTest && groups.notChecked.length > 0 && (
+        <AddModelsPanel
+          untested={groups.notChecked.length}
+          inChat={inMenus.length}
+          recommended={onEnableRecommendedBedrock && recommendedBedrock ? { ...recommendedBedrock, run: onEnableRecommendedBedrock } : null}
+          onBrowse={() => {
+            onProviderFilterChange?.("all");
+            setNotCheckedOpen(true);
+            requestAnimationFrame(() => notCheckedRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+          }}
+        />
+      )}
+
       {(models.length > 0 || !loading) && (
         <ModelPickerList
           models={inMenus}
@@ -259,9 +279,13 @@ export function ModelInventory({
         />
       )}
 
+      <div ref={notCheckedRef} className="scroll-mt-4">
       <ModelGroupSection
-        title="Not checked yet"
-        note="Check access tries each listed model once. A model that answers is added to the chat menus. If it cannot answer, it moves to Doesn't work here."
+        title="Not in chat yet"
+        note="Press Enable on a model to test it once. A model that answers is added to the chat menus. If it cannot answer, it moves to Doesn't work here."
+        emphasis
+        open={notCheckedOpen || (providerFilter !== "all" && groups.notChecked.some(m => m.provider === providerFilter))}
+        onOpenChange={setNotCheckedOpen}
         models={groups.notChecked}
         providerFilter={providerFilter}
         complexityTiers={complexityTiers}
@@ -270,6 +294,7 @@ export function ModelInventory({
         results={results}
         onProviderFilterChange={onProviderFilterChange}
       />
+      </div>
       <ModelGroupSection
         title="Hidden from menus"
         note="These work here. You hid them, so chat does not offer them."
@@ -308,9 +333,17 @@ function ModelGroupSection({
   results,
   onProviderFilterChange,
   tone = "neutral",
+  emphasis = false,
+  open,
+  onOpenChange,
 }: {
   title: string;
   note: string;
+  /** Draws attention to a section the reader needs to open to finish setup. */
+  emphasis?: boolean;
+  /** Controlled open state. Leave unset for the default behavior. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   models: CatalogModel[];
   providerFilter: ModelProviderId | "all";
   complexityTiers: ComplexityTiersBind | null;
@@ -324,15 +357,24 @@ function ModelGroupSection({
   if (models.length === 0) return null;
   return (
     <details
-      key={providerFilter}
-      open={providerFilter !== "all" && shown.length > 0}
+      key={open === undefined ? providerFilter : undefined}
+      open={open === undefined ? providerFilter !== "all" && shown.length > 0 : open}
+      onToggle={open === undefined ? undefined : event => onOpenChange?.(event.currentTarget.open)}
       className={cn(
         "rounded-lg border bg-card",
-        tone === "problem" ? "border-red-500/30" : "border-border",
+        tone === "problem" ? "border-red-500/30" : emphasis ? "border-indigo-400/40 bg-indigo-500/[0.06]" : "border-border",
       )}
     >
-      <summary className="cursor-pointer px-3 py-2.5 text-sm font-medium text-foreground/80">
-        {title} · {shown.length}
+      <summary className={cn(
+        "flex cursor-pointer items-center justify-between gap-3 px-3 py-3 text-sm font-medium",
+        emphasis ? "text-foreground/90" : "text-foreground/80",
+      )}>
+        <span>{title} · {shown.length}</span>
+        {emphasis && (
+          <span className="shrink-0 rounded-full border border-indigo-400/40 px-2.5 py-0.5 text-[0.72rem] text-indigo-200">
+            {open ? "Hide list" : "Show list"}
+          </span>
+        )}
       </summary>
       <div className="border-t border-border px-2 py-2">
         <p className="px-1.5 pb-2 text-sm text-foreground/65">{note}</p>
@@ -352,5 +394,60 @@ function ModelGroupSection({
         />
       </div>
     </details>
+  );
+}
+
+/**
+ * Always-visible nudge above the model list. Models only reach chat after a test passes, and the
+ * untested ones sit in a collapsed list, so this says so up front and offers the two ways forward.
+ */
+function AddModelsPanel({
+  untested,
+  inChat,
+  recommended,
+  onBrowse,
+}: {
+  untested: number;
+  inChat: number;
+  recommended: { available: boolean; busy: boolean; message: string | null; run: () => void } | null;
+  onBrowse: () => void;
+}) {
+  return (
+    <div className="rounded-xl border border-indigo-400/35 bg-indigo-500/[0.08] px-4 py-3.5" role="region" aria-label="Add models to chat">
+      <p className="text-sm font-semibold text-foreground/90">
+        {inChat === 0 ? "No models are in chat yet" : `${untested} more ${untested === 1 ? "model is" : "models are"} ready to add`}
+      </p>
+      <p className="mt-1 text-[0.82rem] leading-relaxed text-foreground/65">
+        {untested} {untested === 1 ? "model was" : "models were"} found for your connections, but a model only appears in chat after it answers a quick test.
+        Each test is one tiny request.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {recommended?.available && (
+          <button
+            type="button"
+            disabled={recommended.busy}
+            onClick={recommended.run}
+            className="rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60 cursor-pointer"
+          >
+            {recommended.busy ? "Enabling…" : "Enable recommended Bedrock models"}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onBrowse}
+          className="rounded-lg border border-border bg-elevated px-3.5 py-2 text-sm font-medium text-foreground/85 hover:bg-foreground/[0.06] cursor-pointer"
+        >
+          Choose from all {untested}
+        </button>
+      </div>
+      {recommended?.available && !recommended.message && (
+        <p className="mt-2 text-[0.72rem] text-foreground/50">
+          Tests Amazon Nova Lite and Claude Haiku once each, and adds the ones that answer.
+        </p>
+      )}
+      {recommended?.message && (
+        <p className="mt-2 text-[0.8rem] leading-relaxed text-foreground/75" role="status">{recommended.message}</p>
+      )}
+    </div>
   );
 }
