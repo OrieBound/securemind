@@ -165,6 +165,34 @@ The console wizard can also silently **replace** the app's entire environment va
 
 **Bedrock → enable model access (strongly recommended).** An AWS install has no local model, so chat needs Bedrock or an API key. To have chat work the moment you sign in, without pasting any API key, open the [Bedrock console](https://console.aws.amazon.com/bedrock/) in the same region, go to **Model access**, and request access to **Titan Text Embeddings V2** and at least one chat model (Claude or Nova are reasonable defaults). This is a console toggle, not an IAM permission — having the right IAM policy is not enough on its own. If you skip this, SecureMind still runs, but chat has no model until you add a Groq, OpenAI, Gemini, or Anthropic key in Settings after your first sign-in.
 
+### Bedrock checklist: your AWS account vs the app
+
+Two different things have to be true before chat answers through Bedrock. One is set up in your AWS account, and only you can do it. The other is in SecureMind, and the install does most of it for you.
+
+**In your AWS account (you do these):**
+
+1. **Use the same region as the install** (`us-east-1` unless you chose another). Models are enabled per region.
+2. **Make sure the models are available to your account.** In the Bedrock console, check the model catalog or model access for **Titan Text Embeddings V2** and at least one chat model. Many models turn on the first time they are used. Some, such as Anthropic's Claude, may ask you once for details about how you will use them. The account also needs a valid payment method.
+3. **Pick a model that is still supported.** Bedrock keeps retired models in some lists. A retired one fails with "reached the end of its life". Choose a current one.
+4. **Know your limits.** A new account can start with low request and token limits. If replies fail with a throttling or "too many requests" error, ask for a higher limit in Service Quotas.
+
+**In SecureMind (the install does the first two for you):**
+
+5. **Permissions.** Terraform gives the chat function and the web app permission to call Bedrock. You do not set this up by hand. If you changed those roles yourself, put it back.
+6. **Turn on billable AWS calls.** It is off by default. Sign in as an administrator, open **Settings → Models**, and switch it on. It stays off if the environment sets `ALLOW_REAL_AWS=false`.
+7. **Test it.** In **Settings → Models**, test a model, then send a chat message.
+
+**If it does not work, the message tells you where to look:**
+
+| You see | Look at |
+| --- | --- |
+| "Billable AWS calls are turned off" | Step 6, in SecureMind |
+| Access denied or not authorized | Step 2 (account), then step 5 (permissions) |
+| "Reached the end of its life" | Step 3, pick a current model |
+| Throttling or too many requests | Step 4, request a higher limit |
+
+SecureMind never asks for an AWS access key. It uses the permissions of the AWS role it runs under.
+
 ## Phase 6 — First build and sign-in
 
 Auto-build is off, and if you're applying from your own laptop rather than through GitHub Actions, nothing else will start the first build for you. Start it by hand:
