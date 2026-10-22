@@ -74,19 +74,6 @@ export const WIRED_VENDOR_APIS: VendorApiSpec[] = [
   },
 ];
 
-/** Stored-only today — detection + inventory, no chat adapter yet. */
-export const STORE_ONLY_VENDOR_APIS = [
-  {
-    kind: "azure" as const,
-    label: "Azure OpenAI",
-    productName: "Azure OpenAI",
-    keyCreateUrl: "https://portal.azure.com/#view/Microsoft_Azure_ProjectOxford/CognitiveServicesHub/~/OpenAI",
-    keyCreateLabel: "Azure Portal → Azure OpenAI",
-    keyHint: "32-character hex key + endpoint in Azure",
-    blurb: "Keys can be saved for later — Azure chat is not wired yet. Use OpenAI direct or Bedrock for Claude.",
-  },
-];
-
 export type VendorCatalogKind = WiredVendorKind | "none";
 
 export function isWiredVendorKind(kind: string): kind is WiredVendorKind {

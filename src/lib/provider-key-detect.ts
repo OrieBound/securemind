@@ -119,10 +119,6 @@ export function detectProviderKey(raw: string): KeyDetection {
   else if (/^sk-[A-Za-z0-9_-]{20,}$/.test(value)) {
     kind = "openai";
   }
-  // Azure often uses 32-byte hex
-  else if (/^[0-9a-f]{32}$/i.test(value)) {
-    kind = "azure";
-  }
   // JSON service account hint
   else if (value.startsWith("{") && /"type"\s*:\s*"service_account"/i.test(value)) {
     kind = "google";

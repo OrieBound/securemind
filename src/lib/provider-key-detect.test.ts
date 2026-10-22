@@ -56,4 +56,11 @@ describe("detectProviderKey", () => {
     expect(detectProviderKey("").kind).toBe("unknown");
     expect(detectProviderKey("not-a-real-key").kind).toBe("unknown");
   });
+
+  it("does not treat a 32-character hex string as a supported key", () => {
+    // Azure OpenAI is not supported, so its key shape is no longer recognized.
+    const result = detectProviderKey("0123456789abcdef0123456789abcdef");
+    expect(result.kind).toBe("unknown");
+    expect(result.wired).toBe(false);
+  });
 });

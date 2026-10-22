@@ -36,7 +36,6 @@ import {
 } from "@/lib/provider-key-detect";
 import {
   WIRED_VENDOR_APIS,
-  STORE_ONLY_VENDOR_APIS,
   isWiredVendorKind,
   type WiredVendorKind,
 } from "@/lib/vendor-providers";
@@ -1816,7 +1815,7 @@ function SupportedVendorsPanel({
   onOpenModels: (kind: WiredVendorKind) => void;
   onRemove: (key: KeyInventoryItem) => void;
 }) {
-  const [openKind, setOpenKind] = useState<WiredVendorKind | "azure" | null>(null);
+  const [openKind, setOpenKind] = useState<WiredVendorKind | null>(null);
   const keyed = (kind: WiredVendorKind) =>
     keys.some(k => k.kind === kind && k.status === "ready");
 
@@ -1988,44 +1987,6 @@ function SupportedVendorsPanel({
                 <p className="text-foreground/55 leading-relaxed">
                   {v.docsNote ?? (v.kind === "groq" ? GROQ_VPN_SETTINGS_NOTE : "Create the key on that page, paste it below, then review the models.")}
                 </p>
-              </div>
-            )}
-          </li>
-        );
-      })}
-      {STORE_ONLY_VENDOR_APIS.map(v => {
-        const open = openKind === "azure";
-        return (
-          <li key={v.kind} className="rounded-xl border border-dashed border-border bg-card/60 px-3.5 py-3.5">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[0.95rem] font-semibold text-foreground/80">{v.productName}</p>
-                <p className="mt-1.5 text-[0.8rem] text-foreground/55 leading-relaxed">{v.blurb}</p>
-              </div>
-              <span className="shrink-0 rounded-md border border-border bg-muted px-2 py-1 text-[0.68rem] font-semibold text-foreground/50">
-                Saved for later
-              </span>
-            </div>
-            <button
-              type="button"
-              aria-expanded={open}
-              onClick={() => setOpenKind(open ? null : "azure")}
-              className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-strong)] bg-elevated px-3 py-1.5 text-[0.78rem] font-medium text-foreground/75 hover:bg-muted cursor-pointer"
-            >
-              Key setup
-              <ChevronDown className={cn("size-3.5 transition-transform", open && "rotate-180")} aria-hidden />
-            </button>
-            {open && (
-              <div className="mt-3 text-[0.8rem]">
-                <a
-                  href={v.keyCreateUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 font-medium text-indigo-200 underline underline-offset-2"
-                >
-                  {v.keyCreateLabel}
-                  <ExternalLink className="size-3.5" aria-hidden />
-                </a>
               </div>
             )}
           </li>
