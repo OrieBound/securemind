@@ -15,7 +15,7 @@
 - *Several separate organizations sharing one install.* Each install is one team. Users' data is kept apart from each other, but Admins can see usage across the install and can reset a Member's password (which lets them sign in as that Member). That is normal for one team; it is not a safe way to host unrelated companies on one install. Separate organizations should each run their own install.
 - *AWS WAF.* Declined by the owner on cost (about $5 to $6 a month). The Cognito authorizer, request throttling, the 4xx alarm and the budget alert cover the main risk. Operators who want WAF can add it to their own account.
 
-**Remaining lower-priority items** (none blocks the scope above): transitive dependency advisories (Dependabot proposes updates), regex-based prompt-injection filtering, plaintext data at rest on Docker unless the disk is encrypted, inline scripts allowed by the CSP, two-step verification optional for Admins.
+**Remaining lower-priority items** (none blocks the scope above): each now has a recorded outcome, fixed or accepted by the owner with a reason and a reopen condition, in [Round 6 of the regrade](04-regrade.md#round-6-disposition-of-the-remaining-items-2026-10-22). They are two unpatched transitive advisories, the regex-based prompt-injection filter (kept as defense in depth), plaintext data at rest on Docker unless the disk is encrypted, inline scripts allowed by the CSP, and two-step verification being optional for Admins.
 
 ## What this assessment could and could not verify
 

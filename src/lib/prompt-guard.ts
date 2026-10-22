@@ -23,6 +23,8 @@ const INJECTION_PATTERNS: RegExp[] = [
   /<\|(?:system|assistant|endoftext|im_start|im_end)\|?>/gi,
   /<<\s*SYS\s*>>/gi,
   /\[(?:INST|SYSTEM|SYS)\]/gi,
+  // A document that contains our own fence markers could close its block early and put text outside it.
+  /\b(?:BEGIN|END)_RETRIEVED_EVIDENCE\b/gi,
 ];
 
 /**

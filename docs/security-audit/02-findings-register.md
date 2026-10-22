@@ -6,6 +6,8 @@ Assessed commit `ce86dd3`, 2026-10-18. See [01-executive-summary-and-verdict.md]
 **Deployment key:** SH = self-hosted Docker, AWS = Amplify/Lambda/Cognito/DynamoDB, Both.
 Line numbers refer to the assessed commit. No secret values are reproduced.
 
+**Current outcomes:** this register is the 2026-10-18 snapshot. The outcome of every finding, including each one still open at the time, is in [Round 6 of the regrade](04-regrade.md#round-6-disposition-of-the-remaining-items-2026-10-22).
+
 ---
 
 ## Critical

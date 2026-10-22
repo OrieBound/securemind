@@ -205,3 +205,27 @@ No code changed since round 4 (`428bd22` locally and on GitHub). Everything was 
 Remaining lower-priority items: F-11 transitive advisories (Dependabot now proposes updates), F-12 Floci, F-19 regex injection filter, F-21 plaintext at rest on-prem, F-25 state-bucket KMS, F-29 inline-script CSP, F-31 MFA optional for Admins, F-02 default DB password inside the Compose network, and the static-site setting in the local `domain.auto.tfvars` that disagrees with the live sites.
 
 **Update (2026-10-19):** gap closed. `alert_email` set for the owner's own install only (in the git-ignored `.env.deploy`, never in the repository); targeted `module.monitoring` apply by the owner added a confirmed email subscription on the alert topic and the `securemind-prod-monthly` $5 budget. `infra/scripts/lib.mjs` now passes `ALERT_EMAIL`, `MONTHLY_BUDGET_USD` and `COGNITO_DELETION_PROTECTION` from `.env.deploy`, so a later `npm run infra:up` no longer reverts deletion protection or drops the alerts. AWS, small invite-only team: **GO**, no open operational actions.
+
+---
+
+# Round 6: disposition of the remaining items (2026-10-22)
+
+Before the repository was made public, every item still marked open was given a recorded outcome. A finding is either **fixed** or **accepted by the owner** with the reason and the event that should reopen it. Nothing was left as "open" without one of those. Accepted does not mean unimportant: each one is a known limit that the documentation states.
+
+**Code changes in this round**
+
+- **F-19:** a retrieved document that contained the fence markers (`BEGIN_RETRIEVED_EVIDENCE` / `END_RETRIEVED_EVIDENCE`) could close its own block and put text outside it. Those markers are now neutralized in untrusted text. New adversarial tests (`src/lib/prompt-guard.corpus.test.ts`) pin both halves: wording the filter catches, and wording it knowingly does not (paraphrase, other languages, spaced or zero-width letters). If a known limit is ever caught, the test says so and the entry moves.
+- **F-11:** `uuid` raised to 11.1.1 and `vite` to 8.3.x through package overrides. Spreadsheet read and write were checked in the rebuilt image. Two advisories remain (below).
+
+| ID | Outcome | Why, and what reopens it |
+|---|---|---|
+| F-02 Default database password | **Accepted** | The database has no published port and is reachable only on the Compose network. `POSTGRES_PASSWORD` can be set before the first start and the docs say to. Reopen if the Compose file ever publishes the database port. |
+| F-11 Dependencies | **Mostly fixed; two accepted** | `sprintf-js` (reached through the Word reader's command-line help text, never on file contents) and `braces` (reached through the `shadcn` developer CLI, which does not run in the app) have no patched release. Reopen when Dependabot offers a fix. |
+| F-12 Floci as identity provider | **Accepted, scope-limited** | Docker installs are for one computer or a trusted network, and the verdict marks public-internet exposure NO-GO. The image is pinned by digest and sign-in is rate-limited. Reopen before any claim of internet-facing Docker. |
+| F-19 Prompt-injection filter | **Fixed as far as the design allows** | Marker gap closed and limits pinned by tests (above). It stays defense in depth: the controls that matter are the fenced prompt, a chat path with no tools, and retrieval scoped to the signed-in user. Reopen before any tool or action is added to chat. |
+| F-21 Plaintext at rest on Docker | **Accepted, documented** | Full-disk encryption is a stated requirement for any shared or portable machine. The on-prem backup command writes plaintext dumps. Reopen if encrypted backups are wanted. |
+| F-25 Terraform state contents | **Accepted** | The state bucket is versioned, encrypted with S3-managed keys and blocks public access. It is not KMS-encrypted and has no access logging, which would add a recurring cost for a one-person install. Written rotation steps for the instance key are not yet in the docs. Reopen if the install grows past a small team. |
+| F-29 Inline scripts in the CSP | **Accepted** | A nonce-based policy needs middleware changes across the app. Mitigations: chat markdown is rendered without raw HTML, no third-party scripts, strict connect and frame sources, HSTS on the cloud edition and from the HTTPS front end. Reopen when nonces are practical for the framework version in use. |
+| F-31 Cognito defence in depth | **Accepted** | Two-step verification is optional by design (Cognito's required mode is all-or-nothing) and the app recommends it to anyone who manages people or keys. Deletion protection is active on the live install. Compromised-credential checks are not enabled, because they cost extra. Reopen if the install gains more administrators. |
+
+The verdict table in Round 5 is unchanged by this round.
