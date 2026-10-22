@@ -12,7 +12,7 @@ import {
   useModelTester,
   type CatalogModel,
 } from "@/components/app/model-catalog";
-import { ModelInventory, providerCountsLine, vendorMenuPhrase } from "@/components/app/model-inventory";
+import { ModelInventory, partitionModels, providerCountsLine, vendorMenuPhrase, type InventoryView } from "@/components/app/model-inventory";
 import { ComplexityTiersEditor, type ComplexityTiersBind } from "@/components/app/complexity-tiers-editor";
 import {
   formatGroqConnectivityError,
@@ -152,6 +152,7 @@ export function InferenceSettings(props: Props) {
   const pickedProviderDefault = useRef(false);
   const { results, test } = useModelTester();
   const sharedCatalog = useModelCatalog();
+  const [inventoryView, setInventoryView] = useState<InventoryView | null>(null);
   const [recommendedRun, setRecommendedRun] = useState<{ busy: boolean; message: string | null }>({ busy: false, message: null });
   // modelFilter only scopes the picker chips when a credential row is selected.
 
@@ -582,6 +583,7 @@ export function InferenceSettings(props: Props) {
 
   function openAvailableModels(provider: "groq" | "google" | "openai" | "anthropic" | "xai") {
     setModelFilter(provider);
+    setInventoryView(null);
     setOpenModule("models");
     void sharedCatalog.ensureLoaded();
     window.setTimeout(() => {
@@ -592,8 +594,20 @@ export function InferenceSettings(props: Props) {
     }, 50);
   }
 
+  /** From the Bedrock card: open the model list on the tab where models are turned on. */
+  function reviewBedrockModels() {
+    setModelFilter("all");
+    setInventoryView("add");
+    setOpenModule("models");
+    void sharedCatalog.ensureLoaded();
+    window.setTimeout(() => {
+      document.getElementById("inference-module-models")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 50);
+  }
+
   const aws = status?.aws ?? null;
   const hosted = status?.edition === "cloud";
+  const bedrockConsoleUrl = `https://console.aws.amazon.com/bedrock/home?region=${encodeURIComponent(status?.bedrockRegion ?? "us-east-1")}#/model-catalog`;
   const bedrockReady = Boolean(
     aws &&
       aws.allowRealAws &&
@@ -650,22 +664,21 @@ export function InferenceSettings(props: Props) {
         onRefresh={() => void refreshModule("models")}
         refreshing={refreshingModule === "models"}
         icon={<LayoutList className={cn("size-4", CATALOG_THEME.icon)} aria-hidden />}
-        title="Available models"
-        subtitle={
-          inMenuModels.length > 0
-            ? allModels.length > inMenuModels.length
-              ? `${providerCountsLine(inMenuModels)} in menus · ${allModels.length - inMenuModels.length} not in menus`
-              : providerCountsLine(inMenuModels)
-            : allModels.length > 0
-              ? `${allModels.length} listed · test one to add it to chat`
-              : "Chat models from every configured credential"
-        }
+        title="Your models"
+        subtitle={(() => {
+          const g = partitionModels(allModels);
+          if (allModels.length === 0) return "Chat models from every configured credential";
+          const parts = [`${g.inMenus.length} in chat`];
+          if (g.notChecked.length > 0) parts.push(`${g.notChecked.length} to add`);
+          if (g.failed.length > 0) parts.push(`${g.failed.length} not working`);
+          return parts.join(" · ");
+        })()}
         badge={
           <ModuleBadge tone={inMenuModels.length > 0 ? "ok" : "neutral"}>
             {sharedCatalog.loading || loading || refreshingModule === "models"
               ? "…"
               : inMenuModels.length > 0
-                ? `${inMenuModels.length} in menus`
+                ? `${inMenuModels.length} in chat`
                 : `${allModels.length} listed`}
           </ModuleBadge>
         }
@@ -696,8 +709,11 @@ export function InferenceSettings(props: Props) {
           results={results}
           blockedNotice={blockedVendorNotice}
           emptyLabel="No chat models yet. Connect a vendor key, Ollama, or Bedrock in Connections above."
-          providerFilter={modelFilter === "bedrock" || modelFilter === "ollama" ? "all" : modelFilter}
+          providerFilter={modelFilter}
           onProviderFilterChange={setModelFilter}
+          awsEnableUrl={aws?.allowRealAws ? bedrockConsoleUrl : undefined}
+          view={inventoryView}
+          onViewChange={setInventoryView}
         />
       </SettingsModule>
 
@@ -993,6 +1009,8 @@ export function InferenceSettings(props: Props) {
               hosted={hosted}
               docker={status.deployment === "docker"}
               embedded
+              consoleUrl={bedrockConsoleUrl}
+              onReviewModels={reviewBedrockModels}
               onSave={save}
               onRecheck={() => refreshModule("bedrock")}
             />
@@ -1397,7 +1415,7 @@ function LocalBedrockSignIn({
   );
 }
 
-function BedrockEnvironmentCard({
+export function BedrockEnvironmentCard({
   aws,
   region,
   canEdit,
@@ -1405,6 +1423,8 @@ function BedrockEnvironmentCard({
   hosted = false,
   docker = false,
   embedded = false,
+  consoleUrl,
+  onReviewModels,
   onSave,
   onRecheck,
 }: {
@@ -1418,6 +1438,10 @@ function BedrockEnvironmentCard({
   docker?: boolean;
   /** When true, omit outer card chrome (parent SettingsModule already provides it). */
   embedded?: boolean;
+  /** Where Bedrock models are turned on in the AWS console, for this region. */
+  consoleUrl: string;
+  /** Opens the model list on the tab where models are added to chat. */
+  onReviewModels: () => void;
   onSave: (body: Record<string, unknown>, okMsg: string) => Promise<void>;
   onRecheck: () => Promise<void>;
 }) {
@@ -1531,12 +1555,12 @@ function BedrockEnvironmentCard({
               <li>
                 In the same AWS account as this install, open{" "}
                 <a
-                  href="https://console.aws.amazon.com/bedrock/home#/modelaccess"
+                  href={consoleUrl}
                   target="_blank"
                   rel="noreferrer noopener"
                   className="text-indigo-300/80 underline underline-offset-2"
                 >
-                  Bedrock model access
+                  Bedrock model catalog
                 </a>{" "}
                 and enable at least one text chat model.
               </li>
@@ -1570,21 +1594,52 @@ function BedrockEnvironmentCard({
               hasProfiles={profiles.length > 0}
             />
           )}
-          {hosted && (
-            <p className="text-sm text-foreground/60 leading-relaxed">
-              Chat uses this deployment’s existing IAM roles (Terraform) — you do not create a role by
-              hand. Enable at least one text model (for example Amazon Nova) in{" "}
-              <a
-                href="https://console.aws.amazon.com/bedrock/home#/modelaccess"
-                target="_blank"
-                rel="noreferrer noopener"
-                className="text-indigo-300/80 underline underline-offset-2"
-              >
-                Bedrock model access
-              </a>
-              . That console step is not IAM; the app cannot turn it on for you.
-            </p>
-          )}
+          <ol className="space-y-3" aria-label="Turn on Bedrock models">
+            <li className="flex gap-3">
+              <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-xs font-semibold text-emerald-200">1</span>
+              <div>
+                <p className="text-sm font-medium text-foreground/85">Allow Bedrock in SecureMind <span className="ml-1 text-emerald-300/90">Done</span></p>
+                <p className="text-[0.78rem] text-foreground/55 leading-relaxed">
+                  {hosted
+                    ? "Chat runs through this install’s IAM role. Nothing to create by hand."
+                    : "Chat uses the AWS profile on this computer."}
+                </p>
+              </div>
+            </li>
+            <li className="flex gap-3">
+              <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-amber-400/20 text-xs font-semibold text-amber-100">2</span>
+              <div>
+                <p className="text-sm font-medium text-foreground/85">Turn the models on in your AWS account</p>
+                <p className="text-[0.78rem] text-foreground/55 leading-relaxed">
+                  AWS lists many models but only runs the ones your account has switched on. SecureMind cannot do this step for you. Anthropic models may ask a short form the first time.
+                </p>
+                <a
+                  href={consoleUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-1.5 text-[0.8rem] font-medium text-amber-50 hover:bg-amber-400/20"
+                >
+                  Open the Bedrock model catalog in AWS ↗
+                </a>
+              </div>
+            </li>
+            <li className="flex gap-3">
+              <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-indigo-500/25 text-xs font-semibold text-indigo-100">3</span>
+              <div>
+                <p className="text-sm font-medium text-foreground/85">Add them to chat</p>
+                <p className="text-[0.78rem] text-foreground/55 leading-relaxed">
+                  Back here, press Enable on each model you turned on. One tiny test message confirms it answers.
+                </p>
+                <button
+                  type="button"
+                  onClick={onReviewModels}
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-border bg-elevated px-3 py-1.5 text-[0.8rem] font-medium text-foreground/85 hover:bg-foreground/[0.06] cursor-pointer"
+                >
+                  Go to Add more
+                </button>
+              </div>
+            </li>
+          </ol>
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm">
             <dt className="text-foreground/35">Credentials</dt>
             <dd className={

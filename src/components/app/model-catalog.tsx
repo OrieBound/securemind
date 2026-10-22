@@ -139,14 +139,14 @@ export function isChatSelectableModel(m: CatalogModel): boolean {
 }
 
 export function menuStatusLabel(m: CatalogModel): string {
-  if (m.hidden) return "Not in menus · hidden";
-  if (m.access === "needs_enablement") return "Not in menus · enable in AWS";
+  if (m.hidden) return "Hidden from chat";
+  if (m.access === "needs_enablement") return "Turn on in AWS first";
   if (m.verification === "failed") {
     const code = m.verificationCode ? ` · ${m.verificationCode.replaceAll("_", " ")}` : "";
-    return `Not in menus · check failed${code}`;
+    return `Not working here${code}`;
   }
-  if (m.verification === "verified" || m.verification === "installed") return "In menus";
-  return "Not in menus · enable to add";
+  if (m.verification === "verified" || m.verification === "installed") return "In chat";
+  return "Not in chat yet · press Enable";
 }
 
 /** A model already in chat can be rechecked. One that is not is enabled by the same check. */
@@ -355,6 +355,7 @@ export function ModelPickerList({
   browse = false,
   blurbFor,
   assignedTiersFor,
+  awsEnableUrl,
 }: {
   models: CatalogModel[];
   selectedId?: string | null;
@@ -385,6 +386,8 @@ export function ModelPickerList({
   browse?: boolean;
   blurbFor?: (model: CatalogModel) => string;
   assignedTiersFor?: (modelId: string) => string[];
+  /** Where an administrator turns a Bedrock model on in AWS. Shown instead of Enable for models AWS has not switched on. */
+  awsEnableUrl?: string;
 }) {
   const [internalQuery, setInternalQuery] = useState("");
   const query = controlledQuery ?? internalQuery;
@@ -595,15 +598,26 @@ export function ModelPickerList({
                       </span>
                     )}
 
-                    {onTest && (
+                    {onTest && m.access === "needs_enablement" && awsEnableUrl && (
+                      <a
+                        href={awsEnableUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-label={`Turn on ${m.name} in AWS`}
+                        className="shrink-0 rounded-md border border-amber-400/40 bg-amber-400/10 px-2.5 py-1.5 text-xs font-medium text-amber-50 hover:bg-amber-400/20"
+                      >
+                        Turn on in AWS ↗
+                      </a>
+                    )}
+                    {onTest && !(m.access === "needs_enablement" && awsEnableUrl) && (
                       <button
                         type="button"
                         disabled={result?.pending}
-                        aria-label={catalogProbeLabel(m) === "Enable" ? `Enable ${m.name} for chat` : `Test ${m.name}`}
+                        aria-label={catalogProbeLabel(m) === "Enable" ? `Enable ${m.name} for chat` : `Re-check ${m.name}`}
                         onClick={() => onTest(m)}
                         className="shrink-0 rounded-md border border-border bg-elevated px-2.5 py-1.5 text-xs font-medium text-foreground/80 hover:border-[var(--border-strong)] hover:text-foreground disabled:opacity-40 cursor-pointer"
                       >
-                        {catalogProbeLabel(m)}
+                        {catalogProbeLabel(m) === "Enable" ? "Enable" : "Re-check"}
                       </button>
                     )}
                     {browse && onToggleVisibility && (

@@ -5,7 +5,7 @@
  * Assignment stays on Complexity tiers — this list does not pick a route.
  */
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import {
   ModelPickerList,
@@ -136,6 +136,13 @@ function assignedTiers(bind: ComplexityTiersBind | null, modelId: string): strin
   return COMPLEXITY_TIER_NAMES.filter(tier => bind.displayModelFor(tier) === modelId);
 }
 
+export type InventoryView = "chat" | "add" | "broken" | "hidden";
+
+/** The tab a reader should land on: where the next useful thing to do is. */
+export function defaultInventoryView(groups: ModelGroups): InventoryView {
+  return groups.inMenus.length === 0 && groups.notChecked.length > 0 ? "add" : "chat";
+}
+
 export function ModelInventory({
   models,
   loading,
@@ -150,6 +157,9 @@ export function ModelInventory({
   onProviderFilterChange,
   onEnableRecommendedBedrock,
   recommendedBedrock,
+  awsEnableUrl,
+  view: controlledView,
+  onViewChange,
 }: {
   models: CatalogModel[];
   loading?: boolean;
@@ -166,25 +176,24 @@ export function ModelInventory({
   /** One click: test and turn on the recommended Bedrock models. Admin only. */
   onEnableRecommendedBedrock?: () => void;
   recommendedBedrock?: { available: boolean; busy: boolean; message: string | null };
+  /** Where an administrator turns Bedrock models on in AWS. */
+  awsEnableUrl?: string;
+  /** Selected tab. Leave unset to let the list choose. */
+  view?: InventoryView | null;
+  onViewChange?: (view: InventoryView) => void;
 }) {
-  const [notCheckedOpen, setNotCheckedOpen] = useState(false);
-  const notCheckedRef = useRef<HTMLDivElement>(null);
   const groups = useMemo(() => partitionModels(models), [models]);
-  const inMenus = groups.inMenus;
-  const notInMenus = useMemo(
-    () => [...groups.notChecked, ...groups.hidden, ...groups.failed],
-    [groups],
-  );
-  const counts = useMemo(() => providerCountsLine(inMenus), [inMenus]);
-  const filteredNotInMenus = useMemo(
-    () => providerFilter === "all" ? notInMenus : notInMenus.filter(m => m.provider === providerFilter),
-    [notInMenus, providerFilter],
-  );
-  const filteredInMenus = useMemo(
-    () => providerFilter === "all" ? inMenus : inMenus.filter(m => m.provider === providerFilter),
-    [inMenus, providerFilter],
-  );
-  const needsEnablement = models.some(m => m.access === "needs_enablement");
+  const [ownView, setOwnView] = useState<InventoryView | null>(null);
+  const picked = controlledView !== undefined ? controlledView : ownView;
+  const setView = (next: InventoryView) => {
+    if (onViewChange) onViewChange(next);
+    else setOwnView(next);
+  };
+  const view: InventoryView =
+    picked && (picked !== "hidden" || groups.hidden.length > 0) ? picked : defaultInventoryView(groups);
+
+  const counts = useMemo(() => providerCountsLine(groups.inMenus), [groups.inMenus]);
+  const needsEnablement = groups.notChecked.some(m => m.access === "needs_enablement");
   const visibleErrors = (errors ?? []).filter(err => {
     if (providerFilter === "all") return true;
     const text = err.toLowerCase();
@@ -194,259 +203,160 @@ export function ModelInventory({
     return names.some(name => text.includes(name));
   });
 
+  const tabs: { id: InventoryView; label: string; count: number; attention?: boolean }[] = [
+    { id: "chat", label: "In chat", count: groups.inMenus.length },
+    { id: "add", label: "Add more", count: groups.notChecked.length, attention: groups.notChecked.length > 0 },
+    { id: "broken", label: "Not working", count: groups.failed.length },
+    ...(groups.hidden.length > 0 ? [{ id: "hidden" as const, label: "Hidden", count: groups.hidden.length }] : []),
+  ];
+
+  const listFor = (items: CatalogModel[], maxHeightClass: string, empty: string) => (
+    <ModelPickerList
+      models={items}
+      browse
+      blurbFor={modelBlurb}
+      assignedTiersFor={id => assignedTiers(complexityTiers, id)}
+      onTest={onTest}
+      onToggleVisibility={onToggleVisibility}
+      results={results}
+      alwaysShowProviderFilters
+      providerFilter={providerFilter}
+      onProviderFilterChange={onProviderFilterChange}
+      awsEnableUrl={awsEnableUrl}
+      maxHeightClass={maxHeightClass}
+      emptyLabel={empty}
+    />
+  );
+
   return (
-    <div className="space-y-3">
-      {providerFilter === "all" ? (
-        <p className="text-sm text-foreground/60 leading-relaxed">
-          Chat uses the models in this list, from every key that works. Models that have not been tested, are hidden, or do not answer here stay in the sections below.
+    <div className="space-y-4">
+      <div>
+        <p className="text-sm text-foreground/75 leading-relaxed">
+          Chat can use the models under <span className="font-medium text-foreground/90">In chat</span>. A model gets there after it answers one quick test, and{" "}
+          <span className="font-medium text-foreground/90">Add more</span> is where you run those tests.
         </p>
-      ) : (
-        <div className="rounded-lg border border-indigo-400/30 bg-indigo-500/10 px-3.5 py-3">
-          <p className="text-sm font-semibold text-foreground/90">
-            Showing {providerLabel(providerFilter)} models
-          </p>
-          <p className="mt-1 text-[0.8rem] text-foreground/60 leading-relaxed">
-            {filteredInMenus.length} ready for chat
-            {filteredNotInMenus.length > 0 ? ` · ${filteredNotInMenus.length} still need Enable` : ""}.
-            You opened this list from Connections. Enable adds a model to chat when it answers.
-          </p>
-          {onProviderFilterChange && (
-            <button
-              type="button"
-              onClick={() => onProviderFilterChange("all")}
-              className="mt-2 text-[0.78rem] font-medium text-indigo-200 underline underline-offset-2 cursor-pointer"
-            >
-              Show every vendor
-            </button>
-          )}
-        </div>
-      )}
+        {counts && providerFilter === "all" && groups.inMenus.length > 0 && (
+          <p className="mt-1.5 text-xs text-foreground/50">{counts}</p>
+        )}
+      </div>
 
-      {needsEnablement && (
-        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-[0.65rem] text-amber-100/90 leading-relaxed">
-          Some Bedrock models are listed but not turned on for this account. In AWS, open Bedrock → Discover → Model catalog and enable the model. They stay out of chat until then.
-        </p>
-      )}
-
-      {counts && inMenus.length > 0 && providerFilter === "all" && (
-        <p className="text-[0.65rem] text-foreground/50">{counts}</p>
-      )}
-
-      {blockedNotice && (
-        <p className="text-[0.62rem] text-amber-200/80 leading-relaxed">{blockedNotice}</p>
-      )}
-
-      {loading && models.length === 0 && (
-        <p className="text-xs text-foreground/35">Loading catalog…</p>
-      )}
+      {blockedNotice && <p className="text-[0.62rem] text-amber-200/80 leading-relaxed">{blockedNotice}</p>}
+      {loading && models.length === 0 && <p className="text-xs text-foreground/35">Loading catalog…</p>}
       {visibleErrors.length > 0 && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 space-y-1.5">
           {visibleErrors.map(err => (
-            <p key={err} className="text-[0.65rem] text-amber-100/90 leading-relaxed">
-              {err}
-            </p>
+            <p key={err} className="text-[0.65rem] text-amber-100/90 leading-relaxed">{err}</p>
           ))}
         </div>
       )}
 
-      {onTest && groups.notChecked.length > 0 && (
-        <AddModelsPanel
-          untested={groups.notChecked.length}
-          inChat={inMenus.length}
-          recommended={onEnableRecommendedBedrock && recommendedBedrock ? { ...recommendedBedrock, run: onEnableRecommendedBedrock } : null}
-          onBrowse={() => {
-            onProviderFilterChange?.("all");
-            setNotCheckedOpen(true);
-            requestAnimationFrame(() => notCheckedRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
-          }}
-        />
-      )}
-
-      {(models.length > 0 || !loading) && (
-        <ModelPickerList
-          models={inMenus}
-          browse
-          blurbFor={modelBlurb}
-          assignedTiersFor={id => assignedTiers(complexityTiers, id)}
-          onTest={onTest}
-          onToggleVisibility={onToggleVisibility}
-          results={results}
-          alwaysShowProviderFilters
-          providerFilter={providerFilter}
-          onProviderFilterChange={onProviderFilterChange}
-          maxHeightClass="max-h-[min(32rem,70vh)]"
-          emptyLabel={inMenus.length === 0 && notInMenus.length > 0 ? "Nothing in menus yet." : emptyLabel}
-        />
-      )}
-
-      <div ref={notCheckedRef} className="scroll-mt-4">
-      <ModelGroupSection
-        title="Not in chat yet"
-        note="Press Enable on a model to test it once. A model that answers is added to the chat menus. If it cannot answer, it moves to Doesn't work here."
-        emphasis
-        open={notCheckedOpen || (providerFilter !== "all" && groups.notChecked.some(m => m.provider === providerFilter))}
-        onOpenChange={setNotCheckedOpen}
-        models={groups.notChecked}
-        providerFilter={providerFilter}
-        complexityTiers={complexityTiers}
-        onTest={onTest}
-        onToggleVisibility={onToggleVisibility}
-        results={results}
-        onProviderFilterChange={onProviderFilterChange}
-      />
+      <div role="tablist" aria-label="Model list" className="flex flex-wrap gap-1 border-b border-foreground/10">
+        {tabs.map(tab => {
+          const active = view === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              id={`models-tab-${tab.id}`}
+              aria-selected={active}
+              aria-controls={`models-panel-${tab.id}`}
+              onClick={() => setView(tab.id)}
+              className={cn(
+                "-mb-px inline-flex items-center gap-2 border-b-2 px-3.5 py-2.5 text-sm font-medium cursor-pointer transition-colors",
+                active ? "border-[var(--primary)] text-foreground" : "border-transparent text-foreground/55 hover:text-foreground/85",
+              )}
+            >
+              {tab.label}
+              <span
+                className={cn(
+                  "rounded-full px-2 py-0.5 text-[0.7rem] tabular-nums",
+                  tab.attention && !active
+                    ? "bg-indigo-500/25 text-indigo-100"
+                    : "bg-foreground/[0.08] text-foreground/60",
+                )}
+              >
+                {tab.count}
+              </span>
+            </button>
+          );
+        })}
       </div>
-      <ModelGroupSection
-        title="Hidden from menus"
-        note="These work here. You hid them, so chat does not offer them."
-        models={groups.hidden}
-        providerFilter={providerFilter}
-        complexityTiers={complexityTiers}
-        onTest={onTest}
-        onToggleVisibility={onToggleVisibility}
-        results={results}
-        onProviderFilterChange={onProviderFilterChange}
-      />
-      <ModelGroupSection
-        title="Doesn't work here"
-        note="These were tested in this environment and did not answer. They are kept so you can try again after fixing access, a region or a network block."
-        models={groups.failed}
-        providerFilter={providerFilter}
-        complexityTiers={complexityTiers}
-        onTest={onTest}
-        onToggleVisibility={onToggleVisibility}
-        results={results}
-        onProviderFilterChange={onProviderFilterChange}
-        tone="problem"
-      />
-    </div>
-  );
-}
 
-function ModelGroupSection({
-  title,
-  note,
-  models,
-  providerFilter,
-  complexityTiers,
-  onTest,
-  onToggleVisibility,
-  results,
-  onProviderFilterChange,
-  tone = "neutral",
-  emphasis = false,
-  open,
-  onOpenChange,
-}: {
-  title: string;
-  note: string;
-  /** Draws attention to a section the reader needs to open to finish setup. */
-  emphasis?: boolean;
-  /** Controlled open state. Leave unset for the default behavior. */
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-  models: CatalogModel[];
-  providerFilter: ModelProviderId | "all";
-  complexityTiers: ComplexityTiersBind | null;
-  onTest?: (model: CatalogModel) => void;
-  onToggleVisibility?: (model: CatalogModel) => Promise<void>;
-  results?: Record<string, ModelTestResult>;
-  onProviderFilterChange?: (next: ModelProviderId | "all") => void;
-  tone?: "neutral" | "problem";
-}) {
-  const shown = providerFilter === "all" ? models : models.filter(m => m.provider === providerFilter);
-  if (models.length === 0) return null;
-  return (
-    <details
-      key={open === undefined ? providerFilter : undefined}
-      open={open === undefined ? providerFilter !== "all" && shown.length > 0 : open}
-      onToggle={open === undefined ? undefined : event => onOpenChange?.(event.currentTarget.open)}
-      className={cn(
-        "rounded-lg border bg-card",
-        tone === "problem" ? "border-red-500/30" : emphasis ? "border-indigo-400/40 bg-indigo-500/[0.06]" : "border-border",
+      {view === "chat" && (
+        <div id="models-panel-chat" role="tabpanel" aria-labelledby="models-tab-chat" className="space-y-3">
+          <p className="text-[0.8rem] text-foreground/60 leading-relaxed">
+            These answered a test and appear in chat. <span className="text-foreground/75">Re-check</span> runs the test again, useful if a key or plan changes. <span className="text-foreground/75">Hide</span> keeps a model out of the chat menus.
+          </p>
+          {listFor(
+            groups.inMenus,
+            "max-h-[min(32rem,70vh)]",
+            groups.notChecked.length > 0 ? "Nothing is in chat yet. Open Add more to turn models on." : emptyLabel,
+          )}
+        </div>
       )}
-    >
-      <summary className={cn(
-        "flex cursor-pointer items-center justify-between gap-3 px-3 py-3 text-sm font-medium",
-        emphasis ? "text-foreground/90" : "text-foreground/80",
-      )}>
-        <span>{title} · {shown.length}</span>
-        {emphasis && (
-          <span className="shrink-0 rounded-full border border-indigo-400/40 px-2.5 py-0.5 text-[0.72rem] text-indigo-200">
-            {open ? "Hide list" : "Show list"}
-          </span>
-        )}
-      </summary>
-      <div className="border-t border-border px-2 py-2">
-        <p className="px-1.5 pb-2 text-sm text-foreground/65">{note}</p>
-        <ModelPickerList
-          models={models}
-          browse
-          blurbFor={modelBlurb}
-          assignedTiersFor={id => assignedTiers(complexityTiers, id)}
-          onTest={onTest}
-          onToggleVisibility={onToggleVisibility}
-          results={results}
-          alwaysShowProviderFilters
-          providerFilter={providerFilter}
-          onProviderFilterChange={onProviderFilterChange}
-          maxHeightClass="max-h-[min(24rem,50vh)]"
-          emptyLabel="None."
-        />
-      </div>
-    </details>
-  );
-}
 
-/**
- * Always-visible nudge above the model list. Models only reach chat after a test passes, and the
- * untested ones sit in a collapsed list, so this says so up front and offers the two ways forward.
- */
-function AddModelsPanel({
-  untested,
-  inChat,
-  recommended,
-  onBrowse,
-}: {
-  untested: number;
-  inChat: number;
-  recommended: { available: boolean; busy: boolean; message: string | null; run: () => void } | null;
-  onBrowse: () => void;
-}) {
-  return (
-    <div className="rounded-xl border border-indigo-400/35 bg-indigo-500/[0.08] px-4 py-3.5" role="region" aria-label="Add models to chat">
-      <p className="text-sm font-semibold text-foreground/90">
-        {inChat === 0 ? "No models are in chat yet" : `${untested} more ${untested === 1 ? "model is" : "models are"} ready to add`}
-      </p>
-      <p className="mt-1 text-[0.82rem] leading-relaxed text-foreground/65">
-        {untested} {untested === 1 ? "model was" : "models were"} found for your connections, but a model only appears in chat after it answers a quick test.
-        Each test is one tiny request.
-      </p>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {recommended?.available && (
-          <button
-            type="button"
-            disabled={recommended.busy}
-            onClick={recommended.run}
-            className="rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60 cursor-pointer"
-          >
-            {recommended.busy ? "Enabling…" : "Enable recommended Bedrock models"}
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={onBrowse}
-          className="rounded-lg border border-border bg-elevated px-3.5 py-2 text-sm font-medium text-foreground/85 hover:bg-foreground/[0.06] cursor-pointer"
-        >
-          Choose from all {untested}
-        </button>
-      </div>
-      {recommended?.available && !recommended.message && (
-        <p className="mt-2 text-[0.72rem] text-foreground/50">
-          Tests Amazon Nova Lite and Claude Haiku once each, and adds the ones that answer.
-        </p>
+      {view === "add" && (
+        <div id="models-panel-add" role="tabpanel" aria-labelledby="models-tab-add" className="space-y-3">
+          <p className="text-[0.8rem] text-foreground/60 leading-relaxed">
+            These were found with your keys but have not answered a test yet. Press <span className="text-foreground/80">Enable</span> on a model: it gets one tiny test message, and if it answers it moves to In chat.
+          </p>
+          {recommendedBedrock?.available && onEnableRecommendedBedrock && (
+            <div className="rounded-xl border border-indigo-400/35 bg-indigo-500/[0.08] px-4 py-3.5">
+              <button
+                type="button"
+                disabled={recommendedBedrock.busy}
+                onClick={onEnableRecommendedBedrock}
+                className="rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60 cursor-pointer"
+              >
+                {recommendedBedrock.busy ? "Enabling…" : "Enable recommended Bedrock models"}
+              </button>
+              {!recommendedBedrock.message && (
+                <p className="mt-2 text-[0.75rem] text-foreground/55">Tests Amazon Nova Lite and Claude Haiku once each and adds the ones that answer.</p>
+              )}
+              {recommendedBedrock.message && (
+                <p className="mt-2 text-[0.8rem] leading-relaxed text-foreground/75" role="status">{recommendedBedrock.message}</p>
+              )}
+            </div>
+          )}
+          {needsEnablement && (
+            <div className="rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-3.5">
+              <p className="text-[0.85rem] font-medium text-amber-50/95">Some Bedrock models need to be turned on in AWS first</p>
+              <p className="mt-1 text-[0.78rem] leading-relaxed text-amber-100/80">
+                Bedrock lists them, but your AWS account has not switched them on. SecureMind cannot do that for you. Turn on the ones you want in the AWS console, then come back and press Enable.
+              </p>
+              {awsEnableUrl && (
+                <a
+                  href={awsEnableUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-1.5 text-[0.8rem] font-medium text-amber-50 hover:bg-amber-400/20"
+                >
+                  Open the Bedrock model catalog in AWS ↗
+                </a>
+              )}
+            </div>
+          )}
+          {listFor(groups.notChecked, "max-h-[min(32rem,70vh)]", "Nothing waiting. Every model found has been tested.")}
+        </div>
       )}
-      {recommended?.message && (
-        <p className="mt-2 text-[0.8rem] leading-relaxed text-foreground/75" role="status">{recommended.message}</p>
+
+      {view === "broken" && (
+        <div id="models-panel-broken" role="tabpanel" aria-labelledby="models-tab-broken" className="space-y-3">
+          <p className="text-[0.8rem] text-foreground/60 leading-relaxed">
+            These were tested here and did not answer, usually because your plan or AWS account does not include them. They are kept so you can try again after fixing access, a region or a network block.
+          </p>
+          {listFor(groups.failed, "max-h-[min(32rem,70vh)]", "Nothing failed a test.")}
+        </div>
+      )}
+
+      {view === "hidden" && (
+        <div id="models-panel-hidden" role="tabpanel" aria-labelledby="models-tab-hidden" className="space-y-3">
+          <p className="text-[0.8rem] text-foreground/60 leading-relaxed">
+            These work here. You hid them, so chat does not offer them. Press Show to bring one back.
+          </p>
+          {listFor(groups.hidden, "max-h-[min(24rem,50vh)]", "None.")}
+        </div>
       )}
     </div>
   );
