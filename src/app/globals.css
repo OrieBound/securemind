@@ -1217,3 +1217,20 @@ html:not(.dark) {
     color: var(--info);
   }
 }
+
+/* Light-mode gap fill (neutral grays) -- the xAI provider tint is pale zinc, near white on a light card. */
+html:not(.dark) {
+  .text-zinc-100,
+  .text-zinc-200 {
+    color: var(--text-secondary);
+  }
+  .bg-zinc-400\/15,
+  .bg-zinc-400\/\[0\.06\] {
+    background-color: var(--muted);
+  }
+  .border-zinc-300\/35,
+  .border-zinc-300\/40,
+  .border-zinc-300\/45 {
+    border-color: var(--border-strong);
+  }
+}

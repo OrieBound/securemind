@@ -9,7 +9,8 @@ import { describe, expect, it } from "vitest";
  * A shade the app uses but the stylesheet does not list stays pale in light mode.
  */
 
-const HUES = "emerald|green|teal|lime|red|rose|amber|yellow|orange|sky|blue|cyan|violet|purple|fuchsia|indigo";
+const HUES =
+  "emerald|green|teal|lime|red|rose|amber|yellow|orange|sky|blue|cyan|violet|purple|fuchsia|indigo|zinc|slate|gray|neutral|stone";
 const CLASS = new RegExp(
   String.raw`(?<![\w/-])((?:[a-z-]+:)*)(text|bg|border|ring)-(${HUES})-(\d{2,3})(?:/(\d+|\[[0-9.]+\]))?(?![\w-])`,
   "g",
