@@ -21,6 +21,7 @@ import { pickBackgroundVendorModel, type BackgroundVendorModel } from "@/lib/mod
 import { getVendorConsentFlags } from "@/lib/instance-config";
 import { db } from "@/lib/db";
 import { getIdentity } from "@/lib/identity";
+import { normalizeFactKey } from "@/lib/memory/format";
 import { usesHostedAppStore } from "@/lib/workspaces/store";
 import { hostedAppStore } from "@/lib/workspaces/hosted-dynamo";
 
@@ -190,7 +191,12 @@ export async function POST(req: NextRequest) {
     };
 
     const newSummary = result.summary ?? existingSummary;
-    const newFacts   = { ...existingFacts, ...(result.facts ?? {}) };
+    // Models sometimes return " occupation" or "occupation " for the same fact. Store one key.
+    const newFacts: Record<string, unknown> = {};
+    for (const [rawKey, value] of Object.entries({ ...existingFacts, ...(result.facts ?? {}) })) {
+      const key = normalizeFactKey(rawKey);
+      if (key) newFacts[key] = value;
+    }
 
     // Persist to database (fire-and-forget style — don't block the response)
     if (sessionId) {

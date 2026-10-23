@@ -1,5 +1,10 @@
 /** Shared format helpers for memory facts (client + server safe). */
 
+/** A fact key as it is stored and compared: trimmed, with inner whitespace collapsed. */
+export function normalizeFactKey(key: string): string {
+  return key.trim().replace(/\s+/g, " ");
+}
+
 export function humanizeKey(key: string): string {
   return key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }

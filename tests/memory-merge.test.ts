@@ -35,4 +35,26 @@ describe("mergeLiveFacts", () => {
     const merged = mergeLiveFacts([stored("name", "Dana Reed")], { projects: "Harbour launch" });
     expect(merged.map(f => f.id).sort()).toEqual(["db-name", "live-projects"]);
   });
+  it("shows one fact when the same key was stored with stray spaces", () => {
+    const older = { ...stored(" occupation", "Cloud engineer"), updatedAt: "2026-10-10T00:00:00.000Z" };
+    const newer = { ...stored("occupation", "Cloud architect"), updatedAt: "2026-10-18T00:00:00.000Z" };
+    const merged = mergeLiveFacts([older, newer], {});
+    expect(merged).toHaveLength(1);
+    expect(merged[0].value).toBe("Cloud architect");
+    expect(merged[0].key).toBe("occupation");
+  });
+
+  it("prefers the pinned duplicate over a newer one", () => {
+    const pinned = { ...stored(" occupation", "Cloud engineer"), pinned: true, updatedAt: "2026-10-01T00:00:00.000Z" };
+    const newer = { ...stored("occupation", "Something else"), updatedAt: "2026-10-18T00:00:00.000Z" };
+    const merged = mergeLiveFacts([pinned, newer], {});
+    expect(merged).toHaveLength(1);
+    expect(merged[0].value).toBe("Cloud engineer");
+  });
+
+  it("matches a live fact to a stored one despite stray spaces in the key", () => {
+    const merged = mergeLiveFacts([stored("name", "Dana Reed")], { " name": "Dana Reed" });
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe("db-name");
+  });
 });

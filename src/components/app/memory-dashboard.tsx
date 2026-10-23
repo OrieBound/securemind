@@ -3,7 +3,7 @@
 import { Brain, Download, Loader2, MessageSquare, User } from "lucide-react";
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
-import { formatFactValue, humanizeKey } from "@/lib/memory/format";
+import { formatFactValue, humanizeKey, normalizeFactKey } from "@/lib/memory/format";
 import { buildFactAssociations, categoryLabel as factCategoryLabel, type FactAssociation } from "@/lib/memory/fact-graph";
 import { relativeTime } from "@/lib/models/key-health";
 import type { MemoryOverview } from "@/lib/memory/overview-types";
@@ -85,6 +85,12 @@ function formatDayLabel(d: Date): string {
   return d.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric", year: "numeric" });
 }
 
+function prefersFact(candidate: MemoryFactRecord, current: MemoryFactRecord): boolean {
+  const rank = (f: MemoryFactRecord) => (f.pinned ? 2 : f.correctedAt ? 1 : 0);
+  if (rank(candidate) !== rank(current)) return rank(candidate) > rank(current);
+  return Date.parse(candidate.updatedAt) > Date.parse(current.updatedAt);
+}
+
 /**
  * Stored facts are the record of truth and carry the Correct, Pin and Forget controls. A fact the user
  * pinned or corrected always wins. Otherwise a live fact from this session replaces the stored one only
@@ -96,12 +102,18 @@ export function mergeLiveFacts(
   liveFacts: Record<string, string>,
 ): MemoryFactRecord[] {
   const byKey = new Map<string, MemoryFactRecord>();
-  for (const f of workspaceFacts) byKey.set(f.key.toLowerCase(), f);
+  for (const f of workspaceFacts) {
+    // Older rows can exist under " occupation" and "occupation". Show one, preferring what the user
+    // pinned or corrected, then the most recently updated.
+    const id = normalizeFactKey(f.key).toLowerCase();
+    const existing = byKey.get(id);
+    if (!existing || prefersFact(f, existing)) byKey.set(id, { ...f, key: normalizeFactKey(f.key) });
+  }
   for (const [k, v] of Object.entries(liveFacts)) {
     const liveValue = typeof v === "string" ? v : formatFactValue(v);
-    const stored = byKey.get(k.toLowerCase());
+    const stored = byKey.get(normalizeFactKey(k).toLowerCase());
     if (stored && (stored.pinned || stored.correctedAt || formatFactValue(stored.value) === liveValue)) continue;
-    byKey.set(k.toLowerCase(), {
+    byKey.set(normalizeFactKey(k).toLowerCase(), {
       id: `live-${k}`,
       key: k,
       value: liveValue,
@@ -516,7 +528,13 @@ export function MemoryDashboard({
         <OverviewTile
           label="Files in Knowledge"
           value={documents.length}
-          hint={passages > 0 ? `${passages} searchable passages` : "Nothing uploaded yet"}
+          hint={
+            passages > 0
+              ? `${passages} searchable passages`
+              : documents.length > 0
+                ? "No searchable passages yet"
+                : "Nothing uploaded yet"
+          }
         />
         <OverviewTile label="Conversations kept" value={allSummaries.length} hint="Saved summaries" />
         <OverviewTile label="Last learned" value={lastLearned ?? "—"} hint="Most recent fact" />
