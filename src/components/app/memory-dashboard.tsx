@@ -91,6 +91,11 @@ function prefersFact(candidate: MemoryFactRecord, current: MemoryFactRecord): bo
   return Date.parse(candidate.updatedAt) > Date.parse(current.updatedAt);
 }
 
+/** A value that is just a redaction placeholder, such as "[redacted]", carries nothing worth showing. */
+function isOnlyRedaction(value: string): boolean {
+  return /^\[[^\]]*redacted[^\]]*\]$/i.test(formatFactValue(value).trim());
+}
+
 /**
  * Stored facts are the record of truth and carry the Correct, Pin and Forget controls. A fact the user
  * pinned or corrected always wins. Otherwise a live fact from this session replaces the stored one only
@@ -353,7 +358,7 @@ function NoteCard({ summary, live, turns }: { summary: string; live: boolean; tu
   return (
     <div className={cn("rounded-xl border px-4 py-3.5", live ? "border-[var(--primary-border)] bg-[var(--primary-soft)]" : "border-border bg-card")}>
       <p className="text-xs font-medium text-muted-foreground">
-        {live ? "Current conversation" : `${turns} message${turns === 1 ? "" : "s"} summarised`}
+        {live ? "Current conversation" : turns > 0 ? `${turns} message${turns === 1 ? "" : "s"} summarised` : "Conversation note"}
       </p>
       <p className={cn("mt-1.5 text-sm leading-relaxed text-foreground", !open && long && "line-clamp-3")}>{summary}</p>
       {long && (
@@ -412,7 +417,7 @@ export function MemoryDashboard({
   );
 
   const visibleFacts = useMemo(
-    () => allFacts.filter(f => formatFactValue(f.value) !== "—" && !f.forgotten),
+    () => allFacts.filter(f => formatFactValue(f.value) !== "—" && !isOnlyRedaction(f.value) && !f.forgotten),
     [allFacts],
   );
 
