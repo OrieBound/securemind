@@ -20,7 +20,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { isHostedRuntime } from "@/lib/runtime-env";
+import { isHostedRuntime, runtimeDeployment } from "@/lib/runtime-env";
 
 export type AwsCredentialSource =
   | "env"
@@ -178,6 +178,39 @@ export function listAwsProfiles(): string[] {
     }
   }
   return [...names].sort();
+}
+
+/**
+ * Plain-language reason no usable credential was found, with the next step. The Docker app only sees
+ * an AWS profile that was shared into its aws-profile folder, so each way that can go wrong gets its
+ * own message instead of one generic "sign in" line.
+ */
+export function explainMissingCredentials(input: {
+  docker: boolean;
+  profile: string | null;
+  availableProfiles: string[];
+  sharedConfigFound: boolean;
+  placeholdersPresent: boolean;
+}): string {
+  const { docker, profile, availableProfiles, sharedConfigFound, placeholdersPresent } = input;
+  const share = (name: string) => `npm run bedrock:profile -- ${name}`;
+  if (docker) {
+    if (!sharedConfigFound) {
+      return "Docker is not sharing an AWS profile with the app yet. Run " + share(profile || "<profile>") +
+        ", start Docker with docker-compose.bedrock.yml, then press Re-check host.";
+    }
+    if (profile && !availableProfiles.includes(profile)) {
+      return `Profile "${profile}" is not in the folder shared with Docker. Run ${share(profile)}, then press Re-check host.`;
+    }
+    if (profile) {
+      return `Profile "${profile}" is shared, but its sign-in is missing or has expired. Run aws sso login --profile ${profile}, then ${share(profile)}, then press Re-check host.`;
+    }
+    return "No profile is chosen yet. Choose one of the shared profiles, then press Re-check host.";
+  }
+  if (profile) return `Profile "${profile}" has no usable credentials. Try: aws sso login --profile ${profile}`;
+  return placeholdersPresent
+    ? "No AWS profile is usable yet. Sign in on this computer with the AWS CLI, choose a profile, then press Re-check host."
+    : "No AWS credentials found. Sign in with the AWS CLI on this computer, then press Re-check host.";
 }
 
 function sharedConfigExists(): boolean {
@@ -344,11 +377,13 @@ export async function getAwsCredentialStatus(
       error:
         message === "timeout"
           ? "Credential lookup timed out (no instance role on this host)."
-          : profile
-            ? `Profile "${profile}" has no usable credentials. Try: aws sso login --profile ${profile}`
-            : placeholdersPresent
-              ? "No AWS profile is usable yet. Sign in on this computer with the AWS CLI, choose a profile, then press Re-check host."
-              : "No AWS credentials found. Sign in with the AWS CLI on this computer, then press Re-check host.",
+          : explainMissingCredentials({
+              docker: runtimeDeployment() === "docker",
+              profile,
+              availableProfiles: base.availableProfiles,
+              sharedConfigFound: sharedConfigExists(),
+              placeholdersPresent,
+            }),
     };
   }
 
