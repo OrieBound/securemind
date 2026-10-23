@@ -34,7 +34,7 @@ It is a **single-user personal project**. Default auth is `AUTH_MODE=local`. Opt
 ### Prompt layers
 - `buildConversationalBase()` applies every turn (natural, concise, no forced ops pitch).
 - Operational grounding + workspace context apply only when `needsOperationalPrompt(turn)` is true.
-- Do not inject workspace name/mission into social or general turns.
+- Do not inject workspace name/mission into social or general turns. The one exception is when the user asks what to call the assistant (`assistant-identity` in `decide-turn.ts`): the workspace name is supplied for that turn only, and the assistant says it has no personal name of its own and never answers "SecureMind".
 
 ### Memory provenance
 - Long-term workspace facts come only from user-authored statements (`/api/summarize`), never from assistant replies.
@@ -118,6 +118,7 @@ src/
       messages/route.ts           ← persist individual messages
       memory/route.ts             ← facts, summaries, memory stats
       memory/facts/[id]/route.ts  ← correct / pin / forget / delete a fact
+      memory/overview/route.ts    ← per-workspace document library, evidence and privacy counts (Memory page)
       bookmarks/route.ts          ← server-persisted saved items
       documents/route.ts          ← list/upload documents
       documents/[id]/route.ts     ← get/delete single document

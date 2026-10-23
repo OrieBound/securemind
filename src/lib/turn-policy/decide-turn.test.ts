@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applySpeculativeKnowledgeHits,
   decideTurn,
+  modePromptInstructions,
   shouldSkipKnowledgeSearch,
 } from "./decide-turn";
 import { stripConversationalPrefixes } from "./normalize";
@@ -280,3 +281,33 @@ describe("terse questions and short follow-ups", () => {
   });
 });
 
+
+describe("assistant identity questions", () => {
+  it.each([
+    "what is your name?",
+    "Hi, what is your name",
+    "what's your name",
+    "who are you?",
+    "what should I call you",
+    "do you have a name?",
+  ])("answers from the workspace name, not Knowledge: %s", message => {
+    const d = decideTurn({ message });
+    expect(d.reasonCode).toBe("assistant-identity");
+    expect(d.shouldRetrieve).toBe(false);
+    expect(d.showSourcesUi).toBe(false);
+  });
+
+  it("puts the workspace name in the prompt for this turn only", () => {
+    const identity = decideTurn({ message: "what is your name?" });
+    const text = modePromptInstructions(identity, { workspaceName: "Mindy Locke" });
+    expect(text).toContain("Mindy Locke");
+    expect(text).toContain("not your name");
+    const other = decideTurn({ message: "thanks" });
+    expect(modePromptInstructions(other, { workspaceName: "Mindy Locke" })).not.toContain("Mindy Locke");
+  });
+
+  it("does not fire on ordinary questions", () => {
+    expect(decideTurn({ message: "what is the name of the backup bucket?" }).reasonCode).not.toBe("assistant-identity");
+    expect(decideTurn({ message: "who are you sending the report to?" }).reasonCode).not.toBe("assistant-identity");
+  });
+});

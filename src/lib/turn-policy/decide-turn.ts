@@ -60,6 +60,10 @@ export const SHORT_UNCLEAR_REASON = "short-unclear";
 
 const JOKE_RE = /\b(?:tell\s+me\s+a\s+joke|make\s+me\s+laugh)\b/i;
 
+/** The user asking what to call the assistant. Answered from the workspace name, never the product name. */
+const ASSISTANT_IDENTITY_RE =
+  /\b(?:what(?:'s|\s+is|s)\s+your\s+name|what\s+(?:should|can|do)\s+(?:i|we)\s+call\s+you|who\s+are\s+you\s*[?!.]*$|do\s+you\s+have\s+a\s+name|what\s+are\s+you\s+called)/i;
+
 /** Ops/security tokens that justify retrieval when the default path would otherwise stay general. */
 const OPS_TOPIC_RE =
   /\b(?:iam|kms|vpc|cognito|s3|ec2|lambda|cloudwatch|guardduty|waf|tls|certificate|rotation|runbook|outage|deploy(?:ment)?|incident|firewall|security\s+group|\barn\b|aws|azure|gcp|oidc|oauth|mfa|encryption\s+at\s+rest)\b/i;
@@ -126,6 +130,13 @@ export function decideTurn(input: DecideTurnInput): TurnDecision {
   // ── Empty after strip / pure social ────────────────────────────────────────
   if (!body) {
     return base("social", strippedPrefix ? "prefix-only-social" : "empty-social", {
+      responseStyle: "social",
+      preferMicroTier: true,
+    });
+  }
+
+  if (ASSISTANT_IDENTITY_RE.test(body)) {
+    return base("social", "assistant-identity", {
       responseStyle: "social",
       preferMicroTier: true,
     });
@@ -394,7 +405,26 @@ export function applySpeculativeKnowledgeHits(
 }
 
 /** Mode-specific instructions appended to the system prompt (never includes reasonCode). */
-export function modePromptInstructions(decision: TurnDecision): string {
+export function modePromptInstructions(
+  decision: TurnDecision,
+  context?: { workspaceName?: string },
+): string {
+  if (decision.reasonCode === "assistant-identity") {
+    const workspace = context?.workspaceName?.trim();
+    return (
+      `\n\nResponse mode — what to call you:\n` +
+      `- You do not have a personal name. Say that in one friendly sentence.\n` +
+      (workspace
+        ? `- This workspace is called "${workspace}", and they can call you that if they like.\n`
+        : `- They can call you whatever they like.\n`) +
+      `- SecureMind is the product, not your name. Do not say your name is SecureMind.\n` +
+      `- Keep it to one or two short sentences, with no product pitch.\n` +
+      (workspace
+        ? `- Good: "I don't have a name of my own, but this workspace is called ${workspace}, so you can call me that."`
+        : `- Good: "I don't have a name of my own, so call me whatever you like."`)
+    );
+  }
+
   if (decision.reasonCode === "user-correction") {
     return (
       `\n\nResponse mode — correction acknowledgement:\n` +

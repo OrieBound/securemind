@@ -425,7 +425,7 @@ export async function prepareChatTurn(
       workspaceName,
       workspaceContext,
       includeOperational: operational,
-    }) + modePromptInstructions(turn);
+    }) + modePromptInstructions(turn, { workspaceName });
 
   const rankedFacts = combined.facts.filter(f => f.value);
   if (rankedFacts.length > 0 && operational) {
