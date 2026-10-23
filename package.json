@@ -22,6 +22,7 @@
     "docker:onprem": "docker compose up --build",
     "docker:onprem:down": "docker compose down -v",
     "backup:onprem": "node scripts/backup-onprem.mjs",
+    "bedrock:profile": "node scripts/bedrock-profile.mjs",
     "floci:cognito": "node scripts/floci-cognito-setup.mjs",
     "floci:dynamodb": "node scripts/floci-dynamodb-setup.mjs",
     "infra:package": "node infra/scripts/package-lambda.mjs",

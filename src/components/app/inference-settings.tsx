@@ -1376,7 +1376,7 @@ const COMMON_REGIONS = [
   "ap-northeast-1",
 ];
 
-function LocalBedrockSignIn({
+export function LocalBedrockSignIn({
   docker,
   profile,
   hasProfiles,
@@ -1386,6 +1386,34 @@ function LocalBedrockSignIn({
   hasProfiles: boolean;
 }) {
   const loginProfile = profile || "your-profile";
+  if (docker) {
+    return (
+      <div className="rounded-lg border border-border bg-elevated px-3 py-3 text-sm text-foreground/75 space-y-2">
+        <p className="font-semibold text-foreground/90">Use Bedrock from Docker</p>
+        <p className="leading-relaxed">
+          Docker cannot see your AWS settings unless you share one profile with it. SecureMind does not store AWS keys.
+        </p>
+        <ol className="list-decimal list-inside space-y-1.5 leading-relaxed">
+          <li>
+            Sign in to AWS:{" "}
+            <code className="font-mono text-foreground/85">aws sso login --profile {loginProfile}</code>
+          </li>
+          <li>
+            Share just that profile:{" "}
+            <code className="font-mono text-foreground/85">npm run bedrock:profile -- {loginProfile}</code>
+          </li>
+          <li>
+            Start Docker with the Bedrock file, one time:{" "}
+            <code className="font-mono text-foreground/85">docker compose -f docker-compose.yml -f docker-compose.bedrock.yml up -d</code>
+          </li>
+          <li>Press Re-check host, then choose the profile.</li>
+        </ol>
+        <p className="leading-relaxed text-foreground/60">
+          A working sign-in shows Found and the AWS account id. When the AWS sign-in expires, repeat steps 1 and 2 and press Re-check host. No restart needed.
+        </p>
+      </div>
+    );
+  }
   return (
     <div className="rounded-lg border border-border bg-elevated px-3 py-3 text-sm text-foreground/75 space-y-2">
       <p className="font-semibold text-foreground/90">Sign in on this computer</p>

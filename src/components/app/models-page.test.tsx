@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ModelInventory } from "@/components/app/model-inventory";
-import { BedrockEnvironmentCard } from "@/components/app/inference-settings";
+import { BedrockEnvironmentCard, LocalBedrockSignIn } from "@/components/app/inference-settings";
 import type { CatalogModel } from "@/lib/models/catalog-shared";
 
 const mk = (id: string, name: string, provider: CatalogModel["provider"], extra: Partial<CatalogModel> = {}): CatalogModel => ({
@@ -75,5 +75,21 @@ describe("Bedrock card steps", () => {
     expect(html).toContain("Add them to chat");
     expect(html).toContain("Open the Bedrock model catalog in AWS");
     expect(html).toContain("Go to Add more");
+  });
+});
+
+describe("Bedrock sign-in help", () => {
+  it("tells Docker users to share one profile and start with the Bedrock file", () => {
+    const html = renderToStaticMarkup(createElement(LocalBedrockSignIn, { docker: true, profile: null, hasProfiles: false }));
+    expect(html).toContain("Use Bedrock from Docker");
+    expect(html).toContain("npm run bedrock:profile -- your-profile");
+    expect(html).toContain("docker-compose.bedrock.yml");
+    expect(html).not.toContain("Docker reads the AWS CLI config");
+  });
+
+  it("keeps the simpler steps for a non-Docker local run", () => {
+    const html = renderToStaticMarkup(createElement(LocalBedrockSignIn, { docker: false, profile: "dev", hasProfiles: true }));
+    expect(html).toContain("aws sso login --profile dev");
+    expect(html).not.toContain("bedrock:profile");
   });
 });
