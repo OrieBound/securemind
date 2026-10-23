@@ -18,3 +18,20 @@ export const LOCAL_AWS_CREDENTIALS = {
   accessKeyId: process.env.AWS_ACCESS_KEY_ID?.trim() || "test",
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY?.trim() || "test",
 };
+
+/**
+ * True when `url` points at a real AWS service host (amazonaws.com), not a local stub and not a
+ * lookalike such as http://localhost/amazonaws.com. Compares the host name, never a substring.
+ */
+export function isAwsHostedEndpoint(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return (
+      host === "amazonaws.com" ||
+      host.endsWith(".amazonaws.com") ||
+      host.endsWith(".amazonaws.com.cn")
+    );
+  } catch {
+    return false;
+  }
+}

@@ -22,7 +22,7 @@ import {
   AuthFlowType,
   ChallengeNameType,
 } from "@aws-sdk/client-cognito-identity-provider";
-import { LOCAL_AWS_CREDENTIALS, LOCAL_AWS_ENDPOINT } from "@/lib/aws-endpoint";
+import { isAwsHostedEndpoint, LOCAL_AWS_CREDENTIALS, LOCAL_AWS_ENDPOINT } from "@/lib/aws-endpoint";
 
 function region(): string {
   return (
@@ -228,7 +228,7 @@ export function mapMfaError(err: unknown): MfaError {
 export function cognitoMfaAvailable(): boolean {
   if (!cognitoConfigured()) return false;
   const endpoint = cognitoEndpoint();
-  return !endpoint || endpoint.includes("amazonaws.com");
+  return !endpoint || isAwsHostedEndpoint(endpoint);
 }
 
 /** Second step of sign-in: the six-digit code from the app, plus the session from step one. */

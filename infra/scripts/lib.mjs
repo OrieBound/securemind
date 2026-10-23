@@ -71,8 +71,32 @@ function quoteForWindowsShell(args) {
   });
 }
 
+const SECRET_FLAG = /^--?(value|secret-string|secret|password|token|api-key|apikey)$/i;
+const SECRET_ASSIGN = /^(.*?(secret|password|token|api[_-]?key)[^=]*=)(.+)$/i;
+
+/** The command line as it is safe to print: values of secret-looking flags and name=value pairs are hidden. */
+export function redactArgs(args) {
+  const out = [];
+  let hideNext = false;
+  for (const raw of args) {
+    const a = String(raw);
+    if (hideNext) {
+      out.push("***");
+      hideNext = false;
+    } else if (SECRET_FLAG.test(a)) {
+      out.push(a);
+      hideNext = true;
+    } else if (SECRET_ASSIGN.test(a)) {
+      out.push(a.replace(SECRET_ASSIGN, "$1***"));
+    } else {
+      out.push(a);
+    }
+  }
+  return out;
+}
+
 export function run(cmd, args, opts = {}) {
-  console.log(`\n> ${cmd} ${args.join(" ")}\n`);
+  console.log(`\n> ${cmd} ${redactArgs(args).join(" ")}\n`);
   const isWin = process.platform === "win32";
   const r = spawnSync(cmd, isWin ? quoteForWindowsShell(args) : args, {
     stdio: opts.stdio ?? "inherit",

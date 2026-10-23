@@ -40,7 +40,8 @@ export function AvatarCropDialog({
 
   useEffect(() => {
     const url = URL.createObjectURL(file);
-    setSrc(url);
+    // Only the blob: URL just made from the chosen file is ever shown.
+    setSrc(url.startsWith("blob:") ? url : null);
     setZoom(1);
     setOffset({ offsetX: 0, offsetY: 0 });
     setNatural(null);

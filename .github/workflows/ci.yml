@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+# Read-only by default; the jobs that need more declare it themselves.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test · Typecheck · Lint

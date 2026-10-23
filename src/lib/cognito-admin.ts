@@ -23,7 +23,7 @@ import {
   type UserType,
 } from "@aws-sdk/client-cognito-identity-provider";
 import { CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
-import { LOCAL_AWS_CREDENTIALS, LOCAL_AWS_ENDPOINT } from "@/lib/aws-endpoint";
+import { isAwsHostedEndpoint, LOCAL_AWS_CREDENTIALS, LOCAL_AWS_ENDPOINT } from "@/lib/aws-endpoint";
 import { roleFromGroups as mapGroupsToRole, type AppRole, type AssignableRole } from "@/lib/roles";
 import { getInstanceConfig } from "@/lib/instance-config";
 import { isHostedRuntime } from "@/lib/runtime-env";
@@ -79,7 +79,7 @@ function cognitoEndpoint(): string | undefined {
 function useFlociStub(): boolean {
   const origin = cognitoEndpoint();
   if (!origin) return false;
-  return !origin.includes("amazonaws.com");
+  return !isAwsHostedEndpoint(origin);
 }
 
 let _client: CognitoIdentityProviderClient | null = null;
