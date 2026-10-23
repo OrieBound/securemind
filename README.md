@@ -4,7 +4,9 @@ A privacy-aware AI workspace for models, Knowledge, memory, cost, and sensitive-
 
 ## You run it, and you own it
 
-SecureMind is an open-source project, not a hosted service. There is no installer to download and no account to create with the author. You copy the code from this repository and run it yourself, either on your own computer with Docker or in your own AWS account. The copy is yours: your data stays in your install, and you can change it or take it in a different direction under the license below.
+SecureMind is free, open-source software that you run yourself. There is no paid or managed version. Copy the code from this repository and run it on your own computer with Docker, or in your own AWS account. The copy is yours: your data stays in your install, and you can change it or take it in a different direction under the license below.
+
+The author also runs a private, invitation-only copy for friends and reviewers, and a [sample site](https://sample.securemind.chat) with made-up data that needs no account.
 
 Detection runs before chat is sent and again when Knowledge is ingested. That reduces exposure. It does not guarantee complete removal of sensitive data, and it is not a compliance program. You review what is sent and what you store.
 
