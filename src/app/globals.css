@@ -1083,3 +1083,137 @@ html:not(.dark) [data-slot="tabs-list"] {
   border: 1px solid var(--border-strong);
 }
 
+
+/*
+ * Light-mode gap fill — every pale shade the app uses that the lists above do not cover.
+ * Same remap idea (dark-tuned tint -> theme-aware token). tests/light-theme-coverage.test.ts
+ * fails when a new pale colour class is used without a rule, so this cannot silently drift.
+ */
+html:not(.dark) {
+  .bg-amber-400\/10,
+  .bg-amber-400\/20,
+  .bg-amber-400\/\[0\.06\],
+  .bg-amber-400\/\[0\.07\],
+  .hover\:bg-amber-400\/20:hover {
+    background-color: var(--warning-soft);
+  }
+  .bg-emerald-400\/12,
+  .bg-emerald-400\/15,
+  .hover\:bg-emerald-500\/\[0\.14\]:hover {
+    background-color: var(--success-soft);
+  }
+  .bg-fuchsia-500\/10,
+  .bg-indigo-400\/10,
+  .bg-indigo-500\/30,
+  .bg-indigo-500\/\[0\.12\],
+  .hover\:bg-indigo-400\/10:hover,
+  .hover\:bg-indigo-500\/10:hover,
+  .hover\:bg-indigo-500\/20:hover,
+  .hover\:bg-indigo-500\/30:hover,
+  .hover\:bg-indigo-500\/\[0\.12\]:hover {
+    background-color: var(--primary-soft);
+  }
+  .border-amber-400,
+  .border-amber-400\/30,
+  .hover\:border-amber-500\/40:hover {
+    border-color: var(--warning-border);
+  }
+  .border-emerald-400\/30,
+  .border-emerald-400\/40,
+  .hover\:border-emerald-500\/40:hover {
+    border-color: var(--success-border);
+  }
+  .border-fuchsia-500\/20,
+  .border-indigo-400\/15,
+  .border-indigo-400\/20,
+  .border-indigo-400\/25,
+  .border-indigo-400\/30,
+  .border-indigo-400\/40,
+  .border-indigo-400\/45,
+  .border-indigo-400\/60,
+  .border-indigo-500\/15,
+  .border-indigo-500\/30,
+  .border-violet-500\/20,
+  .hover\:border-indigo-400\/25:hover,
+  .hover\:border-indigo-400\/60:hover,
+  .hover\:border-indigo-400\/65:hover,
+  .hover\:border-indigo-500\/35:hover,
+  .hover\:border-indigo-500\/40:hover {
+    border-color: var(--primary-border);
+  }
+  .border-red-400\/30 {
+    border-color: var(--destructive-border);
+  }
+  .focus-visible\:ring-indigo-400\/60:focus-visible,
+  .focus\:ring-indigo-500\/40:focus,
+  .hover\:ring-indigo-400\/25:hover,
+  .ring-indigo-400,
+  .ring-indigo-400\/25,
+  .ring-indigo-400\/35,
+  .ring-indigo-400\/50,
+  .ring-indigo-400\/80,
+  .ring-indigo-400\/90,
+  .ring-indigo-500\/60 {
+    --tw-ring-color: var(--primary-border);
+  }
+  .group-hover\:text-indigo-300\/50:is(:where(.group):hover *),
+  .group-hover\:text-indigo-300\/80:is(:where(.group):hover *),
+  .hover\:text-indigo-100:hover,
+  .text-indigo-100\/75,
+  .text-indigo-100\/90,
+  .text-indigo-200\/50,
+  .text-indigo-200\/60,
+  .text-indigo-200\/80,
+  .text-indigo-300\/50,
+  .text-indigo-300\/90 {
+    color: var(--primary-soft-foreground);
+  }
+  .group-hover\:text-red-400\/55:is(:where(.group):hover *),
+  .group-hover\:text-red-400\/80:is(:where(.group):hover *),
+  .group-hover\:text-red-400\/90:is(:where(.group):hover *),
+  .hover\:text-red-300:hover,
+  .text-red-200\/70,
+  .text-red-300\/60,
+  .text-red-300\/70,
+  .text-red-400\/35,
+  .text-red-400\/70,
+  .text-rose-300\/80 {
+    color: var(--destructive);
+  }
+  .hover\:text-amber-100:hover,
+  .hover\:text-amber-200:hover,
+  .text-amber-100\/80,
+  .text-amber-200\/50,
+  .text-amber-300\/85,
+  .text-amber-400\/25,
+  .text-amber-400\/90,
+  .text-amber-50\/95,
+  .text-yellow-400,
+  .text-yellow-400\/70 {
+    color: var(--warning);
+  }
+  .hover\:text-emerald-200:hover,
+  .text-emerald-100,
+  .text-emerald-200\/50,
+  .text-emerald-200\/60,
+  .text-emerald-200\/75,
+  .text-emerald-200\/80,
+  .text-emerald-300\/60,
+  .text-emerald-400\/90 {
+    color: var(--success);
+  }
+  .hover\:text-indigo-400:hover,
+  .text-fuchsia-400,
+  .text-indigo-400\/60,
+  .text-indigo-400\/70,
+  .text-indigo-400\/80,
+  .text-violet-400,
+  .text-violet-400\/25,
+  .text-violet-400\/70 {
+    color: var(--primary);
+  }
+  .text-sky-300\/60,
+  .text-sky-400 {
+    color: var(--info);
+  }
+}
