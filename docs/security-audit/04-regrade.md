@@ -229,3 +229,5 @@ Before the repository was made public, every item still marked open was given a 
 | F-31 Cognito defence in depth | **Accepted** | Two-step verification is optional by design (Cognito's required mode is all-or-nothing) and the app recommends it to anyone who manages people or keys. Deletion protection is active on the live install. Compromised-credential checks are not enabled, because they cost extra. Reopen if the install gains more administrators. |
 
 The verdict table in Round 5 is unchanged by this round.
+
+**Image name:** the image is now published as `ghcr.io/<owner>/securemind-app` (tags `latest` and `init`, plus an immutable `sha-` tag), so its package is linked to this repository. Earlier rounds above refer to the previous name `securemind`.
