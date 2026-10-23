@@ -5,6 +5,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthGate } from "@/components/app/auth-gate";
 
+const routerReplace = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: routerReplace }) }));
+
 const SESSION = "s".repeat(40);
 const setupStatus = {
   authMode: "cognito",
@@ -28,6 +31,9 @@ function json(s: Scripted) {
 }
 
 beforeEach(() => {
+  routerReplace.mockClear();
+  localStorage.clear();
+  sessionStorage.clear();
   state.authed = false;
   state.login = [];
   state.mfa = [];
@@ -149,5 +155,35 @@ describe("AuthGate two-step sign-in", () => {
     const input = (await screen.findByLabelText("6-digit authentication code")) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "12ab 34-56" } });
     expect(input.value).toBe("12 3456");
+  });
+
+  it("starts a fresh session on sign-in: forgets the remembered place and leaves Insights", async () => {
+    localStorage.setItem("sm_settings_section", "admin");
+    sessionStorage.setItem("sm_open_settings", "providers");
+    window.history.pushState({}, "", "/analytics/cost");
+    state.login.push({ body: { accessToken: "t" } });
+
+    render(<AuthGate><p>app</p></AuthGate>);
+    fireEvent.change(await screen.findByLabelText(/email/i), { target: { value: "a@b.c" } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: "correct horse battery" } });
+    fireEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+    await waitFor(() => expect(routerReplace).toHaveBeenCalledWith("/"));
+    expect(localStorage.getItem("sm_settings_section")).toBeNull();
+    expect(sessionStorage.getItem("sm_open_settings")).toBeNull();
+    window.history.pushState({}, "", "/");
+  });
+
+  it("keeps its place when the page is reloaded with a live session", async () => {
+    localStorage.setItem("sm_settings_section", "admin");
+    window.history.pushState({}, "", "/analytics/cost");
+    state.authed = true;
+
+    render(<AuthGate><p>app</p></AuthGate>);
+    expect(await screen.findByText("app")).toBeTruthy();
+
+    expect(routerReplace).not.toHaveBeenCalled();
+    expect(localStorage.getItem("sm_settings_section")).toBe("admin");
+    window.history.pushState({}, "", "/");
   });
 });

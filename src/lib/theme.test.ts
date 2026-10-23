@@ -5,8 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   applyTheme,
   DEFAULT_THEME,
+  hasSignedInHint,
   isThemePreference,
   readStoredTheme,
+  setForcedDark,
+  setSignedInHint,
+  SIGNED_IN_HINT_KEY,
   THEME_STORAGE_KEY,
 } from "@/lib/theme";
 
@@ -72,5 +76,64 @@ describe("applyTheme resilience", () => {
     applyTheme("light");
     expect(document.documentElement.classList.contains("dark")).toBe(false);
     spy.mockRestore();
+  });
+});
+
+describe("dark login screen", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    document.documentElement.className = "";
+    setForcedDark(false);
+  });
+
+  afterEach(() => {
+    setForcedDark(false);
+    localStorage.clear();
+  });
+
+  it("shows dark while forced, and leaves the saved preference alone", () => {
+    applyTheme("light");
+    setForcedDark(true);
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(document.documentElement.dataset.theme).toBe("dark");
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe("light");
+  });
+
+  it("brings the saved preference back when it is no longer forced", () => {
+    applyTheme("light");
+    setForcedDark(true);
+    setForcedDark(false);
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+    expect(document.documentElement.dataset.theme).toBe("light");
+  });
+
+  it("keeps a theme change made while forced from being shown until sign-in", () => {
+    setForcedDark(true);
+    applyTheme("light");
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+    setForcedDark(false);
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+  });
+
+  it("remembers whether someone is signed in", () => {
+    expect(hasSignedInHint()).toBe(false);
+    setSignedInHint(true);
+    expect(localStorage.getItem(SIGNED_IN_HINT_KEY)).toBe("1");
+    expect(hasSignedInHint()).toBe(true);
+    setSignedInHint(false);
+    expect(hasSignedInHint()).toBe(false);
+  });
+
+  it("first paint is dark unless a signed-in hint exists", async () => {
+    const { THEME_BOOT_SCRIPT } = await import("@/lib/theme");
+    const run = () => {
+      document.documentElement.className = "";
+      new Function(THEME_BOOT_SCRIPT)();
+      return document.documentElement.classList.contains("dark");
+    };
+    localStorage.setItem(THEME_STORAGE_KEY, "light");
+    expect(run()).toBe(true);
+    localStorage.setItem(SIGNED_IN_HINT_KEY, "1");
+    expect(run()).toBe(false);
   });
 });

@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AuthSessionProvider } from "@/components/app/auth-session";
@@ -10,6 +11,8 @@ import { accessContactUrl } from "@/lib/access-contact";
 import { PRODUCT_NAME, PRODUCT_POSITIONING } from "@/lib/branding";
 import { cn } from "@/lib/utils";
 import { storeClientAccessToken } from "@/lib/client/api-base";
+import { resetRememberedPlace, shouldLeaveForMainPage } from "@/lib/client/fresh-start";
+import { hasSignedInHint, setForcedDark, setSignedInHint } from "@/lib/theme";
 
 type MeResponse = {
   userId: string;
@@ -76,6 +79,9 @@ function GateLoading({ message }: { message: string }) {
 }
 
 export function AuthGate({ children }: Props) {
+  const router = useRouter();
+  // Read once. A returning signed-in browser keeps its saved theme while the session is checked.
+  const [hadSignedInHint] = useState(() => typeof window !== "undefined" && hasSignedInHint());
   const [me, setMe] = useState<MeResponse | null>(null);
   const [setup, setSetup] = useState<SetupStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -155,6 +161,12 @@ export function AuthGate({ children }: Props) {
     })();
   }, []);
 
+  /** A real sign-in starts on the main page, not wherever the last visit ended. */
+  function startFreshSession() {
+    resetRememberedPlace();
+    if (shouldLeaveForMainPage(window.location.pathname)) router.replace("/");
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -230,6 +242,7 @@ export function AuthGate({ children }: Props) {
         setMfaCode("");
         if (data.accessToken) storeClientAccessToken(data.accessToken);
         await Promise.all([refreshMe(), refreshSetup()]);
+      startFreshSession();
         return;
       }
 
@@ -253,6 +266,7 @@ export function AuthGate({ children }: Props) {
         }
         if (data.accessToken) storeClientAccessToken(data.accessToken);
         await Promise.all([refreshMe(), refreshSetup()]);
+        startFreshSession();
         return;
       }
 
@@ -282,6 +296,7 @@ export function AuthGate({ children }: Props) {
       }
       if (data.accessToken) storeClientAccessToken(data.accessToken);
       await Promise.all([refreshMe(), refreshSetup()]);
+        startFreshSession();
     } catch {
       setError("Network error");
     } finally {
@@ -340,6 +355,16 @@ export function AuthGate({ children }: Props) {
         : null,
     [me, logout],
   );
+
+  // The sign-in screens are always dark. Once someone is signed in, their saved theme returns.
+  const signedInNow = Boolean(me && (me.authenticated || me.mode === "local"));
+  const keepSavedTheme = signedInNow || (loading && hadSignedInHint);
+  useLayoutEffect(() => {
+    setForcedDark(!keepSavedTheme);
+  }, [keepSavedTheme]);
+  useEffect(() => {
+    if (!loading) setSignedInHint(signedInNow);
+  }, [loading, signedInNow]);
 
   if (loading) {
     return <GateLoading message="Checking your session…" />;
