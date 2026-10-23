@@ -232,7 +232,14 @@ export async function POST(req: NextRequest) {
           }
         })().catch(err => console.error("[summarize] hosted fact persist failed:", err));
       } else if (!usesHostedAppStore()) {
-      Promise.all([
+      // sessionId and workspaceId come from the request body. Only write when the session
+      // belongs to this user (and to that workspace), so one account cannot overwrite another's
+      // summary or facts by guessing ids.
+      const ownedSession = await db.session.findFirst({
+        where: { id: sessionId, userId, ...(workspaceId ? { workspaceId } : {}) },
+        select: { id: true },
+      });
+      if (ownedSession) Promise.all([
         // Upsert the session summary
         db.sessionSummary.upsert({
           where:  { sessionId },
