@@ -180,21 +180,21 @@ export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputP
           title={voiceTitle ?? (voiceReady ? "Dictate a message" : (voiceBlockedReason ?? "Voice input unavailable"))}
           disabled={!voiceReady}
           className={cn(
-            "shrink-0 p-1.5 rounded-lg transition-colors",
-            "text-foreground/25 hover:text-foreground/60 hover:bg-foreground/6",
+            "shrink-0 size-10 rounded-xl flex items-center justify-center transition-colors",
+            "text-foreground/45 hover:text-foreground/80 hover:bg-foreground/6",
             !voiceReady && "opacity-30 pointer-events-none",
           )}
         >
-          <Mic className="size-4" aria-hidden />
+          <Mic className="size-5" aria-hidden />
         </button>
         {isStreaming && (
           <button
             type="button"
             onClick={onCancelStream}
             aria-label="Stop response"
-            className="shrink-0 size-8 rounded-xl flex items-center justify-center bg-muted text-muted-foreground hover:bg-foreground/10 hover:text-foreground transition-all"
+            className="shrink-0 size-10 rounded-xl flex items-center justify-center bg-muted text-muted-foreground hover:bg-foreground/10 hover:text-foreground transition-all"
           >
-            <Square className="size-3.5 fill-current" aria-hidden />
+            <Square className="size-4 fill-current" aria-hidden />
           </button>
         )}
         <button
@@ -203,13 +203,13 @@ export const ComposerInput = memo(forwardRef<ComposerInputHandle, ComposerInputP
           aria-label={replyInProgress ? "Queue message" : "Send message"}
           title={replyInProgress ? "Send when the current reply finishes" : "Send message"}
           className={cn(
-            "shrink-0 size-8 rounded-xl flex items-center justify-center transition-all",
+            "shrink-0 size-10 rounded-xl flex items-center justify-center transition-all",
             canSend
               ? "bg-primary text-primary-foreground hover:brightness-110 shadow-lg shadow-indigo-900/40"
               : "bg-foreground/6 text-foreground/20 cursor-not-allowed",
           )}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="size-4">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="size-5">
             <path d="M3.478 2.405a.75.75 0 00-.926.94l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.405z" />
           </svg>
         </button>
