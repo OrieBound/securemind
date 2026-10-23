@@ -1,17 +1,13 @@
 "use client";
 
-import {
-  Brain,
-  FileText,
-  Layers,
-  Loader2,
-  MessageSquare,
-  User,
-} from "lucide-react";
-import { useMemo, useState, useEffect } from "react";
+import { Brain, Download, Loader2, MessageSquare, User } from "lucide-react";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { formatFactValue, humanizeKey } from "@/lib/memory/format";
 import { buildFactAssociations, categoryLabel as factCategoryLabel, type FactAssociation } from "@/lib/memory/fact-graph";
+import { relativeTime } from "@/lib/models/key-health";
+import type { MemoryOverview } from "@/lib/memory/overview-types";
+import { EvidenceCard, KnowledgeLibrary, PrivacyCard, SectionHeading, useMemoryOverview } from "@/components/app/memory-overview";
 
 export type MemoryFactRecord = {
   id: string;
@@ -41,29 +37,17 @@ export type MemoryStats = {
 
 type SummaryPeriod = "day" | "month" | "year";
 
-const IDENTITY_KEYS = new Set([
-  "name",
-  "age",
-  "occupation",
-  "location",
-  "project",
-  "projects",
-  "goals",
-  "skills",
-  "interests",
-]);
+const PROFILE_KEYS = new Set(["name", "age", "occupation", "location", "job", "role"]);
+
+const PROFILE_ORDER = ["name", "age", "role", "job", "occupation", "location"];
+
+const WORK_KEYS = new Set(["project", "projects", "goals", "skills", "interests"]);
 
 const PREFERENCE_KEYS = new Set([
   "preferred_response_length",
   "response_length",
   "technical_level",
 ]);
-
-function confidenceColor(c: number): string {
-  if (c >= 0.85) return "bg-emerald-400";
-  if (c >= 0.6) return "bg-amber-400";
-  return "bg-red-400/80";
-}
 
 function groupSummaries(
   items: MemorySummaryRecord[],
@@ -129,28 +113,27 @@ export function mergeLiveFacts(
   return [...byKey.values()].sort((a, b) => a.key.localeCompare(b.key));
 }
 
-function StatCard({
+function OverviewTile({
   label,
   value,
   hint,
-  accent = "indigo",
 }: {
   label: string;
   value: string | number;
   hint?: string;
-  accent?: "indigo" | "violet" | "emerald" | "amber";
 }) {
-  const ring = {
-    indigo:  "border-indigo-500/20 bg-indigo-500/[0.06]",
-    violet:  "border-violet-500/20 bg-violet-500/[0.06]",
-    emerald: "border-emerald-500/20 bg-emerald-500/[0.06]",
-    amber:   "border-amber-500/20 bg-amber-500/[0.06]",
-  }[accent];
   return (
-    <div className={cn("rounded-xl border px-3.5 py-3", ring)}>
-      <p className="text-[0.62rem] uppercase tracking-[0.18em] text-foreground/35 font-semibold">{label}</p>
-      <p className="text-xl font-bold text-foreground/90 tabular-nums mt-1">{value}</p>
-      {hint && <p className="text-[0.65rem] text-foreground/30 mt-0.5">{hint}</p>}
+    <div className="rounded-xl border border-border bg-card px-4 py-3.5">
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <p
+        className={cn(
+          "mt-1 font-semibold tabular-nums text-foreground",
+          typeof value === "number" ? "text-2xl" : "text-lg leading-8",
+        )}
+      >
+        {value}
+      </p>
+      {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }
@@ -170,30 +153,36 @@ function FactRow({
   if (display === "—") return null;
   const interactive = !!onSelect;
   const Wrapper = interactive ? "button" : "div";
+  const badge = live
+    ? "New"
+    : fact.pinned
+      ? "Pinned"
+      : fact.correctedAt
+        ? "Edited"
+        : null;
+  const learned = live ? null : relativeTime(fact.updatedAt);
   return (
     <Wrapper
       type={interactive ? "button" : undefined}
       onClick={interactive ? () => onSelect!(fact) : undefined}
+      aria-pressed={interactive ? !!selected : undefined}
       className={cn(
         "flex items-start gap-3 px-4 py-3 w-full text-left transition-colors",
-        interactive && "cursor-pointer hover:bg-foreground/[0.04]",
-        selected && "bg-indigo-500/[0.08]",
+        interactive && "cursor-pointer hover:bg-secondary",
+        selected && "bg-[var(--primary-soft)] hover:bg-[var(--primary-soft)]",
       )}
     >
-      <span className={cn(
-        "mt-1.5 size-1.5 rounded-full shrink-0",
-        live ? "bg-indigo-400 animate-pulse" : confidenceColor(fact.confidence),
-      )} />
       <div className="flex-1 min-w-0">
-        <p className="text-[0.68rem] text-foreground/35 capitalize">{humanizeKey(fact.key)}</p>
-        <p className="text-sm text-foreground/82 font-medium leading-snug mt-0.5 break-words">{display}</p>
+        <p className="text-xs text-muted-foreground capitalize">{humanizeKey(fact.key)}</p>
+        <p className="mt-0.5 text-sm font-medium leading-snug text-foreground break-words">{display}</p>
       </div>
-      <div className="text-right shrink-0">
-        {live ? (
-          <span className="text-[0.58rem] uppercase tracking-wider text-indigo-400/80 font-bold">Live</span>
-        ) : (
-          <span className="text-[0.6rem] text-foreground/25 tabular-nums">{Math.round(fact.confidence * 100)}%</span>
+      <div className="flex shrink-0 flex-col items-end gap-1 text-right">
+        {badge && (
+          <span className="rounded-full border border-[var(--primary-border)] bg-[var(--primary-soft)] px-2 py-0.5 text-[0.7rem] font-medium text-[var(--primary-soft-foreground)]">
+            {badge}
+          </span>
         )}
+        {learned && <span className="text-xs text-muted-foreground">Learned {learned}</span>}
       </div>
     </Wrapper>
   );
@@ -346,15 +335,30 @@ function FactActions({
   );
 }
 
-type AccountSnapshot = {
-  displayName: string | null;
-  handle: string | null;
-  jobTitle: string | null;
-  bio: string | null;
-  email: string | null;
-};
+function NoteCard({ summary, live, turns }: { summary: string; live: boolean; turns: number }) {
+  const [open, setOpen] = useState(false);
+  const long = summary.length > 220;
+  return (
+    <div className={cn("rounded-xl border px-4 py-3.5", live ? "border-[var(--primary-border)] bg-[var(--primary-soft)]" : "border-border bg-card")}>
+      <p className="text-xs font-medium text-muted-foreground">
+        {live ? "Current conversation" : `${turns} message${turns === 1 ? "" : "s"} summarised`}
+      </p>
+      <p className={cn("mt-1.5 text-sm leading-relaxed text-foreground", !open && long && "line-clamp-3")}>{summary}</p>
+      {long && (
+        <button
+          type="button"
+          onClick={() => setOpen(v => !v)}
+          className="mt-1.5 text-xs font-medium text-muted-foreground underline underline-offset-4 hover:text-foreground cursor-pointer"
+        >
+          {open ? "Show less" : "Show more"}
+        </button>
+      )}
+    </div>
+  );
+}
 
 export function MemoryDashboard({
+  workspaceId,
   workspaceName,
   workspaceFacts,
   sessionSummaries,
@@ -363,11 +367,13 @@ export function MemoryDashboard({
   memoryLoading,
   memoryStats,
   isActiveWorkspace,
-  messageCount,
   summarizedCount,
   onFactPatch,
   onFactDelete,
+  onOpenKnowledge,
+  overview: overviewOverride,
 }: {
+  workspaceId?: string | null;
   workspaceName: string;
   workspaceFacts: MemoryFactRecord[];
   sessionSummaries: MemorySummaryRecord[];
@@ -376,32 +382,17 @@ export function MemoryDashboard({
   memoryLoading: boolean;
   memoryStats: MemoryStats | null;
   isActiveWorkspace: boolean;
-  messageCount: number;
   summarizedCount: number;
   onFactPatch?: (factId: string, patch: { value?: string; pinned?: boolean; forgotten?: boolean }) => void;
   onFactDelete?: (factId: string) => void;
+  onOpenKnowledge?: () => void;
+  /** Supplied by previews and tests. When set, nothing is fetched. */
+  overview?: MemoryOverview | null;
 }) {
-  const [summaryPeriod, setSummaryPeriod] = useState<SummaryPeriod>("day");
   const [selectedFactId, setSelectedFactId] = useState<string | null>(null);
-  const [account, setAccount] = useState<AccountSnapshot | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/me/profile", { credentials: "same-origin" })
-      .then(r => (r.ok ? r.json() : null))
-      .then((body: { profile?: AccountSnapshot } | null) => {
-        if (cancelled || !body?.profile) return;
-        setAccount({
-          displayName: body.profile.displayName ?? null,
-          handle: body.profile.handle ?? null,
-          jobTitle: body.profile.jobTitle ?? null,
-          bio: body.profile.bio ?? null,
-          email: body.profile.email ?? null,
-        });
-      })
-      .catch(() => { /* profile is optional chrome */ });
-    return () => { cancelled = true; };
-  }, []);
+  const fetched = useMemoryOverview(workspaceId, overviewOverride !== undefined);
+  const overview = overviewOverride !== undefined ? overviewOverride : fetched.data;
+  const overviewLoading = overviewOverride !== undefined ? false : fetched.loading;
 
   const allFacts = useMemo(
     () => mergeLiveFacts(workspaceFacts, isActiveWorkspace ? liveFacts : {}),
@@ -413,22 +404,27 @@ export function MemoryDashboard({
     [allFacts],
   );
 
-  const identityFacts = useMemo(
-    () => visibleFacts.filter(f => IDENTITY_KEYS.has(f.key.toLowerCase())),
-    [visibleFacts],
-  );
-
-  const preferenceFacts = useMemo(
-    () => visibleFacts.filter(f => PREFERENCE_KEYS.has(f.key.toLowerCase())),
-    [visibleFacts],
-  );
-
-  const otherFacts = useMemo(
-    () => visibleFacts.filter(f =>
-      !IDENTITY_KEYS.has(f.key.toLowerCase()) && !PREFERENCE_KEYS.has(f.key.toLowerCase()),
-    ),
-    [visibleFacts],
-  );
+  const factGroups = useMemo(() => {
+    const byKey = (f: MemoryFactRecord) => f.key.toLowerCase();
+    return [
+      {
+        id: "you",
+        title: "About you",
+        facts: visibleFacts
+          .filter(f => PROFILE_KEYS.has(byKey(f)))
+          .sort((a, b) => PROFILE_ORDER.indexOf(byKey(a)) - PROFILE_ORDER.indexOf(byKey(b))),
+      },
+      { id: "work", title: "Work and interests", facts: visibleFacts.filter(f => WORK_KEYS.has(byKey(f))) },
+      { id: "style", title: "How you like answers", facts: visibleFacts.filter(f => PREFERENCE_KEYS.has(byKey(f))) },
+      {
+        id: "other",
+        title: "Other things you mentioned",
+        facts: visibleFacts.filter(
+          f => !PROFILE_KEYS.has(byKey(f)) && !WORK_KEYS.has(byKey(f)) && !PREFERENCE_KEYS.has(byKey(f)),
+        ),
+      },
+    ].filter(g => g.facts.length > 0);
+  }, [visibleFacts]);
 
   const allSummaries = useMemo(() => {
     const list = [...sessionSummaries];
@@ -447,10 +443,7 @@ export function MemoryDashboard({
     return list;
   }, [sessionSummaries, isActiveWorkspace, liveSessionSummary, summarizedCount]);
 
-  const groupedSummaries = useMemo(
-    () => groupSummaries(allSummaries, summaryPeriod),
-    [allSummaries, summaryPeriod],
-  );
+  const groupedSummaries = useMemo(() => groupSummaries(allSummaries, "day"), [allSummaries]);
 
   const factAssociations = useMemo(
     () => buildFactAssociations(allFacts, allSummaries),
@@ -462,110 +455,113 @@ export function MemoryDashboard({
     [factAssociations, selectedFactId],
   );
 
-  const rawTurns = isActiveWorkspace
-    ? Math.max(0, messageCount - summarizedCount)
-    : 0;
+  const documents = overview?.documents ?? [];
+  const passages = overview
+    ? documents.reduce((sum, d) => sum + d.chunkCount, 0)
+    : (memoryStats?.documentFragmentCount ?? 0);
+  const lastLearned = useMemo(() => {
+    const stored = visibleFacts.filter(f => !f.id.startsWith("live-"));
+    if (stored.length === 0) return null;
+    const newest = stored.reduce((a, b) => (Date.parse(a.updatedAt) >= Date.parse(b.updatedAt) ? a : b));
+    return relativeTime(newest.updatedAt);
+  }, [visibleFacts]);
 
-  const accountLines = account
-    ? [
-        account.displayName && { label: "Display name", value: account.displayName },
-        account.jobTitle && { label: "Job title", value: account.jobTitle },
-        account.handle && { label: "Handle", value: `@${account.handle}` },
-        account.email && { label: "Email", value: account.email },
-        account.bio && { label: "Bio", value: account.bio },
-      ].filter(Boolean) as { label: string; value: string }[]
-    : [];
-
-  const knowledgeChunks = memoryStats?.documentFragmentCount ?? 0;
+  function exportMemory() {
+    const payload = {
+      workspace: workspaceName,
+      exportedAt: new Date().toISOString(),
+      facts: visibleFacts
+        .filter(f => !f.id.startsWith("live-"))
+        .map(f => ({ key: f.key, value: formatFactValue(f.value), pinned: !!f.pinned, updatedAt: f.updatedAt })),
+      conversationNotes: allSummaries
+        .filter(s => s.id !== "live-session")
+        .map(s => ({ date: s.session.createdAt, messages: s.turnsCovered, summary: s.summary })),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const slug = workspaceName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "workspace";
+    a.href = url;
+    a.download = `${slug}-memory.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="rounded-xl border border-foreground/[0.06] bg-foreground/[0.02] px-4 py-3.5 space-y-2">
-        <p className="text-sm text-foreground/55 leading-relaxed">
-          This is what{" "}
-          <span className="text-foreground/80 font-medium">{workspaceName}</span>
-          {" "}has actually retained — not a personality profile. Facts come only from what you
-          say in chat. Assistant replies, Knowledge files, and guesses are not stored as “who you are.”
+    <div className="flex flex-col gap-8">
+      <div className="flex items-start justify-between gap-4">
+        <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
+          What <span className="font-medium text-foreground">{workspaceName}</span> has kept from your conversations and
+          files. Facts come only from what you say in chat. Assistant replies and guesses are never saved as facts about you.
         </p>
-        <p className="text-[0.72rem] text-foreground/32 leading-relaxed">
-          Pin or correct a fact if it is wrong. Forgotten facts stay saved but are hidden from chat.
-        </p>
+        <button
+          type="button"
+          onClick={exportMemory}
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-foreground hover:bg-secondary cursor-pointer"
+        >
+          <Download className="size-3.5" aria-hidden />
+          Export
+        </button>
       </div>
 
       {memoryLoading && (
-        <div className="flex items-center gap-2 text-sm text-foreground/35">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin shrink-0" aria-hidden />
           Reading what this workspace has stored…
         </div>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <StatCard label="Learned about you" value={visibleFacts.length} hint="From what you said" accent="violet" />
-        <StatCard label="Conversation notes" value={allSummaries.length} hint="Saved thread summaries" accent="indigo" />
-        <StatCard
-          label="Still in this thread"
-          value={isActiveWorkspace ? rawTurns : "—"}
-          hint={isActiveWorkspace ? "Messages not yet compressed" : "Open Chat to see live turns"}
-          accent="emerald"
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <OverviewTile label="Facts remembered" value={visibleFacts.length} hint="From things you said" />
+        <OverviewTile
+          label="Files in Knowledge"
+          value={documents.length}
+          hint={passages > 0 ? `${passages} searchable passages` : "Nothing uploaded yet"}
         />
-        <StatCard
-          label="Knowledge chunks"
-          value={knowledgeChunks}
-          hint="Indexed files — not facts about you"
-          accent="amber"
-        />
+        <OverviewTile label="Conversations kept" value={allSummaries.length} hint="Saved summaries" />
+        <OverviewTile label="Last learned" value={lastLearned ?? "—"} hint="Most recent fact" />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <EvidenceCard evidence={overview?.evidence ?? null} loading={overviewLoading} />
+        <PrivacyCard privacy={overview?.privacy ?? null} loading={overviewLoading} />
       </div>
 
       <section>
-        <div className="flex items-center gap-2 mb-3">
-          <User className="size-4 text-violet-400/70" aria-hidden />
-          <h3 className="text-[0.65rem] uppercase tracking-[0.22em] text-foreground/35 font-semibold">
-            How {workspaceName} sees you
-          </h3>
-        </div>
-        <div className="rounded-2xl border border-foreground/[0.07] bg-foreground/[0.03] overflow-hidden">
-          {visibleFacts.length === 0 ? (
-            <div className="px-4 py-8 text-center space-y-2">
-              <Brain className="size-8 text-violet-400/25 mx-auto" aria-hidden />
-              <p className="text-sm text-foreground/50">Nothing durable has been saved from chat yet.</p>
-              <p className="text-[0.72rem] text-foreground/32 leading-relaxed max-w-md mx-auto">
-                After you send a message, SecureMind looks for things you stated about yourself
-                (name, work, location, projects, how you like replies). A short “what do you think
-                of Cursor?” chat will not fill this in — there was nothing autobiographical to keep.
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y divide-foreground/[0.05]">
-              {identityFacts.length > 0 && identityFacts.map(f => (
-                <FactRow
-                  key={f.id}
-                  fact={f}
-                  live={f.id.startsWith("live-")}
-                  selected={selectedFactId === f.id}
-                  onSelect={fact => setSelectedFactId(fact.id)}
-                />
-              ))}
-              {preferenceFacts.map(f => (
-                <FactRow
-                  key={f.id}
-                  fact={f}
-                  live={f.id.startsWith("live-")}
-                  selected={selectedFactId === f.id}
-                  onSelect={fact => setSelectedFactId(fact.id)}
-                />
-              ))}
-              {otherFacts.map(f => (
-                <FactRow
-                  key={f.id}
-                  fact={f}
-                  live={f.id.startsWith("live-")}
-                  selected={selectedFactId === f.id}
-                  onSelect={fact => setSelectedFactId(fact.id)}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+        <SectionHeading
+          icon={<User className="size-4" />}
+          title={`What ${workspaceName} knows about you`}
+          hint="Select a fact to pin it, correct it or forget it. Forgotten facts stay saved but are hidden from chat."
+        />
+        {factGroups.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-border px-5 py-8 text-center">
+            <Brain className="mx-auto size-7 text-muted-foreground" aria-hidden />
+            <p className="mt-2 text-sm font-medium text-foreground">Nothing saved from chat yet</p>
+            <p className="mx-auto mt-1 max-w-md text-xs leading-relaxed text-muted-foreground">
+              It keeps what you state about yourself, such as your role, what you are working on, or how you like
+              replies. Try something like: “I’m a cloud engineer, and I’m migrating our logging to OpenSearch.”
+            </p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {factGroups.map(group => (
+              <div key={group.id}>
+                <h4 className="mb-1.5 px-1 text-xs font-medium text-muted-foreground">{group.title}</h4>
+                <div className="overflow-hidden rounded-2xl border border-border bg-card divide-y divide-border">
+                  {group.facts.map(f => (
+                    <FactRow
+                      key={f.id}
+                      fact={f}
+                      live={f.id.startsWith("live-")}
+                      selected={selectedFactId === f.id}
+                      onSelect={fact => setSelectedFactId(fact.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         {selectedAssociation && (
           <div className="mt-3">
             <FactDetailPanel
@@ -578,154 +574,34 @@ export function MemoryDashboard({
         )}
       </section>
 
-      <section>
-        <div className="flex items-center gap-2 mb-3">
-          <User className="size-4 text-foreground/40" aria-hidden />
-          <h3 className="text-[0.65rem] uppercase tracking-[0.22em] text-foreground/35 font-semibold">
-            From Profile
-          </h3>
-        </div>
-        <div className="rounded-2xl border border-foreground/[0.07] bg-foreground/[0.03] px-4 py-4">
-          {accountLines.length === 0 ? (
-            <p className="text-sm text-foreground/35 leading-relaxed">
-              No display name, title, or bio yet. That lives in Settings → Profile and is
-              account-wide — it is not copied into this workspace’s learned facts.
-            </p>
-          ) : (
-            <>
-              <dl className="space-y-2.5">
-                {accountLines.map(row => (
-                  <div key={row.label} className="flex flex-col sm:flex-row sm:gap-4">
-                    <dt className="text-[0.68rem] uppercase tracking-wider text-foreground/35 sm:w-32 shrink-0 pt-0.5">
-                      {row.label}
-                    </dt>
-                    <dd className="text-sm text-foreground/75 leading-relaxed">{row.value}</dd>
-                  </div>
-                ))}
-              </dl>
-              <p className="text-[0.65rem] text-foreground/28 mt-3 leading-relaxed">
-                You wrote this in Settings. Chat does not treat it as a learned workspace fact
-                unless you also say it in conversation.
-              </p>
-            </>
-          )}
-        </div>
-      </section>
+      <KnowledgeLibrary documents={documents} loading={overviewLoading} onOpenKnowledge={onOpenKnowledge} />
 
       <section>
-        <div className="flex items-center gap-2 mb-3">
-          <MessageSquare className="size-4 text-indigo-400/70" aria-hidden />
-          <h3 className="text-[0.65rem] uppercase tracking-[0.22em] text-foreground/35 font-semibold">
-            What it remembers from conversation
-          </h3>
-        </div>
-        <div className="rounded-2xl border border-foreground/[0.07] bg-foreground/[0.03] px-4 py-4 space-y-3">
-          {isActiveWorkspace && (
-            <p className="text-[0.72rem] text-foreground/40">
-              {rawTurns} message{rawTurns === 1 ? "" : "s"} in this thread {summarizedCount > 0
-                ? `(${summarizedCount} older turns already compressed).`
-                : "are still held in full — a rolling summary is written as the thread gets long."}
-            </p>
-          )}
-          {liveSessionSummary.trim() ? (
-            <p className="text-sm text-foreground/70 leading-relaxed border-l-2 border-indigo-400/40 pl-3">
-              {liveSessionSummary}
-            </p>
-          ) : allSummaries.length === 0 ? (
-            <p className="text-sm text-foreground/35 leading-relaxed">
-              No saved notes yet. Recent messages stay in the chat thread. A summary appears here
-              once the model has something durable from what you said — not from the assistant’s
-              opinions (for example, a take on Cursor).
-            </p>
-          ) : null}
-        </div>
-      </section>
-
-      <section>
-        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <Layers className="size-4 text-foreground/40" aria-hidden />
-            <h3 className="text-[0.65rem] uppercase tracking-[0.22em] text-foreground/35 font-semibold">
-              Saved conversation notes
-            </h3>
-          </div>
-          {allSummaries.length > 0 && (
-            <div className="flex rounded-lg border border-foreground/8 bg-foreground/[0.03] p-0.5">
-              {(["day", "month", "year"] as const).map(p => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setSummaryPeriod(p)}
-                  className={cn(
-                    "px-2.5 py-1 text-[0.68rem] font-medium rounded-md capitalize transition-colors cursor-pointer",
-                    summaryPeriod === p
-                      ? "bg-indigo-500/20 text-indigo-200"
-                      : "text-foreground/35 hover:text-foreground/55",
-                  )}
-                >
-                  {p}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <SectionHeading
+          icon={<MessageSquare className="size-4" />}
+          title="Conversation notes"
+          hint="Short summaries written as a conversation grows. They keep long threads usable."
+        />
         {allSummaries.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-foreground/10 px-5 py-8 text-center">
-            <p className="text-sm text-foreground/40">No archived summaries for this workspace yet.</p>
+          <div className="rounded-2xl border border-dashed border-border px-5 py-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              No notes yet. One is written automatically once a conversation gets long.
+            </p>
           </div>
         ) : (
           <div className="flex flex-col gap-4">
             {groupedSummaries.map(group => (
               <div key={group.key}>
-                <h4 className="mb-2 text-[0.65rem] uppercase tracking-[0.2em] text-foreground/28 font-semibold">
-                  {group.label}
-                </h4>
-                <div className="flex flex-col gap-2.5 pl-3 border-l-2 border-indigo-500/20">
-                  {group.items.map(s => {
-                    const isLive = s.id === "live-session";
-                    return (
-                      <div
-                        key={s.id}
-                        className={cn(
-                          "rounded-xl border px-4 py-3.5",
-                          isLive
-                            ? "bg-indigo-500/[0.06] border-indigo-400/20"
-                            : "bg-foreground/[0.025] border-foreground/[0.06]",
-                        )}
-                      >
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <span className={cn(
-                            "text-[0.62rem] uppercase tracking-wider font-semibold",
-                            isLive ? "text-indigo-400/70" : "text-foreground/28",
-                          )}>
-                            {isLive ? "Current session" : `${s.turnsCovered} turns`}
-                          </span>
-                        </div>
-                        <p className="text-sm text-foreground/60 leading-relaxed">{s.summary}</p>
-                      </div>
-                    );
-                  })}
+                <h4 className="mb-1.5 px-1 text-xs font-medium text-muted-foreground">{group.label}</h4>
+                <div className="flex flex-col gap-2.5">
+                  {group.items.map(s => (
+                    <NoteCard key={s.id} summary={s.summary} live={s.id === "live-session"} turns={s.turnsCovered} />
+                  ))}
                 </div>
               </div>
             ))}
           </div>
         )}
-      </section>
-
-      <section>
-        <div className="flex items-center gap-2 mb-3">
-          <FileText className="size-4 text-amber-400/70" aria-hidden />
-          <h3 className="text-[0.65rem] uppercase tracking-[0.22em] text-foreground/35 font-semibold">
-            Knowledge in this workspace
-          </h3>
-        </div>
-        <div className="rounded-2xl border border-foreground/[0.07] bg-foreground/[0.03] px-4 py-4">
-          <p className="text-sm text-foreground/60 leading-relaxed">
-            {knowledgeChunks === 0
-              ? "No Knowledge files are indexed here yet. Uploads become searchable sources with citations — they are not listed as facts about you."
-              : `${knowledgeChunks} document chunk${knowledgeChunks === 1 ? "" : "s"} are indexed for citations in chat. That is workspace Knowledge, not a profile of you.`}
-          </p>
-        </div>
       </section>
     </div>
   );

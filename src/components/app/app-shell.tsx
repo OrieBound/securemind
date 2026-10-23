@@ -187,7 +187,6 @@ import {
 } from "@/lib/client/api-base";
 import { PRODUCT_POSITIONING } from "@/lib/branding";
 import { PortalBrandMark } from "@/components/app/portal-brand-mark";
-import { themeForRuntime } from "@/lib/provider-theme";
 import { cn } from "@/lib/utils";
 import { shortProcessingError } from "@/lib/documents/stale-processing";
 import type { RouteScoreCard } from "@/lib/models/route-scorecard";
@@ -1283,7 +1282,7 @@ const OLLAMA_FASTER_PATH_COPY =
   "Those run off this computer and may incur cost.";
 
 /** Visible thinking state while waiting for the first token (common with local Ollama). */
-function ThinkingIndicator({
+export function ThinkingIndicator({
   startedAt,
   provider,
   onStop,
@@ -1301,52 +1300,48 @@ function ThinkingIndicator({
   useEffect(() => {
     const tick = () => setElapsedMs(Date.now() - startedAt);
     tick();
-    const id = window.setInterval(tick, 100);
+    const id = window.setInterval(tick, 1000);
     return () => window.clearInterval(id);
   }, [startedAt]);
 
   const isOllama = provider === "ollama";
-  const slowCloudHint =
-    !isOllama && elapsedMs >= 8000 ? "Still processing your request…" : null;
+  // Short waits show only the dots. Detail appears when the wait is long enough to need it.
+  const showStop = Boolean(onStop) && elapsedMs >= 3000;
+  const showLocalExplanation = isOllama && elapsedMs >= 5000;
+  const showElapsed = elapsedMs >= 8000;
 
   return (
     <div
-      className={cn(
-        "rounded-xl border border-indigo-500/20 bg-indigo-500/[0.08]",
-        compact ? "px-3 py-2" : "px-3.5 py-3",
-      )}
+      className={compact ? "py-1" : "py-1.5"}
       role="status"
       aria-live="polite"
       aria-label={
         isOllama
           ? `Waiting on this computer, ${formatThinkingElapsed(elapsedMs)} elapsed`
-          : `Thinking, ${formatThinkingElapsed(elapsedMs)} elapsed`
+          : `Loading response, ${formatThinkingElapsed(elapsedMs)} elapsed`
       }
     >
       <div className="flex items-center gap-2.5 flex-wrap">
-        <Loader2 className="size-4 animate-spin text-indigo-300/90 shrink-0" aria-hidden />
-        <span className="text-sm font-medium text-indigo-100/90">
-          {isOllama ? "Waiting on your machine" : "Thinking"}
+        <span className="thinking-dots" aria-hidden>
+          <span />
+          <span />
+          <span />
         </span>
-        <span className="text-xs font-mono tabular-nums text-indigo-200/55">
-          {formatThinkingElapsed(elapsedMs)}
-        </span>
-        {provider && (
-          <span className={cn(
-            "text-[0.58rem] uppercase tracking-wider font-semibold",
-            themeForRuntime(provider).icon,
-            "opacity-80",
-          )}>
-            {themeForRuntime(provider).label}
+        {isOllama && (
+          <span className="text-xs text-muted-foreground">Waiting on your machine</span>
+        )}
+        {showElapsed && (
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {isOllama ? formatThinkingElapsed(elapsedMs) : `Still working · ${formatThinkingElapsed(elapsedMs)}`}
           </span>
         )}
-        {onStop && (
+        {showStop && (
           <button
             type="button"
             onClick={onStop}
             className={cn(
               "ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1",
-              "text-[0.68rem] font-medium text-muted-foreground bg-muted/80 border border-border",
+              "text-[0.68rem] font-medium text-muted-foreground",
               "hover:bg-muted hover:text-foreground transition-colors cursor-pointer",
             )}
             aria-label="Stop generating"
@@ -1356,29 +1351,24 @@ function ThinkingIndicator({
           </button>
         )}
       </div>
-      {isOllama && (
-        <div className={cn("pl-6 space-y-1.5", compact ? "mt-1.5" : "mt-2")}>
-          <p className="text-[0.68rem] leading-relaxed text-indigo-100/75">
+      {showLocalExplanation && (
+        <div className={cn("space-y-1.5", compact ? "mt-1.5" : "mt-2")}>
+          <p className="text-[0.68rem] leading-relaxed text-muted-foreground">
             {OLLAMA_LOCAL_WAIT_COPY}
           </p>
-          <p className="text-[0.68rem] leading-relaxed text-indigo-200/50">
+          <p className="text-[0.68rem] leading-relaxed text-muted-foreground">
             {OLLAMA_FASTER_PATH_COPY}
           </p>
           {onOpenSettings && (
             <button
               type="button"
               onClick={() => onOpenSettings("inference")}
-              className="text-[0.68rem] font-medium text-indigo-200 underline underline-offset-2 hover:text-indigo-100 cursor-pointer"
+              className="text-[0.68rem] font-medium text-foreground underline underline-offset-2 hover:text-primary cursor-pointer"
             >
               Open Settings → Models
             </button>
           )}
         </div>
-      )}
-      {slowCloudHint && (
-        <p className="mt-2 text-[0.68rem] leading-relaxed text-indigo-200/45 pl-6">
-          {slowCloudHint}
-        </p>
       )}
     </div>
   );
@@ -7038,6 +7028,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                 }
               />
               <MemoryDashboard
+                workspaceId={viewWorkspaceId}
                 workspaceName={viewWorkspaceName}
                 workspaceFacts={workspaceFacts}
                 sessionSummaries={allSessionSummaries}
@@ -7046,8 +7037,8 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                 memoryLoading={memoryLoading}
                 memoryStats={memoryStats}
                 isActiveWorkspace={viewWorkspaceId === activeWorkspaceId}
-                messageCount={messages.length}
                 summarizedCount={summarizedCount}
+                onOpenKnowledge={() => { if (viewWorkspaceId) goToWorkspaceNav("documents", { id: viewWorkspaceId }); }}
                 onFactPatch={async (factId, patch) => {
                   if (!viewWorkspaceId) return;
                   const res = await fetch(`/api/memory/facts/${factId}`, {
