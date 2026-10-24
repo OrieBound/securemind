@@ -8,17 +8,36 @@ import { resolveVendorApiKey } from "./vendor-secrets";
 import { fetchWithTimeout, usageFromGeminiChunk, type VendorUsageCallback } from "./vendor-stream";
 import { isChatUsableModelId, type CatalogModel } from "./catalog-shared";
 
-function toGeminiContents(messages: ChatMessage[]): Array<{
-  role: "user" | "model";
-  parts: Array<{ text: string }>;
-}> {
-  const out: Array<{ role: "user" | "model"; parts: Array<{ text: string }> }> = [];
+type GeminiContent = { role: "user" | "model"; parts: Array<{ text: string }> };
+
+function messageText(m: ChatMessage): string {
+  return typeof m.content === "string" ? m.content : JSON.stringify(m.content);
+}
+
+/**
+ * Request body for Gemini. System messages go in Gemini's own `systemInstruction` field, so per-turn
+ * rules (for example the file instructions) keep their weight however long the conversation is.
+ * When there is no other message, the system text is sent as the one user message instead, because
+ * Gemini needs at least one content entry.
+ */
+export function buildGeminiBody(messages: ChatMessage[], maxTokens?: number) {
+  const system = messages.filter(m => m.role === "system").map(messageText).join("\n\n");
+  const hasConversation = messages.some(m => m.role !== "system");
+  return {
+    ...(system && hasConversation ? { systemInstruction: { parts: [{ text: system }] } } : {}),
+    contents: toGeminiContents(messages, system && hasConversation ? true : false),
+    ...(maxTokens ? { generationConfig: { maxOutputTokens: maxTokens } } : {}),
+  };
+}
+
+function toGeminiContents(messages: ChatMessage[], systemSeparate = false): GeminiContent[] {
+  const out: GeminiContent[] = [];
   let systemPrefix = "";
 
   for (const m of messages) {
-    const text = typeof m.content === "string" ? m.content : JSON.stringify(m.content);
+    const text = messageText(m);
     if (m.role === "system") {
-      systemPrefix += (systemPrefix ? "\n\n" : "") + text;
+      if (!systemSeparate) systemPrefix += (systemPrefix ? "\n\n" : "") + text;
       continue;
     }
     const role = m.role === "assistant" ? "model" : "user";
@@ -95,10 +114,7 @@ export async function* streamGoogleChat(
     signal,
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: toGeminiContents(messages),
-      ...(maxTokens ? { generationConfig: { maxOutputTokens: maxTokens } } : {}),
-    }),
+    body: JSON.stringify(buildGeminiBody(messages, maxTokens)),
   });
 
   if (!res.ok) {

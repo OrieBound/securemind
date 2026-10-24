@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectFileRequest, fileOutputInstructions, resolveFileRequest } from "./file-request";
+import { detectFileRequest, fileOutputInstructions, resolveFileRequest, withFileTurnReminder } from "./file-request";
 
 describe("detectFileRequest", () => {
   it.each([
@@ -136,5 +136,22 @@ describe("cases from live testing", () => {
 
   it("tells the model to label sample data instead of inventing live facts", () => {
     expect(fileOutputInstructions({ ext: "xlsx" })).toContain("Never present invented data as real");
+  });
+});
+
+describe("withFileTurnReminder", () => {
+  it("adds the reminder to the end of a plain message", () => {
+    const out = withFileTurnReminder("make it as a CSV file", { ext: "csv" });
+    expect(out.startsWith("make it as a CSV file")).toBe(true);
+    expect(out).toContain("a .csv file");
+    expect(out).toContain("file:<name.ext>");
+  });
+
+  it("adds it to the text part when images are attached, and not at all without a request", () => {
+    const parts = [{ type: "text", text: "put this in Excel" }, { type: "image_url" }];
+    const out = withFileTurnReminder(parts, { ext: "xlsx" });
+    expect(out[0].text).toContain("a .xlsx file");
+    expect(out[1]).toEqual({ type: "image_url" });
+    expect(withFileTurnReminder("hello", null)).toBe("hello");
   });
 });

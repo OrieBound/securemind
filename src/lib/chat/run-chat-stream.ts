@@ -56,7 +56,7 @@ import {
   needsOperationalPrompt,
   shouldSkipKnowledgeSearch,
 } from "@/lib/turn-policy/decide-turn";
-import { fileOutputInstructions, resolveFileRequest } from "@/lib/turn-policy/file-request";
+import { fileOutputInstructions, resolveFileRequest, withFileTurnReminder } from "@/lib/turn-policy/file-request";
 import { MAX_ATTACHMENTS_PER_TURN } from "@/lib/documents/constants";
 import {
   attachedDocumentNamesFromText,
@@ -467,7 +467,7 @@ export async function prepareChatTurn(
   const currentExtractBlock = formatAttachmentsForHistory(orderedAttachments);
   const userAsk = message || (hasImages ? "What's in this image?" : "");
   const userText = currentExtractBlock ? `${userAsk}\n\n${currentExtractBlock}` : userAsk;
-  const userContent = withFileAccessTurnNudge(
+  const userContent = withFileTurnReminder(withFileAccessTurnNudge(
     hasImages
       ? [
           { type: "text" as const, text: userText },
@@ -475,7 +475,7 @@ export async function prepareChatTurn(
         ]
       : userText,
     hasExcerpts || Boolean(currentExtractBlock),
-  );
+  ), fileRequest);
 
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },

@@ -194,3 +194,26 @@ export function fileOutputInstructions(request: FileRequest): string {
     `- After the block, add at most one short sentence.`
   );
 }
+
+/** One line placed at the end of the user's message on a file turn, where models pay most attention. */
+export function fileTurnReminder(request: FileRequest): string {
+  const kind = request.ext ? `a .${request.ext} file` : "a downloadable file";
+  return (
+    `(The app will turn your reply into ${kind} for download. Put the whole file in one fenced block ` +
+    `with the info string file:<name.ext>. Do not tell me to copy it, and do not say you cannot create files.)`
+  );
+}
+
+/** Append the reminder to the user's text (or to the first text part when images are attached). */
+export function withFileTurnReminder<T extends string | Array<{ type: string; text?: string }>>(
+  userContent: T,
+  request: FileRequest | null,
+): T {
+  if (!request) return userContent;
+  const reminder = `\n\n${fileTurnReminder(request)}`;
+  if (typeof userContent === "string") return (userContent + reminder) as T;
+  const parts = userContent as Array<{ type: string; text?: string }>;
+  const first = parts.findIndex(p => p.type === "text");
+  if (first < 0) return userContent;
+  return parts.map((p, i) => (i === first ? { ...p, text: `${p.text ?? ""}${reminder}` } : p)) as T;
+}
