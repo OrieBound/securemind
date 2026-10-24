@@ -38,6 +38,9 @@ export type StreamFinishCallback = (info: { truncated: boolean }) => void;
 /** Output cap for one chat reply. Long enough for a real code file; the Continue button covers the rest. */
 export const MAX_REPLY_TOKENS = 3072;
 
+/** Reply limit when the person asked for a file: long enough for a real spreadsheet or document. */
+export const FILE_REPLY_TOKENS = 8192;
+
 export type ChatMessage = {
   role: "system" | "user" | "assistant";
   content: string | (TextContent | ImageContent)[];

@@ -49,6 +49,8 @@ export async function* streamGroqChat(
   onUsage?: (usage: GroqUsage) => void,
   signal?: AbortSignal,
   onFinish?: StreamFinishCallback,
+  /** Reply length limit. File turns pass a larger one; other turns use the default. */
+  maxTokens: number = MAX_REPLY_TOKENS,
 ): AsyncGenerator<string> {
   const client = await getClient();
 
@@ -68,7 +70,7 @@ export async function* streamGroqChat(
     stream: true,
     stream_options: { include_usage: true },
     temperature: 0.8,
-    max_tokens: MAX_REPLY_TOKENS,
+    max_tokens: maxTokens,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any, { signal }) as unknown as AsyncIterable<GroqStreamChunk>;
 

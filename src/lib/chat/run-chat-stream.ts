@@ -48,7 +48,7 @@ import { findOwnedWorkspace } from "@/lib/workspaces/store";
 import { getPersistedDocument } from "@/lib/documents/persist";
 import { recordInferenceEvent } from "@/lib/analytics/write";
 import type { GroundingStatus } from "@/lib/analytics/types";
-import type { ChatMessage, ModelProvider } from "@/lib/models/types";
+import { FILE_REPLY_TOKENS, type ChatMessage, type ModelProvider } from "@/lib/models/types";
 import {
   applySpeculativeKnowledgeHits,
   decideTurn,
@@ -56,6 +56,7 @@ import {
   needsOperationalPrompt,
   shouldSkipKnowledgeSearch,
 } from "@/lib/turn-policy/decide-turn";
+import { detectFileRequest, fileOutputInstructions } from "@/lib/turn-policy/file-request";
 import { MAX_ATTACHMENTS_PER_TURN } from "@/lib/documents/constants";
 import {
   attachedDocumentNamesFromText,
@@ -100,6 +101,8 @@ export type ChatStreamContext = {
   useGroq: boolean;
   useBedrock: boolean;
   turn: ReturnType<typeof decideTurn>;
+  /** Set when the person asked for a downloadable file: a longer reply limit for this turn. */
+  maxTokens?: number;
   messages: ChatMessage[];
   citations: ReturnType<typeof packageEvidence>["citations"];
   evidenceCount: number;
@@ -188,6 +191,9 @@ export async function prepareChatTurn(
     priorTurnWasGrounded: Boolean(priorTurnWasGrounded),
     priorTurnHadAttachments: Boolean(priorTurnHadAttachments),
   });
+
+  // Shape of the reply only: a file request never changes retrieval, Sources or the tier.
+  const fileRequest = detectFileRequest(message);
 
   let workspaceName: string | undefined;
   let workspaceContext: string | undefined;
@@ -425,7 +431,8 @@ export async function prepareChatTurn(
       workspaceName,
       workspaceContext,
       includeOperational: operational,
-    }) + modePromptInstructions(turn, { workspaceName });
+    }) + modePromptInstructions(turn, { workspaceName })
+    + (fileRequest ? fileOutputInstructions(fileRequest) : "");
 
   const rankedFacts = combined.facts.filter(f => f.value);
   if (rankedFacts.length > 0 && operational) {
@@ -493,6 +500,7 @@ export async function prepareChatTurn(
       useGroq,
       useBedrock,
       turn,
+      maxTokens: fileRequest ? FILE_REPLY_TOKENS : undefined,
       messages,
       citations,
       evidenceCount,
@@ -564,6 +572,7 @@ export async function* iterateChatSseFrames(
       provider: streamProvider,
       lockProvider: ctx.lockProvider,
       tier: ctx.activeMode,
+      maxTokens: ctx.maxTokens,
       onUsage: (u) => { usageHold.current = u; },
       onFinish: (info) => { hitOutputLimit = info.truncated; },
       onResolved: (info) => {

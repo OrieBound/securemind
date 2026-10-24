@@ -79,6 +79,8 @@ export async function* streamBedrockChat(
   onUsage?: (usage: BedrockTokenUsage) => void,
   signal?: AbortSignal,
   onFinish?: StreamFinishCallback,
+  /** Reply length limit for file turns. Unset keeps the model default. */
+  maxTokens?: number,
 ): AsyncGenerator<string> {
   const blocked = await bedrockBlockReason();
   if (blocked) throw new Error(blocked);
@@ -134,6 +136,7 @@ export async function* streamBedrockChat(
       new ConverseStreamCommand({
         modelId,
         messages: converseMessages,
+        ...(maxTokens ? { inferenceConfig: { maxTokens } } : {}),
         ...(systemParts.length
           ? { system: [{ text: systemParts.join("\n\n") }] }
           : {}),

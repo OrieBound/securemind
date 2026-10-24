@@ -63,6 +63,8 @@ export async function* streamAnthropicChat(
   signal?: AbortSignal,
   onUsage?: VendorUsageCallback,
   onFinish?: StreamFinishCallback,
+  /** Reply length limit. File turns pass a larger one; other turns use the default. */
+  maxTokens: number = MAX_REPLY_TOKENS,
 ): AsyncGenerator<string> {
   const apiKey = await resolveVendorApiKey("anthropic");
   if (!apiKey) {
@@ -80,7 +82,7 @@ export async function* streamAnthropicChat(
     },
     body: JSON.stringify({
       model,
-      max_tokens: MAX_REPLY_TOKENS,
+      max_tokens: maxTokens,
       stream: true,
       ...(system ? { system } : {}),
       messages: turns,

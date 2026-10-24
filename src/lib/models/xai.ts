@@ -71,6 +71,8 @@ export async function* streamXaiChat(
   signal?: AbortSignal,
   onUsage?: VendorUsageCallback,
   onFinish?: StreamFinishCallback,
+  /** Reply length limit. File turns pass a larger one; other turns use the default. */
+  maxTokens: number = MAX_REPLY_TOKENS,
 ): AsyncGenerator<string> {
   const apiKey = await resolveVendorApiKey("xai");
   if (!apiKey) {
@@ -89,7 +91,7 @@ export async function* streamXaiChat(
       messages: toXaiMessages(messages),
       stream: true,
       stream_options: { include_usage: true },
-      max_tokens: MAX_REPLY_TOKENS,
+      max_tokens: maxTokens,
       temperature: 0.8,
     }),
   });

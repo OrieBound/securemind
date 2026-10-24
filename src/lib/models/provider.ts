@@ -42,6 +42,8 @@ export type StreamChatOpts = {
    * Do not remap to the instance primary, and do not silently fall back to Ollama.
    */
   lockProvider?: boolean;
+  /** Reply length limit for this turn (file requests). Unset uses each provider's default. */
+  maxTokens?: number;
 };
 
 /**
@@ -50,7 +52,7 @@ export type StreamChatOpts = {
  * with Ollama. Ollama runs only when it is the selected provider.
  */
 export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> {
-  const { messages, model, onUsage, onFinish, tier = "Standard" } = opts;
+  const { messages, model, onUsage, onFinish, tier = "Standard", maxTokens } = opts;
   let provider = opts.provider;
   const lockProvider = Boolean(opts.lockProvider);
 
@@ -94,7 +96,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
         const bedrockModel =
           opts.provider === "bedrock" ? model : secrets.bedrockChatModel || model;
         opts.onResolved?.({ provider: "bedrock", model: bedrockModel });
-        for await (const delta of streamBedrockChat(messages, bedrockModel, onUsage, undefined, onFinish)) {
+        for await (const delta of streamBedrockChat(messages, bedrockModel, onUsage, undefined, onFinish, maxTokens)) {
           yield delta;
         }
         return;
@@ -126,7 +128,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
     }
     try {
       opts.onResolved?.({ provider: "groq", model });
-      for await (const delta of streamGroqChat(messages, model, onUsage, undefined, onFinish)) {
+      for await (const delta of streamGroqChat(messages, model, onUsage, undefined, onFinish, maxTokens)) {
         yield delta;
       }
       return;
@@ -139,7 +141,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
     if (!(await hasOpenAIRuntime())) {
       throw new Error("OpenAI is not configured. Add an API key in Settings → Models.");
     }
-    for await (const delta of streamOpenAIChat(messages, model, undefined, onUsage, onFinish)) {
+    for await (const delta of streamOpenAIChat(messages, model, undefined, onUsage, onFinish, maxTokens)) {
       yield delta;
     }
     return;
@@ -149,7 +151,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
     if (!(await hasAnthropicRuntime())) {
       throw new Error("Anthropic is not configured. Add an API key in Settings → Models.");
     }
-    for await (const delta of streamAnthropicChat(messages, model, undefined, onUsage, onFinish)) {
+    for await (const delta of streamAnthropicChat(messages, model, undefined, onUsage, onFinish, maxTokens)) {
       yield delta;
     }
     return;
@@ -159,7 +161,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
     if (!(await hasGoogleRuntime())) {
       throw new Error("Gemini is not configured. Add an API key in Settings → Models.");
     }
-    for await (const delta of streamGoogleChat(messages, model, undefined, onUsage, onFinish)) {
+    for await (const delta of streamGoogleChat(messages, model, undefined, onUsage, onFinish, maxTokens)) {
       yield delta;
     }
     return;
@@ -169,7 +171,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
     if (!(await hasXaiRuntime())) {
       throw new Error("Grok is not configured. Add an API key in Settings → Models.");
     }
-    for await (const delta of streamXaiChat(messages, model, undefined, onUsage, onFinish)) {
+    for await (const delta of streamXaiChat(messages, model, undefined, onUsage, onFinish, maxTokens)) {
       yield delta;
     }
     return;
@@ -188,7 +190,7 @@ export async function* streamChat(opts: StreamChatOpts): AsyncGenerator<string> 
     throw new Error(check);
   }
   opts.onResolved?.({ provider: "ollama", model: fallbackModel });
-  for await (const delta of streamOllamaChat(messages, fallbackModel, undefined, onFinish)) {
+  for await (const delta of streamOllamaChat(messages, fallbackModel, undefined, onFinish, maxTokens)) {
     yield delta;
   }
 }

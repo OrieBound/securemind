@@ -130,6 +130,8 @@ export async function* streamOllamaChat(
   model: string,
   signal?: AbortSignal,
   onFinish?: StreamFinishCallback,
+  /** Reply length limit for file turns. Unset keeps the usual 2048. */
+  maxTokens?: number,
 ): AsyncGenerator<string> {
   let resp: Response;
 
@@ -145,7 +147,7 @@ export async function* streamOllamaChat(
         keep_alive: "30m",
         options: {
           num_ctx: 4096,
-          num_predict: 2048,
+          num_predict: maxTokens ?? 2048,
         },
       }),
     });

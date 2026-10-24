@@ -76,6 +76,8 @@ export async function* streamGoogleChat(
   signal?: AbortSignal,
   onUsage?: VendorUsageCallback,
   onFinish?: StreamFinishCallback,
+  /** Reply length limit for file turns. Unset keeps the model default. */
+  maxTokens?: number,
 ): AsyncGenerator<string> {
   const apiKey = await resolveVendorApiKey("google");
   if (!apiKey) {
@@ -93,7 +95,10 @@ export async function* streamGoogleChat(
     signal,
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contents: toGeminiContents(messages) }),
+    body: JSON.stringify({
+      contents: toGeminiContents(messages),
+      ...(maxTokens ? { generationConfig: { maxOutputTokens: maxTokens } } : {}),
+    }),
   });
 
   if (!res.ok) {
