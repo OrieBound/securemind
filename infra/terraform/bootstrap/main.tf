@@ -271,9 +271,9 @@ data "aws_iam_policy_document" "gha_deploy" {
       "sns:List*",
       "budgets:Describe*",
       "budgets:View*",
-      "cognito-idp:Describe*",
-      "cognito-idp:Get*",
-      "cognito-idp:List*",
+      # Reading a pool's users, clients and groups is covered by the tag-scoped UserPools
+      # statement below. Only the account-wide pool list stays here.
+      "cognito-idp:ListUserPools",
       "dynamodb:Describe*",
       "dynamodb:List*",
       "lambda:Get*",
@@ -361,11 +361,28 @@ data "aws_iam_policy_document" "gha_deploy" {
     actions   = ["amplify:*"]
     resources = ["arn:aws:amplify:*:${local.account}:apps/*"]
   }
+  # A user pool's name is not part of its ARN, so the pool is recognised by its Project tag
+  # (set in modules/auth_cognito). In an account shared with other projects, this keeps the deploy
+  # role away from their pools.
   statement {
-    # A user pool's name is not part of its ARN, so this cannot be narrowed by name.
+    sid       = "CreateTaggedUserPools"
+    actions   = ["cognito-idp:CreateUserPool"]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:RequestTag/Project"
+      values   = ["SecureMind"]
+    }
+  }
+  statement {
     sid       = "UserPools"
     actions   = ["cognito-idp:*"]
-    resources = ["*"]
+    resources = ["arn:aws:cognito-idp:*:${local.account}:userpool/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Project"
+      values   = ["SecureMind"]
+    }
   }
   statement {
     sid = "Alarms"

@@ -53,6 +53,18 @@ variable "throttle_rate_limit" {
   description = "Requests per second the API accepts, across all callers. A small team needs far less."
 }
 
+variable "warm_throttle_rate_limit" {
+  type        = number
+  default     = 2
+  description = "Requests per second allowed on the unauthenticated /warm wake-up call."
+}
+
+variable "warm_throttle_burst_limit" {
+  type        = number
+  default     = 5
+  description = "Burst allowed on /warm."
+}
+
 variable "throttle_burst_limit" {
   type        = number
   default     = 40
@@ -542,6 +554,22 @@ resource "aws_api_gateway_method_settings" "all" {
     throttling_rate_limit  = var.throttle_rate_limit
     throttling_burst_limit = var.throttle_burst_limit
   }
+}
+
+# /warm needs no sign-in and returns nothing useful, so it gets a far lower limit than chat.
+# The browser ignores a failed warm-up, so a throttled /warm only means a slower first reply.
+# This cuts the worst-case cost of someone flooding it by about ten times.
+resource "aws_api_gateway_method_settings" "warm" {
+  rest_api_id = aws_api_gateway_rest_api.this.id
+  stage_name  = aws_api_gateway_stage.prod.stage_name
+  method_path = "warm/ANY"
+
+  settings {
+    throttling_rate_limit  = var.warm_throttle_rate_limit
+    throttling_burst_limit = var.warm_throttle_burst_limit
+  }
+
+  depends_on = [aws_api_gateway_method_settings.all]
 }
 
 output "api_base_url" {

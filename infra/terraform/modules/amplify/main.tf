@@ -172,12 +172,6 @@ data "aws_iam_policy_document" "amplify_cognito_admin" {
     ]
     resources = [var.cognito_user_pool_arn]
   }
-  # ListUsers is sometimes denied when scoped only to the pool ARN.
-  statement {
-    sid       = "FirstAdminListUsers"
-    actions   = ["cognito-idp:ListUsers"]
-    resources = ["*"]
-  }
 }
 
 resource "aws_iam_role_policy" "amplify_cognito_admin" {
