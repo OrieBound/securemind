@@ -178,6 +178,7 @@ import { ChatMarkdown } from "@/components/app/chat-markdown";
 import { CONTINUE_PROMPT, endsInsideCodeFence } from "@/lib/chat/truncation";
 import { applyFileFallback } from "@/lib/files/fallback";
 import { AppTour, tourStorageKey } from "@/components/app/app-tour";
+import { hideTourButton, registerVisit } from "@/lib/client/tour-button";
 import { MfaReminderBanner, MfaStatusPill, useMfaStatus } from "@/components/app/mfa-status";
 import { resolveFileRequest } from "@/lib/turn-policy/file-request";
 import EmojiPicker, { Theme, type EmojiClickData } from "emoji-picker-react";
@@ -2264,6 +2265,11 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     const timer = window.setTimeout(() => setTourInvite(true), 1200);
     return () => window.clearTimeout(timer);
   }, [tourReady, tourAccountKey, isAnalytics]);
+  const [tourButtonShown, setTourButtonShown] = useState(false);
+  useEffect(() => {
+    // Read after mount so the server and browser markup match.
+    queueMicrotask(() => setTourButtonShown(registerVisit(tourAccountKey)));
+  }, [tourAccountKey]);
   const startTour = useCallback(() => {
     setTourInvite(false);
     setTourActive(true);
@@ -6815,14 +6821,30 @@ _Preparing the file…_`);
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={startTour}
-            className="shrink-0 ml-2 rounded-full border border-[var(--primary-border)] bg-[var(--primary-soft)] px-3 py-1 text-[0.7rem] font-medium text-[var(--primary-soft-foreground)] hover:opacity-90 cursor-pointer"
-          >
-            <span className="sm:hidden">Tour</span>
-            <span className="hidden sm:inline">Take the tour</span>
-          </button>
+          {tourButtonShown && (
+            <span className="shrink-0 ml-2 inline-flex items-center rounded-full border border-[var(--primary-border)] bg-[var(--primary-soft)] text-[var(--primary-soft-foreground)]">
+              <button
+                type="button"
+                onClick={startTour}
+                className="rounded-l-full py-1 pl-3 pr-1.5 text-[0.7rem] font-medium hover:opacity-90 cursor-pointer"
+              >
+                <span className="sm:hidden">Tour</span>
+                <span className="hidden sm:inline">Take the tour</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  hideTourButton(tourAccountKey);
+                  setTourButtonShown(false);
+                }}
+                aria-label="Hide the tour button. You can still start the tour from the account menu."
+                title="Hide. The tour stays in the account menu."
+                className="rounded-r-full py-1 pl-0.5 pr-2 text-[0.8rem] leading-none opacity-70 hover:opacity-100 cursor-pointer"
+              >
+                ×
+              </button>
+            </span>
+          )}
           <AppTour invite={tourInvite} active={tourActive} isAdmin={settingsIsAdmin} onStart={startTour} onClose={closeTour} />
           <div className="relative shrink-0 ml-2">
             <details className="group">
@@ -6854,6 +6876,13 @@ _Preparing the file…_`);
                   onClick={() => openSettings("profile")}
                 >
                   Profile
+                </button>
+                <button
+                  type="button"
+                  className="w-full text-left rounded-lg px-3 py-2 text-[0.75rem] text-foreground/80 hover:bg-secondary cursor-pointer"
+                  onClick={startTour}
+                >
+                  Take the tour
                 </button>
                 {mfa.loaded && mfa.available && (
                   <button
