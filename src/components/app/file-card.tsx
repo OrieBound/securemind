@@ -19,6 +19,26 @@ const KIND_LABEL: Record<FileSpec["kind"], string> = {
   text: "Text file",
 };
 
+const TEXT_LABEL: Record<string, string> = {
+  txt: "Text file",
+  log: "Log file",
+  json: "JSON file",
+  jsonl: "JSON Lines file",
+  yaml: "YAML file",
+  yml: "YAML file",
+  xml: "XML file",
+  sql: "SQL file",
+  ini: "Settings file",
+  conf: "Configuration file",
+  cfg: "Configuration file",
+  toml: "TOML file",
+};
+
+function kindLabel(spec: FileSpec): string {
+  if (spec.kind !== "text") return KIND_LABEL[spec.kind];
+  return TEXT_LABEL[spec.ext] ?? (spec.ext === "txt" ? "Text file" : `.${spec.ext} file`);
+}
+
 function KindIcon({ kind }: { kind: FileSpec["kind"] }) {
   const cls = "size-5";
   if (kind === "xlsx" || kind === "csv" || kind === "tsv") return <FileSpreadsheet className={cls} aria-hidden />;
@@ -72,7 +92,7 @@ export function FileCard({
         <div className="min-w-0 flex-1 basis-40">
           <p className="truncate text-sm font-medium text-foreground">{spec.name}</p>
           <p className="text-xs text-muted-foreground">
-            {KIND_LABEL[spec.kind]}
+            {kindLabel(spec)}
             {state === "preparing" ? " · Preparing file…" : summary ? ` · ${summary}` : ""}
           </p>
         </div>

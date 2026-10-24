@@ -86,3 +86,55 @@ describe("resolveFileRequest", () => {
     expect(resolveFileRequest("actually make it an Excel file", asked)).toEqual({ ext: "xlsx" });
   });
 });
+
+describe("cases from live testing", () => {
+  it("recognises describing words before the file type", () => {
+    expect(detectFileRequest("Could you create a formatted Word document going over a subject of your choice? Let's say recent movies?")).toEqual({ ext: "docx" });
+    expect(detectFileRequest("Could you create an actual Word document for me that's formatted nicely?")).toEqual({ ext: "docx" });
+    expect(detectFileRequest("make me a nicely formatted Excel sheet of the budget")).toEqual({ ext: "xlsx" });
+  });
+
+  it("uses the last file phrase when the message mentions an earlier one", () => {
+    expect(detectFileRequest("Thanks, you provided me a text file. Could you create an actual Word document for me that's formatted nicely?")).toEqual({ ext: "docx" });
+  });
+
+  it("still ignores a summary of an existing file", () => {
+    expect(detectFileRequest("give me a summary of the CSV file I uploaded")).toBeNull();
+  });
+
+  it("keeps the request through a clarifying question and a failed reply", () => {
+    const history = [
+      { role: "user", content: "Are you able to get me the hockey scores for the week and put it into an Excel file?" },
+      { role: "assistant", content: "Which league and date range would you like?" },
+      { role: "user", content: "Now let's say NHL." },
+      // The next reply failed, so it carries no text and is not sent as history.
+    ];
+    expect(resolveFileRequest("Could you try again? Hmm.", history)).toEqual({ ext: "xlsx" });
+  });
+
+  it("asks for the whole file again when Continue follows a reply cut off inside the file", () => {
+    const cut = [
+      { role: "user", content: "Could you create an actual Word document?" },
+      { role: "assistant", content: "I'm preparing the file.\n\n```file:recent-movies.docx\n# Recent movies\n## Oppenheimer\n- Director" },
+    ];
+    const continuePrompt =
+      "Please continue from exactly where your last reply was cut off. Don't repeat anything you already wrote. " +
+      "If it stopped inside a code block, start a new block with the same language and carry on from the next line.";
+    expect(resolveFileRequest(continuePrompt, cut)).toEqual({ ext: "docx", rewrite: true });
+    expect(fileOutputInstructions({ ext: "docx", rewrite: true })).toContain("write the complete file again from the beginning");
+  });
+
+  it("does not keep an old request once it was delivered", () => {
+    const history = [
+      { role: "user", content: "put the scores into an Excel file" },
+      { role: "assistant", content: "```file:scores.xlsx\na,b\n```" },
+      { role: "user", content: "thanks" },
+      { role: "assistant", content: "You're welcome!" },
+    ];
+    expect(resolveFileRequest("what's the capital of France?", history)).toBeNull();
+  });
+
+  it("tells the model to label sample data instead of inventing live facts", () => {
+    expect(fileOutputInstructions({ ext: "xlsx" })).toContain("Never present invented data as real");
+  });
+});
