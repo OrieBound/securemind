@@ -5601,6 +5601,7 @@ _Preparing the file…_`);
     ollamaCatalogReady,
     bedrockCatalogReady,
     localFallbackModel,
+    catalogPending: !catalogLoaded,
     onNeedCatalog: () => { void ensureLoaded(); },
   };
 

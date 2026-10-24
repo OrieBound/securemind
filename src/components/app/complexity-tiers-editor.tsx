@@ -62,6 +62,8 @@ export type ComplexityTiersEditorProps = {
   ollamaCatalogReady: boolean;
   bedrockCatalogReady: boolean;
   localFallbackModel: string | null;
+  /** True until the first model list answers (sign-in, page load). Readiness is unknown, not missing. */
+  catalogPending?: boolean;
   onNeedCatalog?: () => void;
   onOpenSettings?: () => void;
   beforeList?: ReactNode;
@@ -96,6 +98,7 @@ export function ComplexityTiersEditor({
   ollamaCatalogReady,
   bedrockCatalogReady,
   localFallbackModel,
+  catalogPending = false,
   onNeedCatalog,
   onOpenSettings,
   beforeList,
@@ -208,7 +211,16 @@ export function ComplexityTiersEditor({
         </p>
       )}
 
-      {modelSelectionMode === "auto" && !groqCatalogReady && !localFallbackModel && !chatCatalogModels.length && !bedrockCatalogReady && (
+      {modelSelectionMode === "auto" && catalogPending && (
+        <p
+          role="status"
+          className="text-[0.65rem] leading-relaxed text-foreground/55 bg-foreground/[0.04] border border-foreground/10 rounded-lg px-2.5 py-2 mb-2 flex items-center gap-2"
+        >
+          <span className="size-2 rounded-full bg-indigo-300/70 animate-pulse shrink-0" aria-hidden />
+          Connecting to your models…
+        </p>
+      )}
+      {modelSelectionMode === "auto" && !catalogPending && !groqCatalogReady && !localFallbackModel && !chatCatalogModels.length && !bedrockCatalogReady && (
         <p className="text-[0.65rem] leading-relaxed text-amber-300/85 bg-amber-500/10 border border-amber-500/25 rounded-lg px-2.5 py-2 mb-2">
           <span className="font-semibold text-amber-200">No cloud or local chat model.</span>{" "}
           {isPage
@@ -375,6 +387,7 @@ export function ComplexityTiersEditor({
                 labelFor={labelFor}
                 providerFor={providerFor}
                 status={tierStatus(displayModelFor(tier))}
+                catalogPending={catalogPending}
                 onToggle={() => setOpenPicker(tier)}
               />
             ))}
@@ -413,6 +426,7 @@ export function ComplexityTiersEditor({
               labelFor={labelFor}
               providerFor={providerFor}
               status={tierStatus(displayModelFor(tier))}
+                catalogPending={catalogPending}
               onToggle={() => setOpenPicker(tier)}
             />
           ))}
@@ -446,6 +460,7 @@ function TierRow({
   labelFor,
   providerFor,
   status,
+  catalogPending,
   onToggle,
 }: {
   variant: "rail" | "page";
@@ -459,6 +474,7 @@ function TierRow({
   labelFor: (id: string) => string;
   providerFor: (id: string) => ModelProviderId | null;
   status: ModelSelectionStatus;
+  catalogPending: boolean;
   onToggle: () => void;
 }) {
   const isPage = variant === "page";
@@ -535,7 +551,12 @@ function TierRow({
             </span>
           )}
           {provider && displayModelId && <ProviderBadge provider={provider} />}
-          {provider && displayModelId && !status.ready && (
+          {provider && displayModelId && !status.ready && catalogPending && (
+            <span className="text-[0.5rem] uppercase tracking-wider font-semibold text-foreground/55 bg-foreground/[0.06] border border-foreground/15 px-1 py-0.5 rounded shrink-0 animate-pulse">
+              Checking…
+            </span>
+          )}
+          {provider && displayModelId && !status.ready && !catalogPending && (
             <span className="text-[0.5rem] uppercase tracking-wider font-semibold text-amber-400/90 bg-amber-400/10 border border-amber-400/25 px-1 py-0.5 rounded shrink-0">
               {status.notForChat ? "Not for chat" : status.label ?? "Not set up"}
             </span>
