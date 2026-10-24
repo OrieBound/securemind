@@ -388,6 +388,7 @@ export function AdminConsole({
         mailConfigured?: boolean;
         signInUrl?: string;
         welcomeEmail?: { sent: boolean; reason?: string };
+        restored?: boolean;
       };
       if (!res.ok) {
         setError(data.error ?? "Could not create user");
@@ -412,7 +413,11 @@ export function AdminConsole({
         password: createdPassword,
       });
       setShowPassword(false);
-      if (data.welcomeEmail?.sent) {
+      if (data.restored) {
+        setNote(
+          `${createdEmail} was deleted earlier, so their original account is back, as ${createdRole}, with the new password and two-step reset. Their earlier workspaces and chat history return with it, because Delete does not wipe data.`,
+        );
+      } else if (data.welcomeEmail?.sent) {
         setNote(`Created ${createdEmail} as ${createdRole}. Invite email sent (sign-in page only — not a magic link, and never the password).`);
       } else if (data.welcomeEmail?.reason === "send_failed") {
         setNote(

@@ -24,6 +24,8 @@ const getUsersMonthSpendUsd = vi.fn();
 const ensureUserProfile = vi.fn();
 const setUserMonthlyCostCap = vi.fn();
 const setProfileStatus = vi.fn();
+const getUserProfile = vi.fn();
+const adminResetDirectoryUserMfa = vi.fn();
 
 vi.mock("@/lib/identity", async () => {
   const actual = await vi.importActual<typeof import("@/lib/identity")>("@/lib/identity");
@@ -53,6 +55,7 @@ vi.mock("@/lib/cognito-admin", () => ({
   findDirectoryUser: (...args: unknown[]) => findDirectoryUser(...args),
   adminResetDirectoryUserPassword: (...args: unknown[]) => adminResetDirectoryUserPassword(...args),
   adminSetDirectoryUserPassword: (...args: unknown[]) => adminSetDirectoryUserPassword(...args),
+  adminResetDirectoryUserMfa: (...args: unknown[]) => adminResetDirectoryUserMfa(...args),
 }));
 
 vi.mock("@/lib/mail", () => ({
@@ -77,6 +80,7 @@ vi.mock("@/lib/user-profile", () => ({
   ensureUserProfile: (...args: unknown[]) => ensureUserProfile(...args),
   setUserMonthlyCostCap: (...args: unknown[]) => setUserMonthlyCostCap(...args),
   setProfileStatus: (...args: unknown[]) => setProfileStatus(...args),
+  getUserProfile: (...args: unknown[]) => getUserProfile(...args),
 }));
 
 beforeEach(() => {
@@ -104,6 +108,8 @@ beforeEach(() => {
     byUser: [],
   });
   listDirectoryUsers.mockResolvedValue([]);
+  getUserProfile.mockResolvedValue(null);
+  adminResetDirectoryUserMfa.mockResolvedValue(undefined);
   findDirectoryUser.mockResolvedValue({
     username: "member@x.com",
     sub: "sub-1",
@@ -443,5 +449,65 @@ describe("PATCH /api/admin/users/[username]", () => {
     const body = await res.json();
     expect(body.passwordSet).toBe(true);
     expect(body.message).toMatch(/never emailed/i);
+  });
+});
+
+
+describe("POST /api/admin/users: adding an email that was deleted earlier", () => {
+  const admin = { userId: "operator-1", authenticated: true, role: "admin", groups: ["Operator"], email: "boss@example.com" };
+  const gone = { username: "back@example.com", email: "back@example.com", sub: "sub-gone", role: "member", enabled: false };
+  const post = async () => {
+    const { POST } = await import("@/app/api/admin/users/route");
+    return POST(
+      new NextRequest("http://localhost/api/admin/users", {
+        method: "POST",
+        body: JSON.stringify({ email: "Back@Example.com", password: "Password1!", role: "member" }),
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+  };
+
+  beforeEach(() => {
+    // Earlier tests leave rejecting implementations behind; start these from plain successes.
+    for (const fn of [setDirectoryUserRole, setDirectoryUserEnabled, adminSetDirectoryUserPassword]) {
+      fn.mockReset();
+      fn.mockResolvedValue(undefined);
+    }
+  });
+
+  it("brings the deleted account back instead of failing", async () => {
+    getIdentity.mockResolvedValue(admin);
+    listDirectoryUsers.mockResolvedValue([gone]);
+    getUserProfile.mockResolvedValue({ status: "deleted" });
+    const res = await post();
+    expect(res.status).toBe(201);
+    expect((await res.json()).restored).toBe(true);
+    expect(createDirectoryUser).not.toHaveBeenCalled();
+    expect(adminSetDirectoryUserPassword).toHaveBeenCalledWith("back@example.com", "Password1!", expect.anything());
+    expect(setDirectoryUserRole).toHaveBeenCalledWith("back@example.com", "member", expect.anything());
+    expect(setDirectoryUserEnabled).toHaveBeenCalledWith("back@example.com", true, expect.anything());
+    expect(adminResetDirectoryUserMfa).toHaveBeenCalled();
+    expect(setProfileStatus).toHaveBeenCalledWith({ userId: "sub-gone", status: "active", actorUserId: "operator-1" });
+  });
+
+  it("still refuses an email that belongs to an active or suspended account", async () => {
+    getIdentity.mockResolvedValue(admin);
+    listDirectoryUsers.mockResolvedValue([{ ...gone, enabled: true }]);
+    getUserProfile.mockResolvedValue({ status: "active" });
+    expect((await post()).status).toBe(409);
+    getUserProfile.mockResolvedValue({ status: "suspended" });
+    const res = await post();
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/suspended/);
+    expect(adminSetDirectoryUserPassword).not.toHaveBeenCalled();
+    expect(setProfileStatus).not.toHaveBeenCalled();
+  });
+
+  it("does not let a member restore anyone", async () => {
+    getIdentity.mockResolvedValue({ userId: "m1", authenticated: true, role: "member", groups: [] });
+    listDirectoryUsers.mockResolvedValue([gone]);
+    getUserProfile.mockResolvedValue({ status: "deleted" });
+    expect((await post()).status).toBe(403);
+    expect(setDirectoryUserEnabled).not.toHaveBeenCalled();
   });
 });

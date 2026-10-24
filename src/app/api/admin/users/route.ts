@@ -5,8 +5,12 @@ import { parseAssignableRole, requireAdmin } from "@/lib/roles";
 import {
   CognitoAdminError,
   cognitoAdminAvailable,
+  adminResetDirectoryUserMfa,
+  adminSetDirectoryUserPassword,
   createDirectoryUser,
   listDirectoryUsers,
+  setDirectoryUserEnabled,
+  setDirectoryUserRole,
 } from "@/lib/cognito-admin";
 import { isMailConfigured, sendWelcomeAddedEmail, appSignInUrl } from "@/lib/mail";
 import { directoryPasswordPolicy } from "@/lib/auth-password";
@@ -16,7 +20,8 @@ import {
   getUsersMonthSpendUsd,
   parseMonthlyCostCapInput,
 } from "@/lib/cost-cap";
-import { ensureUserProfile, setUserMonthlyCostCap } from "@/lib/user-profile";
+import { ensureUserProfile, getUserProfile, setProfileStatus, setUserMonthlyCostCap } from "@/lib/user-profile";
+import type { AppRole } from "@/lib/roles";
 
 export const runtime = "nodejs";
 
@@ -147,16 +152,58 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const user = await createDirectoryUser({
-      email: body.email ?? "",
-      password: body.password ?? "",
-      role,
-    });
+    // Delete turns an account off but keeps it (and its history), so the email is still taken in the
+    // directory. Adding that email again brings the same account back instead of failing.
+    const wanted = (body.email ?? "").trim().toLowerCase();
+    const existing = wanted
+      ? (await listDirectoryUsers()).find(u => u.email?.toLowerCase() === wanted || u.username.toLowerCase() === wanted)
+      : undefined;
+    let restored = false;
+    let user;
+    if (existing) {
+      const previous = existing.sub ? await getUserProfile(existing.sub) : null;
+      if (previous?.status !== "deleted") {
+        return Response.json(
+          {
+            error: previous?.status === "suspended"
+              ? "That email belongs to a suspended account. Use Activate on its row below."
+              : "A user with that email already exists. Find them in the list below.",
+          },
+          { status: 409 },
+        );
+      }
+      const actorOpts = {
+        actorUsername: identity.email ?? null,
+        actorRole: identity.role as AppRole,
+        actorUserId: identity.userId,
+      };
+      await adminSetDirectoryUserPassword(existing.username, body.password ?? "", actorOpts);
+      await setDirectoryUserRole(existing.username, role, actorOpts);
+      await setDirectoryUserEnabled(existing.username, true, actorOpts);
+      try {
+        // A fresh start: an authenticator app set up before the account was removed should not carry over.
+        await adminResetDirectoryUserMfa(existing.username, actorOpts);
+      } catch {
+        /* none was set up, or this sign-in has no two-step */
+      }
+      if (existing.sub) {
+        await setProfileStatus({ userId: existing.sub, status: "active", actorUserId: identity.userId });
+      }
+      const refreshed = (await listDirectoryUsers()).find(u => u.username === existing.username);
+      user = refreshed ?? existing;
+      restored = true;
+    } else {
+      user = await createDirectoryUser({
+        email: body.email ?? "",
+        password: body.password ?? "",
+        role,
+      });
+    }
     if (user.sub && capParsed.value !== undefined) {
       await setUserMonthlyCostCap(user.sub, capParsed.value);
       await ensureUserProfile({ userId: user.sub, email: user.email });
     }
-    await recordAudit(identity, "user.create", { target: user.email ?? null, detail: `role=${role}` });
+    await recordAudit(identity, restored ? "user.restore" : "user.create", { target: user.email ?? null, detail: `role=${role}` });
     const emailTo = (user.email ?? body.email ?? "").trim().toLowerCase();
     const sendInvite = body.sendInvite !== false;
     let welcome: { sent: boolean; reason?: string };
@@ -175,6 +222,7 @@ export async function POST(req: NextRequest) {
           monthSpendUsd: 0,
         },
         welcomeEmail: welcome,
+        restored,
         mailConfigured: isMailConfigured(),
         signInUrl: appSignInUrl(req),
         passwordPolicy: directoryPasswordPolicy(),
