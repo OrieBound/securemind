@@ -23,6 +23,7 @@ import { InferenceSettings } from "@/components/app/inference-settings";
 import type { ComplexityTiersBind } from "@/components/app/complexity-tiers-editor";
 import { AdminConsole } from "@/components/app/admin-console";
 import { ProfileSettings } from "@/components/app/profile-settings";
+import { AdminOnlyNotice } from "@/components/app/admin-only-notice";
 import {
   NON_EXEMPTIBLE_CATEGORIES,
   categoryLabel,
@@ -203,9 +204,9 @@ function SafeTermsSection({
       </form>
       )}
       {readOnly && (
-        <p className="text-[0.65rem] text-amber-200/70 mb-3">
-          Only an Admin can change safe terms. You can propose a change below.
-        </p>
+        <AdminOnlyNotice compact className="mb-3">
+          Safe terms are applied by an Admin. You can propose a change below and an Admin will review it.
+        </AdminOnlyNotice>
       )}
 
       {shippedTerms.length > 0 && (
@@ -827,13 +828,21 @@ export function SettingsHub({
               </p>
               <OverviewCard
                 title="Models"
-                description="Connections, the catalog of chat models, and complexity tiers."
+                description={
+                  isAdmin
+                    ? "Connections, the catalog of chat models, and complexity tiers."
+                    : "Connections, chat models, and complexity tiers. View only: an Admin makes changes."
+                }
                 accent="indigo"
                 onClick={() => onSectionChange("inference")}
               />
               <OverviewCard
                 title="Detection"
-                description="Admin-owned detection sensitivity and safe terms for this install."
+                description={
+                  isAdmin
+                    ? "Admin-owned detection sensitivity and safe terms for this install."
+                    : "Detection sensitivity and safe terms. View only: an Admin applies changes, and you can propose one."
+                }
                 accent="indigo"
                 onClick={() => onSectionChange("workspace")}
               />

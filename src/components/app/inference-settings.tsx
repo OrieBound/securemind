@@ -24,6 +24,7 @@ import { deriveKeyHealth, keyNeedsAttention, relativeTime, type KeyHealth } from
 import { planRecommendedBedrock, recommendedNeedingConsole } from "@/lib/models/bedrock-recommended";
 import { VoiceSttSetupDialog } from "@/components/app/voice-stt-setup";
 import { TaskModelsPanel } from "@/components/app/task-models-panel";
+import { AdminOnlyNotice } from "@/components/app/admin-only-notice";
 import {
   voiceProviderDestination,
   voiceProviderLabel,
@@ -653,9 +654,10 @@ export function InferenceSettings(props: Props) {
   return (
     <div className="flex flex-col gap-3">
       {status.role !== "super_admin" && status.role !== "admin" && (
-        <p className="text-[0.72rem] text-foreground/45 px-0.5">
-          View connections and model assignments. An Admin must add credentials.
-        </p>
+        <AdminOnlyNotice>
+          This page is view-only for members. An Admin adds connections and keys, tests and hides models, and chooses
+          the helper and voice models. If a model you need is missing or not working, ask your administrator.
+        </AdminOnlyNotice>
       )}
 
       <SettingsModule
@@ -779,6 +781,7 @@ export function InferenceSettings(props: Props) {
         }
         theme={PROVIDER_THEME.groq}
       >
+        {!canEdit && <AdminOnlyNotice compact />}
         <div className="space-y-3">
           <p className="text-sm text-foreground/70 leading-relaxed">
             Two steps for each vendor. <span className="font-medium text-foreground/85">Key setup</span> stays on this row and shows where to create the key. <span className="font-medium text-foreground/85">Review models</span> moves you to the model list further down, where Enable adds a model to chat when it answers.
@@ -1005,6 +1008,7 @@ export function InferenceSettings(props: Props) {
         }
         theme={PROVIDER_THEME.bedrock}
       >
+        {!canEdit && <AdminOnlyNotice compact />}
         <div className="space-y-3">
             <BedrockEnvironmentCard
               aws={status.aws}
@@ -1039,6 +1043,7 @@ export function InferenceSettings(props: Props) {
         }
         theme={CATALOG_THEME}
       >
+        {!canEdit && <AdminOnlyNotice compact />}
         <div className="space-y-3">
           {status.voiceSttChoice === "groq" && (
             <p className="text-[0.75rem] text-foreground/70 leading-relaxed">
@@ -1093,6 +1098,7 @@ export function InferenceSettings(props: Props) {
         }
         theme={PROVIDER_THEME.ollama}
       >
+        {!canEdit && <AdminOnlyNotice compact />}
         <div className="space-y-3">
           <p className="text-[0.72rem] text-muted-foreground">
             These stay on this machine. Use a chat model for conversation and nomic-embed-text for Knowledge.
