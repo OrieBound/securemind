@@ -9,6 +9,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { SelectMenu } from "@/components/ui/select-menu";
+import { AdminOnlyNotice } from "@/components/app/admin-only-notice";
 import { chatSelectableModels, type CatalogModel } from "@/components/app/model-catalog";
 
 type Choice = { provider: string; model: string } | null;
@@ -129,7 +130,7 @@ export function TaskModelsPanel({ models, voiceLabel, voiceDestination, onChange
             secrets are replaced first. Pick a small, reliable, low-cost model.
           </p>
         )}
-        {!canEdit && data && <p className="text-[0.72rem] text-foreground/55">Only an Admin can change this.</p>}
+        {!canEdit && data && <AdminOnlyNotice compact>An Admin picks the helper model. You can see which one is set.</AdminOnlyNotice>}
         {pending && (
           <div className="rounded-lg border border-[var(--border-strong)] bg-muted p-2.5 space-y-2">
             <p className="text-[0.75rem] text-foreground/75 leading-relaxed">
@@ -164,6 +165,9 @@ export function TaskModelsPanel({ models, voiceLabel, voiceDestination, onChange
           <span className="text-[0.68rem] text-foreground/55">{voiceLabel}</span>
         </div>
         <p className="text-[0.75rem] text-foreground/65 leading-relaxed">{voiceDestination}</p>
+        {!canEdit && data && (
+          <p className="text-[0.72rem] text-foreground/55">An Admin chooses the voice provider.</p>
+        )}
         {canEdit && onChangeVoice && (
           <button
             type="button"
