@@ -83,12 +83,57 @@ export function detectFileRequest(message: string): FileRequest | null {
   return { ext: formatIn(target) ?? formatIn(text.slice(text.indexOf(target))) };
 }
 
+const FILE_BLOCK = /```\s*file:\s*"?([^\s"`]+)/i;
+
+/** "add a column", "make it 10 rows", "five columns, five rows", "sort by date instead". */
+const EDIT_REQUEST =
+  /\b(?:add|remove|delete|drop|change|update|edit|rename|replace|sort|reorder|swap|instead|more|fewer|less|another|extra|include|exclude|redo|regenerate|fix|shorten|lengthen|expand|make it|columns?|rows?|sheets?|sections?|headings?)\b/i;
+/** A question about the file ("what does row 3 mean?") is answered, not turned into a new file. */
+const QUESTION = /^(?:what|why|how|which|who|when|where|explain|can you explain|does|is|are)\b|\?\s*$/i;
+
+function extOfDelivered(content: string): string | null {
+  const name = FILE_BLOCK.exec(content)?.[1];
+  const ext = name?.split(".").pop()?.toLowerCase();
+  return ext && ext !== name?.toLowerCase() ? ext : null;
+}
+
+/**
+ * The file request for this turn, including two follow-ups to the previous exchange:
+ * - an answer ("five columns, five rows") after the assistant asked a question instead of making the file;
+ * - a change ("add a column", "make it 10 rows") right after the assistant delivered a file.
+ * One step back only.
+ */
+export function resolveFileRequest(
+  message: string,
+  history: ReadonlyArray<{ role: string; content: string }> = [],
+): FileRequest | null {
+  const direct = detectFileRequest(message);
+  if (direct) return direct;
+
+  let lastUser = -1;
+  let lastAssistant = -1;
+  for (let i = history.length - 1; i >= 0 && (lastUser < 0 || lastAssistant < 0); i--) {
+    if (history[i].role === "user" && lastUser < 0) lastUser = i;
+    if (history[i].role === "assistant" && lastAssistant < 0) lastAssistant = i;
+  }
+  if (lastUser < 0 || lastAssistant < lastUser) return null;
+
+  const reply = history[lastAssistant].content;
+  if (FILE_BLOCK.test(reply)) {
+    const text = message.trim();
+    if (text.length > 300 || QUESTION.test(text) || !EDIT_REQUEST.test(text)) return null;
+    return { ext: extOfDelivered(reply) };
+  }
+  return detectFileRequest(history[lastUser].content);
+}
+
 /** Response instructions for a file turn. Appended to the system prompt for that turn only. */
 export function fileOutputInstructions(request: FileRequest): string {
   const wanted = request.ext ? `- Make it a .${request.ext} file.\n` : "";
   return (
     `\n\nResponse mode — the user wants a downloadable file:\n` +
     `- The app builds the file in their browser from your reply. Never say you cannot create or send files.\n` +
+    `- Make the file in this reply. If details are missing (columns, rows, length, format), choose sensible defaults and say in one sentence what you assumed. Do not ask a question first.\n` +
     `- Start with one short sentence saying you are preparing the file.\n` +
     `- Then put the whole file in exactly one fenced code block whose info string is file:<name.ext>, ` +
     `for example \`\`\`file:inventory.xlsx. Use a short descriptive name with hyphens instead of spaces.\n` +
@@ -97,6 +142,7 @@ export function fileOutputInstructions(request: FileRequest): string {
     `For several sheets in one .xlsx, start each sheet with a line --- sheet: Name ---.\n` +
     `- Word (.docx) and Markdown (.md): write Markdown with headings, numbered steps, bullet lists and tables.\n` +
     `- Text, log, JSON, YAML and similar: write the exact file contents.\n` +
+    `- Never put the file in an ordinary code block or ask the user to copy it; only the file: block becomes a download.\n` +
     `- No HTML, no scripts, no spreadsheet formulas. Keep redacted placeholders such as [email redacted] exactly as written; never guess the original value.\n` +
     `- After the block, add at most one short sentence.`
   );

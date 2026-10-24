@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectFileRequest, fileOutputInstructions } from "./file-request";
+import { detectFileRequest, fileOutputInstructions, resolveFileRequest } from "./file-request";
 
 describe("detectFileRequest", () => {
   it.each([
@@ -51,5 +51,38 @@ describe("fileOutputInstructions", () => {
 
   it("leaves the format to the model when none was named", () => {
     expect(fileOutputInstructions({ ext: null })).not.toContain("Make it a .");
+  });
+});
+
+describe("resolveFileRequest", () => {
+  const asked = [
+    { role: "user", content: "Are you able to create me a text file, please, with some columns and rows?" },
+    { role: "assistant", content: "Sure! Which column headings would you like, and how many rows?" },
+  ];
+
+  it("carries a file request into the answer to the assistant's question", () => {
+    expect(resolveFileRequest("Let's say five columns, five rows. You randomize the data, please.", asked)).toEqual({ ext: "txt" });
+  });
+
+  const delivered = [asked[0], { role: "assistant", content: "Here it is.\n\n```file:data.txt\na,b\n```" }];
+
+  it("does not make another file for thanks or a question about the delivered one", () => {
+    expect(resolveFileRequest("thanks, looks good", delivered)).toBeNull();
+    expect(resolveFileRequest("what does the second column mean?", delivered)).toBeNull();
+    expect(resolveFileRequest("Why are there only two rows?", delivered)).toBeNull();
+  });
+
+  it("revises the delivered file when asked for a change, keeping its type", () => {
+    expect(resolveFileRequest("Let's say five columns, five rows. You randomize the data, please.", delivered)).toEqual({ ext: "txt" });
+    expect(resolveFileRequest("add a column for the owner", delivered)).toEqual({ ext: "txt" });
+    expect(resolveFileRequest("make it 10 rows instead", delivered)).toEqual({ ext: "txt" });
+  });
+
+  it("does not inherit from an older, unrelated exchange", () => {
+    expect(resolveFileRequest("what's the weather like?", [{ role: "user", content: "hello" }, { role: "assistant", content: "Hi!" }])).toBeNull();
+  });
+
+  it("prefers a request in the current message", () => {
+    expect(resolveFileRequest("actually make it an Excel file", asked)).toEqual({ ext: "xlsx" });
   });
 });

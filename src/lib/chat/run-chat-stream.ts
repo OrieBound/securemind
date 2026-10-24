@@ -56,7 +56,7 @@ import {
   needsOperationalPrompt,
   shouldSkipKnowledgeSearch,
 } from "@/lib/turn-policy/decide-turn";
-import { detectFileRequest, fileOutputInstructions } from "@/lib/turn-policy/file-request";
+import { fileOutputInstructions, resolveFileRequest } from "@/lib/turn-policy/file-request";
 import { MAX_ATTACHMENTS_PER_TURN } from "@/lib/documents/constants";
 import {
   attachedDocumentNamesFromText,
@@ -193,7 +193,8 @@ export async function prepareChatTurn(
   });
 
   // Shape of the reply only: a file request never changes retrieval, Sources or the tier.
-  const fileRequest = detectFileRequest(message);
+  // Includes a follow-up answer to a question the assistant asked about a file request.
+  const fileRequest = resolveFileRequest(message, history);
 
   let workspaceName: string | undefined;
   let workspaceContext: string | undefined;
