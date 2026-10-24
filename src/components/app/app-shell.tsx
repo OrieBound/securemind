@@ -2251,7 +2251,9 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   const mfa = useMfaStatus();
   const [tourInvite, setTourInvite] = useState(false);
   const [tourActive, setTourActive] = useState(false);
-  const tourAccountKey = authSession?.email ?? "local";
+  // The account id never changes and is always present; the email can be missing. One key per person,
+  // so one account closing the tour button or snoozing a reminder does not affect another account.
+  const tourAccountKey = authSession?.userId || authSession?.email || "local";
   const tourReady = authSession !== undefined;
   useEffect(() => {
     if (!tourReady || isAnalytics) return;
@@ -6932,7 +6934,7 @@ _Preparing the file…_`);
 
         <MfaReminderBanner
           mfa={mfa}
-          account={authSession?.email ?? "local"}
+          account={tourAccountKey}
           isAdmin={settingsIsAdmin}
           suppressed={tourInvite || tourActive || (activeNav === "settings" && settingsSection === "account-security")}
           onSetUp={() => openSettings("account-security")}
