@@ -31,6 +31,7 @@ It is a **single-user personal project**. Default auth is `AUTH_MODE=local`. Opt
 - The **workspace name** is the assistant speaker identity in chat (Companion-style). Product chrome stays SecureMind; default seed workspace is **Mindy Locke**.
 - `reasonCode` is telemetry only — never put it in assistant-visible text.
 - **File requests** ("export this as Excel", "give me a Word document") are detected by `detectFileRequest()` in `src/lib/turn-policy/file-request.ts`. They change only the reply's shape: `fileOutputInstructions()` is appended for that turn and the reply limit rises to `FILE_REPLY_TOKENS`. They never change retrieval, Sources or the tier. The model writes the file in one fenced block whose info string is `file:<name.ext>`; the browser builds it on Download (`src/lib/files/`): `.xlsx`/`.csv` from CSV (several sheets via `--- sheet: Name ---`), `.docx`/`.md` from Markdown, other allowlisted types as text. Nothing is stored server-side. File names are cleaned and allowlisted (anything that runs on open is saved as `.txt`), spreadsheet cells that look like formulas are written as text, and files over 2 MB are refused.
+- **File fallback** keeps file creation from depending on one model. After a reply to a file request finishes, the browser first runs `applyFileFallback()` (`src/lib/files/fallback.ts`): free, local, and it rewrites a CSV block, Markdown table or Markdown document into the same `file:` block. Only when that finds nothing, and an Admin has approved a helper under **Settings → Models → Task models**, `POST /api/files/format` asks that one model (`runFileFormatter()` in `src/lib/models/task-models.ts`) to build the file. The helper is **off by default**, is the model the Admin picked (never a silent fallback, `lockProvider: true`), needs the vendor consent notice for outside vendors, and sees only the reply text with non-exemptible categories replaced. Its setting is non-secret and stored like model availability (`.data/task-models.json`, hosted `taskModels` in the instance config). Voice transcription stays in its own setting and is shown in the same panel.
 
 ### Prompt layers
 - `buildConversationalBase()` applies every turn (natural, concise, no forced ops pitch).
@@ -130,6 +131,8 @@ src/
       models/catalog/route.ts     ← live model catalog across providers
       models/test/route.ts        ← admin-only per-model reachability check
       models/ollama/pull/route.ts ← admin-initiated allowlisted Ollama pull (never automatic)
+      settings/task-models/route.ts ← Admin-approved helper model per task (file formatting); members read, Admin writes
+      files/format/route.ts       ← build a file block with the approved helper (404 when none is set)
       runtime/status/route.ts     ← first-run dependency status (no catalog stampede)
       me/profile/route.ts         ← self GET/PATCH UserProfile (+ workspace brief list)
       me/security/route.ts        ← self security metadata (auth mode, password availability)

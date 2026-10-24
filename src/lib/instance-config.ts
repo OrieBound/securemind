@@ -70,6 +70,8 @@ export type InstanceConfigRow = {
   /** Sparse Admin list-rate overrides. Hosted Dynamo JSON; local file. Not Prisma. */
   pricingRateOverrides?: unknown;
   modelAvailability?: unknown;
+  /** Admin-approved helper model per task (file formatting, ...). Hosted Dynamo JSON; local file. Not Prisma. */
+  taskModels?: unknown;
   updatedAt: Date;
   updatedByUserId: string | null;
 };

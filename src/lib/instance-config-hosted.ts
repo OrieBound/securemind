@@ -47,6 +47,7 @@ type Stored = {
   portalLogoAt?: string | null;
   pricingRateOverrides?: unknown;
   modelAvailability?: unknown;
+  taskModels?: unknown;
   updatedAt: string;
   updatedByUserId: string | null;
 };
@@ -134,6 +135,7 @@ function toStored(row: InstanceConfigRow): Stored {
     portalLogoAt: iso(row.portalLogoAt),
     pricingRateOverrides: row.pricingRateOverrides ?? null,
     modelAvailability: row.modelAvailability ?? null,
+    taskModels: row.taskModels ?? null,
     updatedAt: iso(row.updatedAt) ?? new Date().toISOString(),
     updatedByUserId: row.updatedByUserId,
   };
@@ -170,6 +172,7 @@ function fromStored(raw: Stored): InstanceConfigRow {
     portalLogoAt: asDate(raw.portalLogoAt),
     pricingRateOverrides: raw.pricingRateOverrides ?? null,
     modelAvailability: raw.modelAvailability ?? null,
+    taskModels: raw.taskModels ?? null,
     updatedAt: asDate(raw.updatedAt) ?? new Date(),
     updatedByUserId: raw.updatedByUserId,
   };

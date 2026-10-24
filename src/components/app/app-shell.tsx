@@ -176,6 +176,8 @@ import {
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { ChatMarkdown } from "@/components/app/chat-markdown";
 import { CONTINUE_PROMPT, endsInsideCodeFence } from "@/lib/chat/truncation";
+import { applyFileFallback } from "@/lib/files/fallback";
+import { resolveFileRequest } from "@/lib/turn-policy/file-request";
 import EmojiPicker, { Theme, type EmojiClickData } from "emoji-picker-react";
 import {
   apiAuthHeaders,
@@ -1100,6 +1102,26 @@ function homeCountLine(n: number | null, singular: string, plural: string, empty
   if (n == null) return "Loading…";
   if (n === 0) return empty;
   return `${n} ${n === 1 ? singular : plural}`;
+}
+
+/**
+ * Ask the Admin-approved file helper (Settings → Task models) to build the file from a reply the free
+ * conversion could not use. Returns the helper's reply, or null when no helper is set or it failed, in
+ * which case the original reply stays as it is.
+ */
+async function requestHelperFile(text: string, ext: string | null): Promise<string | null> {
+  try {
+    const res = await fetch("/api/files/format", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, ext }),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { content?: string };
+    return typeof body.content === "string" && body.content.trim() ? body.content : null;
+  } catch {
+    return null;
+  }
 }
 
 async function persistMessage(
@@ -4204,6 +4226,13 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     abortRef.current = ctrl;
     const sendStart = Date.now();
     let ttftCaptured = false;
+    // Did this message ask for a file? The app decides this itself, so a model that ignores the file
+    // format can still be turned into a file card when the reply finishes.
+    const fileRequest = resolveFileRequest(
+      sanitized,
+      // The same history the request carries, so the app and the server agree on what was asked.
+      messages.filter(m => m.role !== "assistant" || m.content).map(m => ({ role: m.role, content: m.content })),
+    );
     let asstContent = "";
     const flushRef: { current: (() => void) | null } = { current: null };
 
@@ -4499,15 +4528,39 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       drainOutboundRef.current();
 
       if (sessionIdRef.current) {
-        const completedContent = asstContent.trim()
+        let completedContent = asstContent.trim()
           || messagesRef.current.find(m => m.id === asstId)?.content?.trim()
           || "";
-        if (completedContent) {
-          persistMessage(sessionIdRef.current, "assistant", completedContent).catch(err => {
+        const failed = Boolean(messagesRef.current.find(m => m.id === asstId)?.error);
+        const sessionId = sessionIdRef.current;
+        const save = (content: string) => {
+          persistMessage(sessionId, "assistant", content).catch(err => {
             console.error("[messages] assistant save failed:", err);
             setSessionSaveError("Reply may not persist after refresh.");
           });
-        }
+        };
+        const showing = (content: string) =>
+          setMessages(p => p.map(m => (m.id === asstId ? { ...m, content } : m)));
+        void (async () => {
+          const finalMessage = messagesRef.current.find(m => m.id === asstId);
+          if (completedContent && fileRequest && !failed) {
+            // First the free conversion; then, only if an Admin approved a helper model, that model.
+            const fixed = applyFileFallback(completedContent, fileRequest);
+            if (fixed.changed) {
+              completedContent = fixed.content;
+              showing(fixed.content);
+            } else if (!finalMessage?.truncated && !/^ {0,3}(`{3,}|~{3,})\s*file:/im.test(completedContent) && completedContent.length >= 80) {
+              const original = completedContent;
+              showing(`${original}
+
+_Preparing the file…_`);
+              const helped = await requestHelperFile(original, fileRequest.ext);
+              completedContent = helped ?? original;
+              showing(completedContent);
+            }
+          }
+          if (completedContent) save(completedContent);
+        })();
       }
     }
   }, [
