@@ -23,6 +23,7 @@ import { consumeBedrockHighlight, HIGHLIGHT_BEDROCK_KEY } from "@/lib/onboarding
 import { deriveKeyHealth, keyNeedsAttention, relativeTime, type KeyHealth } from "@/lib/models/key-health";
 import { planRecommendedBedrock, recommendedNeedingConsole } from "@/lib/models/bedrock-recommended";
 import { VoiceSttSetupDialog } from "@/components/app/voice-stt-setup";
+import { TaskModelsPanel } from "@/components/app/task-models-panel";
 import {
   voiceProviderDestination,
   voiceProviderLabel,
@@ -122,7 +123,7 @@ const CONNECTIONS_THEME = {
   surface: "border-foreground/15 bg-foreground/[0.06]",
 } as const;
 
-type SettingsModuleId = "tiers" | "vendor" | "bedrock" | "local" | "models" | "voice";
+type SettingsModuleId = "tiers" | "vendor" | "bedrock" | "local" | "models" | "voice" | "tasks";
 
 export function InferenceSettings(props: Props) {
   const complexityTiers = props.complexityTiers;
@@ -301,6 +302,10 @@ export function InferenceSettings(props: Props) {
         case "voice":
           await refresh({ module: id, providers: true, catalog: false, recheckAws: false });
           setNote("Voice transcription refreshed");
+          break;
+        case "tasks":
+          await sharedCatalog.refresh();
+          setNote("Task models refreshed");
           break;
         case "tiers":
         case "models":
@@ -1217,6 +1222,27 @@ export function InferenceSettings(props: Props) {
       </SettingsModule>
       )}
       </div>
+      </SettingsModule>
+
+      <SettingsModule
+        id="tasks"
+        className="order-3"
+        open={openModule === "tasks"}
+        onToggle={() => toggleModule("tasks")}
+        onRefresh={() => void refreshModule("tasks")}
+        refreshing={refreshingModule === "tasks"}
+        icon={<SlidersHorizontal className="size-4 text-foreground/55" aria-hidden />}
+        title="Task models"
+        subtitle="Small helper models for narrow jobs, chosen by an Admin"
+        badge={<ModuleBadge tone="neutral">Admin-approved</ModuleBadge>}
+        theme={CATALOG_THEME}
+      >
+        <TaskModelsPanel
+          models={sharedCatalog.all}
+          voiceLabel={voiceProviderLabel(status.voiceSttChoice)}
+          voiceDestination={voiceProviderDestination(status.voiceSttChoice)}
+          onChangeVoice={() => setVoiceSetupOpen(true)}
+        />
       </SettingsModule>
 
       {note && <p className="order-4 text-[0.68rem] text-indigo-200/80 px-0.5">{note}</p>}

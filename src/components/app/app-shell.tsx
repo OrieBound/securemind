@@ -1104,6 +1104,26 @@ function homeCountLine(n: number | null, singular: string, plural: string, empty
   return `${n} ${n === 1 ? singular : plural}`;
 }
 
+/**
+ * Ask the Admin-approved file helper (Settings → Task models) to build the file from a reply the free
+ * conversion could not use. Returns the helper's reply, or null when no helper is set or it failed, in
+ * which case the original reply stays as it is.
+ */
+async function requestHelperFile(text: string, ext: string | null): Promise<string | null> {
+  try {
+    const res = await fetch("/api/files/format", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, ext }),
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as { content?: string };
+    return typeof body.content === "string" && body.content.trim() ? body.content : null;
+  } catch {
+    return null;
+  }
+}
+
 async function persistMessage(
   sessionId: string,
   role: "user" | "assistant",
@@ -4512,19 +4532,35 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
           || messagesRef.current.find(m => m.id === asstId)?.content?.trim()
           || "";
         const failed = Boolean(messagesRef.current.find(m => m.id === asstId)?.error);
-        if (completedContent && fileRequest && !failed) {
-          const fixed = applyFileFallback(completedContent, fileRequest);
-          if (fixed.changed) {
-            completedContent = fixed.content;
-            setMessages(p => p.map(m => (m.id === asstId ? { ...m, content: fixed.content } : m)));
-          }
-        }
-        if (completedContent) {
-          persistMessage(sessionIdRef.current, "assistant", completedContent).catch(err => {
+        const sessionId = sessionIdRef.current;
+        const save = (content: string) => {
+          persistMessage(sessionId, "assistant", content).catch(err => {
             console.error("[messages] assistant save failed:", err);
             setSessionSaveError("Reply may not persist after refresh.");
           });
-        }
+        };
+        const showing = (content: string) =>
+          setMessages(p => p.map(m => (m.id === asstId ? { ...m, content } : m)));
+        void (async () => {
+          const finalMessage = messagesRef.current.find(m => m.id === asstId);
+          if (completedContent && fileRequest && !failed) {
+            // First the free conversion; then, only if an Admin approved a helper model, that model.
+            const fixed = applyFileFallback(completedContent, fileRequest);
+            if (fixed.changed) {
+              completedContent = fixed.content;
+              showing(fixed.content);
+            } else if (!finalMessage?.truncated && !/^ {0,3}(`{3,}|~{3,})\s*file:/im.test(completedContent) && completedContent.length >= 80) {
+              const original = completedContent;
+              showing(`${original}
+
+_Preparing the file…_`);
+              const helped = await requestHelperFile(original, fileRequest.ext);
+              completedContent = helped ?? original;
+              showing(completedContent);
+            }
+          }
+          if (completedContent) save(completedContent);
+        })();
       }
     }
   }, [
