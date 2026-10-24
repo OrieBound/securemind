@@ -251,6 +251,7 @@ export function WorkspaceFeatureNav({
   return (
     <nav
       aria-label="Workspace features. Drag to reorder."
+      data-tour="features"
       className="flex flex-col"
     >
       {order.map((id, index) => {

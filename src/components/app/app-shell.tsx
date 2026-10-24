@@ -177,6 +177,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { ChatMarkdown } from "@/components/app/chat-markdown";
 import { CONTINUE_PROMPT, endsInsideCodeFence } from "@/lib/chat/truncation";
 import { applyFileFallback } from "@/lib/files/fallback";
+import { AppTour, tourStorageKey } from "@/components/app/app-tour";
 import { resolveFileRequest } from "@/lib/turn-policy/file-request";
 import EmojiPicker, { Theme, type EmojiClickData } from "emoji-picker-react";
 import {
@@ -2245,6 +2246,35 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     !authSession
     || authSession.role === "super_admin"
     || authSession.role === "admin";
+  const [tourInvite, setTourInvite] = useState(false);
+  const [tourActive, setTourActive] = useState(false);
+  const tourAccountKey = authSession?.email ?? "local";
+  const tourReady = authSession !== undefined;
+  useEffect(() => {
+    if (!tourReady || isAnalytics) return;
+    let seen = true;
+    try {
+      seen = Boolean(localStorage.getItem(tourStorageKey(tourAccountKey)));
+    } catch {
+      /* storage blocked: skip the invite rather than nag every visit */
+    }
+    if (seen) return;
+    const timer = window.setTimeout(() => setTourInvite(true), 1200);
+    return () => window.clearTimeout(timer);
+  }, [tourReady, tourAccountKey, isAnalytics]);
+  const startTour = useCallback(() => {
+    setTourInvite(false);
+    setTourActive(true);
+  }, []);
+  const closeTour = useCallback((reason: "done" | "skipped") => {
+    try {
+      localStorage.setItem(tourStorageKey(tourAccountKey), reason);
+    } catch {
+      /* storage blocked */
+    }
+    setTourInvite(false);
+    setTourActive(false);
+  }, [tourAccountKey]);
   const settingsActorRole =
     authSession?.role === "super_admin" || authSession?.role === "admin" || authSession?.role === "member"
       ? authSession.role
@@ -4614,7 +4644,7 @@ _Preparing the file…_`);
       const now = new Date().toISOString();
       const userId = crypto.randomUUID();
       const asstId = crypto.randomUUID();
-      const guide = noModelAssistantReply(edition);
+      const guide = noModelAssistantReply(edition, settingsIsAdmin);
       setSessionSaveError(null);
       composerRef.current?.clear?.();
       setMessages(p => [
@@ -5722,7 +5752,7 @@ _Preparing the file…_`);
 
   // ── intelligence panel ───────────────────────────────────────────────────────
   const IntelligencePanel = (
-    <div className="flex flex-col h-full gap-0">
+    <div data-tour="insights" className="flex flex-col h-full gap-0">
       <Tabs
         value={insightsTab}
         onValueChange={v => {
@@ -6367,6 +6397,7 @@ _Preparing the file…_`);
         {/* Workspaces (top). Settings opens as an elevated sheet above the bottom toggle. */}
         <div className="flex flex-col flex-1 min-h-0 relative">
           <div
+            data-tour="workspaces"
             className={cn(
               "flex flex-col gap-1 px-2.5 py-3 overflow-y-auto flex-1 min-h-0 transition-[filter,opacity] duration-200",
               settingsNavExpanded && "opacity-45",
@@ -6643,6 +6674,7 @@ _Preparing the file…_`);
             )}
             <button
               type="button"
+              data-tour="settings"
               onClick={toggleSettings}
               title={settingsNavExpanded ? "Close settings" : "Open settings"}
               aria-expanded={settingsNavExpanded}
@@ -6781,6 +6813,15 @@ _Preparing the file…_`);
             </div>
           </div>
 
+          <button
+            type="button"
+            onClick={startTour}
+            className="shrink-0 ml-2 rounded-full border border-[var(--primary-border)] bg-[var(--primary-soft)] px-3 py-1 text-[0.7rem] font-medium text-[var(--primary-soft-foreground)] hover:opacity-90 cursor-pointer"
+          >
+            <span className="sm:hidden">Tour</span>
+            <span className="hidden sm:inline">Take the tour</span>
+          </button>
+          <AppTour invite={tourInvite} active={tourActive} isAdmin={settingsIsAdmin} onStart={startTour} onClose={closeTour} />
           <div className="relative shrink-0 ml-2">
             <details className="group">
               <summary
@@ -7672,7 +7713,7 @@ _Preparing the file…_`);
                   </div>
                 )}
 
-                <div className={cn(
+                <div data-tour="composer" className={cn(
                   "rounded-2xl border transition-all shadow-[var(--shadow-md)] overflow-hidden relative",
                   composerDragOver
                     ? "bg-[var(--primary-soft)] border-[var(--primary-border)] ring-2 ring-[var(--primary-border)]"
