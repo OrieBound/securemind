@@ -429,7 +429,7 @@ export function AdminConsole({
         );
       } else {
         setNote(
-          `Created ${createdEmail} as ${createdRole}. SMTP is not configured, so no invite email went out — share the sign-in page and the password you set.`,
+          `Created ${createdEmail} as ${createdRole}. Copy the sign-in details below and send them yourself.`,
         );
       }
       await refresh();
@@ -845,19 +845,19 @@ export function AdminConsole({
                 Create account
               </button>
             </div>
-            <label className="flex items-start gap-2 text-[0.72rem] text-[var(--text-secondary)] leading-relaxed">
-              <input
-                type="checkbox"
-                checked={sendInvite}
-                onChange={e => setSendInvite(e.target.checked)}
-                className="mt-0.5"
-              />
-              <span>
-                {mailConfigured
-                  ? "Send an invite email with the sign-in page and their role. The password is never emailed — you share it with them."
-                  : "Email is not set up on this install, so no invite email will go out. After you create the account, copy the sign-in details and send them yourself."}
-              </span>
-            </label>
+            {mailConfigured && (
+              <label className="flex items-start gap-2 text-[0.72rem] text-[var(--text-secondary)] leading-relaxed">
+                <input
+                  type="checkbox"
+                  checked={sendInvite}
+                  onChange={e => setSendInvite(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>
+                  Send an invite email with the sign-in page and their role. The password is never emailed — you share it with them.
+                </span>
+              </label>
+            )}
             <p className="text-[0.65rem] text-[var(--text-subtle)] leading-relaxed">
               Default monthly cap is {fmtUsdLabeled(defaultCap)}. If they cannot log in: share {signInUrl}, their email,
               and the password you set. They can also use Forgot password on that page if Cognito can deliver email.
