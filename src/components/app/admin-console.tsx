@@ -6,16 +6,17 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BarChart2, Loader2, RefreshCw, Shield, UserPlus, Users } from "lucide-react";
+import { BarChart2, ChevronDown, Loader2, RefreshCw, Shield, UserPlus, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AppRole, AssignableRole } from "@/lib/roles";
 import type { AnalyticsRange } from "@/lib/analytics/types";
 import type { InsightsSubjectRef } from "@/components/app/settings-hub";
 import { PortalBrandingSettings } from "@/components/app/portal-branding-settings";
 import { fmtUsdLabeled } from "@/lib/analytics/client";
-import { parseMonthlyCostCapInput } from "@/lib/cost-cap-shared";
+import { formatUsd, parseMonthlyCostCapInput } from "@/lib/cost-cap-shared";
 import {
   checkPasswordAgainstPolicy,
+  generateDirectoryPassword,
   passwordChecklist,
   passwordRuleMet,
   type DirectoryPasswordPolicy,
@@ -126,9 +127,7 @@ function downloadUserBackup(u: DirectoryUser) {
 }
 
 function fmtUsd(n: number) {
-  if (!Number.isFinite(n) || n === 0) return "$0.00";
-  if (n < 0.01) return `$${n.toFixed(4)}`;
-  return `$${n.toFixed(2)}`;
+  return formatUsd(n);
 }
 
 function SpendMeter({
@@ -192,7 +191,12 @@ export function AdminConsole({
     signInUrl: string;
     inviteSent: boolean;
     inviteReason?: string;
+    /** Shown once so the admin can hand it over. Cleared on Dismiss; never sent by email. */
+    password: string;
   } | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
   const [passwordDialog, setPasswordDialog] = useState<{ username: string; email: string } | null>(null);
   const [setPasswordValue, setSetPasswordValue] = useState("");
   const [notifyPasswordEmail, setNotifyPasswordEmail] = useState(true);
@@ -391,6 +395,7 @@ export function AdminConsole({
       }
       if (typeof data.mailConfigured === "boolean") setMailConfigured(data.mailConfigured);
       const createdEmail = email;
+      const createdPassword = password;
       const createdRole = newRole;
       const createdSignIn = data.signInUrl ?? signInUrl;
       setEmail("");
@@ -404,7 +409,9 @@ export function AdminConsole({
         signInUrl: createdSignIn,
         inviteSent: Boolean(data.welcomeEmail?.sent),
         inviteReason: data.welcomeEmail?.reason,
+        password: createdPassword,
       });
+      setShowPassword(false);
       if (data.welcomeEmail?.sent) {
         setNote(`Created ${createdEmail} as ${createdRole}. Invite email sent (sign-in page only — not a magic link, and never the password).`);
       } else if (data.welcomeEmail?.reason === "send_failed") {
@@ -423,6 +430,16 @@ export function AdminConsole({
       await refresh();
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function copyText(label: string, text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(label);
+      window.setTimeout(() => setCopied(c => (c === label ? null : c)), 2000);
+    } catch {
+      setError("Could not copy. Select the text and copy it by hand.");
     }
   }
 
@@ -705,13 +722,22 @@ export function AdminConsole({
 
         {cognitoAvailable && (
           <form onSubmit={createUser} className="rounded-lg border border-dashed border-border bg-secondary/40 p-3 space-y-2.5">
-            <p className="text-[0.65rem] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1.5">
-              <UserPlus className="size-3.5" aria-hidden />
-              Add user
-            </p>
+            <button
+              type="button"
+              onClick={() => setAddOpen(open => !open)}
+              aria-expanded={addOpen}
+              className="w-full flex items-center justify-between gap-2 text-[0.65rem] uppercase tracking-wider text-muted-foreground font-semibold cursor-pointer"
+            >
+              <span className="flex items-center gap-1.5">
+                <UserPlus className="size-3.5" aria-hidden />
+                Add user
+              </span>
+              <ChevronDown className={cn("size-4 transition-transform", addOpen && "rotate-180")} aria-hidden />
+            </button>
+            {addOpen && (<>
             <p className="text-[0.72rem] text-[var(--text-secondary)] leading-relaxed">
               They sign in at <span className="font-medium text-foreground break-all">{signInUrl}</span> with this email
-              and the password you set. There is no one-click invite link.
+              and the password below. Use Generate for a strong one. There is no one-click invite link.
             </p>
             <div className="grid gap-2 sm:grid-cols-2">
               <label className="block text-xs text-muted-foreground">
@@ -728,16 +754,36 @@ export function AdminConsole({
               </label>
               <label className="block text-xs text-muted-foreground">
                 Sign-in password
-                <input
-                  type="password"
-                  required
-                  minLength={passwordPolicy.minLength}
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  className="mt-1 w-full h-9 rounded-lg border border-border bg-card px-3 text-sm text-foreground"
-                  placeholder={passwordPolicy.summary}
-                  autoComplete="new-password"
-                />
+                <span className="mt-1 flex gap-1.5">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    required
+                    minLength={passwordPolicy.minLength}
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    className="w-full h-9 rounded-lg border border-border bg-card px-3 text-sm text-foreground font-mono"
+                    placeholder={passwordPolicy.summary}
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPassword(generateDirectoryPassword(passwordPolicy));
+                      setShowPassword(true);
+                    }}
+                    className="h-9 shrink-0 rounded-lg border border-border bg-card px-3 text-xs font-medium text-foreground hover:bg-[var(--surface-hover)] cursor-pointer"
+                  >
+                    Generate
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(v => !v)}
+                    className="h-9 shrink-0 rounded-lg border border-border bg-card px-3 text-xs text-muted-foreground hover:bg-[var(--surface-hover)] cursor-pointer"
+                    aria-pressed={showPassword}
+                  >
+                    {showPassword ? "Hide" : "Show"}
+                  </button>
+                </span>
               </label>
             </div>
             <PasswordRuleList password={password} policy={passwordPolicy} />
@@ -804,13 +850,14 @@ export function AdminConsole({
               <span>
                 {mailConfigured
                   ? "Send an invite email with the sign-in page and their role. The password is never emailed — you share it with them."
-                  : "Send an invite email when SMTP is configured (SMTP_HOST and MAIL_FROM). Right now mail is off, so you must tell them the sign-in page and password yourself."}
+                  : "Email is not set up on this install, so no invite email will go out. After you create the account, copy the sign-in details and send them yourself."}
               </span>
             </label>
             <p className="text-[0.65rem] text-[var(--text-subtle)] leading-relaxed">
               Default monthly cap is {fmtUsdLabeled(defaultCap)}. If they cannot log in: share {signInUrl}, their email,
               and the password you set. They can also use Forgot password on that page if Cognito can deliver email.
             </p>
+            </>)}
           </form>
         )}
 
@@ -820,8 +867,29 @@ export function AdminConsole({
             <ol className="list-decimal pl-4 text-[0.72rem] text-[var(--text-secondary)] space-y-0.5 leading-relaxed">
               <li>Open {lastCreated.signInUrl}</li>
               <li>Email: {lastCreated.email}</li>
-              <li>Password: the one you just entered (it is not stored here and was not emailed)</li>
+              <li>
+                Password:{" "}
+                <span className="font-mono text-foreground select-all">
+                  {showPassword ? lastCreated.password : "•".repeat(Math.min(lastCreated.password.length, 16))}
+                </span>{" "}
+                <button type="button" onClick={() => setShowPassword(v => !v)} className="underline text-muted-foreground cursor-pointer">
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+                <span className="text-[var(--text-subtle)]"> (shown only until you dismiss this, never emailed)</span>
+              </li>
             </ol>
+            <button
+              type="button"
+              onClick={() =>
+                void copyText(
+                  "invite",
+                  `You have an account on SecureMind.\nSign in at: ${lastCreated.signInUrl}\nEmail: ${lastCreated.email}\nPassword: ${lastCreated.password}\nPlease change the password after you sign in.`,
+                )
+              }
+              className="h-8 rounded-md border border-border bg-card px-3 text-[0.7rem] font-medium text-foreground hover:bg-[var(--surface-hover)] cursor-pointer"
+            >
+              {copied === "invite" ? "Copied" : "Copy sign-in details"}
+            </button>
             <p className="text-[0.65rem] text-[var(--text-subtle)]">
               {lastCreated.inviteSent
                 ? "Invite email sent with the sign-in page and role only — not a magic login link."
@@ -831,7 +899,10 @@ export function AdminConsole({
             </p>
             <button
               type="button"
-              onClick={() => setLastCreated(null)}
+              onClick={() => {
+                setLastCreated(null);
+                setShowPassword(false);
+              }}
               className="text-[0.65rem] underline text-muted-foreground cursor-pointer"
             >
               Dismiss

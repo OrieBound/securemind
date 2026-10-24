@@ -22,16 +22,30 @@ export function isMailConfigured(): boolean {
   return smtpConfigured();
 }
 
-export function appPublicUrl(): string {
+/** The address the person used to reach this app, as the proxy reports it. */
+function requestOrigin(req: Request): string | null {
+  const host = (req.headers.get("x-forwarded-host") ?? req.headers.get("host"))?.split(",")[0]?.trim();
+  if (!host || !/^[a-z0-9.-]+(:\d{1,5})?$/i.test(host)) return null;
+  const forwarded = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const proto = forwarded === "http" || forwarded === "https" ? forwarded : /^localhost(:|$)/.test(host) ? "http" : "https";
+  return `${proto}://${host}`;
+}
+
+/**
+ * The public address of this install. APP_PUBLIC_URL wins when set. Otherwise the address the signed-in
+ * admin is using right now, so a cloud install never tells people to go to localhost.
+ */
+export function appPublicUrl(req?: Request): string {
   const raw =
     process.env.APP_PUBLIC_URL?.trim() ||
     process.env.NEXTAUTH_URL?.trim() ||
+    (req ? requestOrigin(req) : null) ||
     "http://localhost:3000";
   return raw.replace(/\/$/, "");
 }
 
-export function appSignInUrl(): string {
-  return `${appPublicUrl()}/`;
+export function appSignInUrl(req?: Request): string {
+  return `${appPublicUrl(req)}/`;
 }
 
 function transport() {
@@ -87,8 +101,10 @@ function roleLabel(role: AppRole): string {
 export async function sendWelcomeAddedEmail(opts: {
   to: string;
   role: AppRole;
+  /** Sign-in page to put in the message. Defaults to the configured address. */
+  signInUrl?: string;
 }): Promise<MailSendResult> {
-  const signInUrl = appSignInUrl();
+  const signInUrl = opts.signInUrl ?? appSignInUrl();
   const label = roleLabel(opts.role);
   const subject = "You're invited to SecureMind";
   const text = [

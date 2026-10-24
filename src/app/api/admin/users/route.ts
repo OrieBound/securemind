@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
         available: false,
         users: [],
         mailConfigured: isMailConfigured(),
-        signInUrl: appSignInUrl(),
+        signInUrl: appSignInUrl(req),
         passwordPolicy: directoryPasswordPolicy(),
         defaultMonthlyCostCapUsd: DEFAULT_MONTHLY_COST_CAP_USD,
         error:
@@ -79,7 +79,7 @@ export async function GET(req: NextRequest) {
       available: true,
       users: enriched,
       mailConfigured: isMailConfigured(),
-      signInUrl: appSignInUrl(),
+      signInUrl: appSignInUrl(req),
       passwordPolicy: directoryPasswordPolicy(),
       defaultMonthlyCostCapUsd: defaultCap,
     });
@@ -90,7 +90,7 @@ export async function GET(req: NextRequest) {
         available: false,
         users: [],
         mailConfigured: isMailConfigured(),
-        signInUrl: appSignInUrl(),
+        signInUrl: appSignInUrl(req),
         passwordPolicy: directoryPasswordPolicy(),
         defaultMonthlyCostCapUsd: DEFAULT_MONTHLY_COST_CAP_USD,
         error: msg,
@@ -163,7 +163,7 @@ export async function POST(req: NextRequest) {
     if (!sendInvite) {
       welcome = { sent: false, reason: "skipped" };
     } else if (emailTo) {
-      welcome = await sendWelcomeAddedEmail({ to: emailTo, role });
+      welcome = await sendWelcomeAddedEmail({ to: emailTo, role, signInUrl: appSignInUrl(req) });
     } else {
       welcome = { sent: false, reason: "not_configured" };
     }
@@ -176,7 +176,7 @@ export async function POST(req: NextRequest) {
         },
         welcomeEmail: welcome,
         mailConfigured: isMailConfigured(),
-        signInUrl: appSignInUrl(),
+        signInUrl: appSignInUrl(req),
         passwordPolicy: directoryPasswordPolicy(),
       },
       { status: 201 },

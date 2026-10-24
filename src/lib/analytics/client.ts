@@ -1,5 +1,6 @@
 /** Browser helpers for analytics — never send raw detected values. */
 
+import { formatUsd } from "@/lib/cost-cap-shared";
 import type { AnalyticsRange, SecurityOutcome, SecuritySource } from "./types";
 
 export type SecurityEventPayload = {
@@ -69,10 +70,7 @@ export async function fetchAnalyticsJson<T>(
 
 export function fmtUsd(d: number | null | undefined): string {
   if (d == null || Number.isNaN(d)) return "—";
-  if (d === 0) return "$0.00";
-  if (d < 0.0001) return "<$0.0001";
-  if (d < 0.01) return `$${d.toFixed(4)}`;
-  return `$${d.toFixed(2)}`;
+  return formatUsd(d);
 }
 
 /** Always labels currency as USD (caps / Insights meters). */

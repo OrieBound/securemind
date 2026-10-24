@@ -43,7 +43,7 @@ describe("RouteWhy", () => {
       />,
     );
     expect(screen.getByText(/small model broke a tie/i)).toBeTruthy();
-    expect(screen.getByText(/\$0\.0003/)).toBeTruthy();
+    expect(screen.getByText(/<\$0\.01/)).toBeTruthy();
   });
 
   it("handles a card with no signals", () => {
