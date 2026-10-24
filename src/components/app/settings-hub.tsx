@@ -9,6 +9,7 @@ import {
   LogOut,
   Palette,
   Shield,
+  ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   UserCircle,
@@ -42,6 +43,7 @@ export type SettingsSection =
   | "insights-savings"
   | "insights-security"
   | "profile"
+  | "account-security"
   | "appearance"
   | "workspace"
   | "inference"
@@ -56,6 +58,8 @@ export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
   "insights-savings": "Cost",
   "insights-security":"Security",
   profile:            "Profile",
+  /** Password and two-step verification. Was a tab inside Profile. */
+  "account-security": "Account security",
   appearance:         "Appearance",
   /** Detection sensitivity and safe terms. The id stays `workspace` for saved links. */
   workspace:          "Detection",
@@ -71,6 +75,7 @@ export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
 const MOBILE_SECTION_ORDER: SettingsSection[] = [
   "overview",
   "profile",
+  "account-security",
   "appearance",
   "insights-context",
   "insights-savings",
@@ -475,7 +480,7 @@ export function SettingsSidebarNav({
     section === "insights-context" ||
     section === "insights-savings" ||
     section === "insights-security";
-  const preferencesActive = section === "profile" || section === "appearance";
+  const preferencesActive = section === "profile" || section === "account-security" || section === "appearance";
   const setupActive =
     section === "inference" ||
     section === "providers" ||
@@ -502,6 +507,14 @@ export function SettingsSidebarNav({
           onClick={() => onSectionChange("profile")}
           icon={UserCircle}
           label="Profile"
+          indent
+          compact
+        />
+        <NavItem
+          active={section === "account-security"}
+          onClick={() => onSectionChange("account-security")}
+          icon={ShieldCheck}
+          label="Account security"
           indent
           compact
         />
@@ -768,6 +781,12 @@ export function SettingsHub({
                 onClick={() => onSectionChange("profile")}
               />
               <OverviewCard
+                title="Account security"
+                description="Change your password and turn on two-step verification."
+                accent="indigo"
+                onClick={() => onSectionChange("account-security")}
+              />
+              <OverviewCard
                 title="Appearance"
                 description="Dark or light theme for the whole application."
                 accent="indigo"
@@ -829,7 +848,9 @@ export function SettingsHub({
             </div>
           )}
 
-          {section === "profile" && <ProfileSettings />}
+          {section === "profile" && <ProfileSettings view="profile" />}
+
+          {section === "account-security" && <ProfileSettings view="security" />}
 
           {section === "appearance" && <AppearanceSettings />}
 

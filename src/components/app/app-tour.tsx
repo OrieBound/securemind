@@ -49,8 +49,8 @@ export function tourSteps(isAdmin: boolean): Step[] {
       target: "settings",
       title: "Settings",
       body: isAdmin
-        ? "Settings holds your profile, appearance and detection preferences. As an Admin you also manage models, provider keys, users and monthly limits here."
-        : "Settings holds your profile, appearance and detection preferences. Models and accounts are managed by your administrator, so ask them if something you expect is not available.",
+        ? "Settings holds your profile, appearance and detection preferences, and Account security is where you turn on two-step verification. As an Admin you also manage models, provider keys, users and monthly limits here."
+        : "Settings holds your profile, appearance and detection preferences, and Account security is where you turn on two-step verification. Models and accounts are managed by your administrator, so ask them if something you expect is not available.",
     },
   ];
 }
