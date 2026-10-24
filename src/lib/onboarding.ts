@@ -43,7 +43,34 @@ export function defaultWorkspaceHello(
   );
 }
 
-export function noModelAssistantReply(edition: RuntimeEdition): string {
+/**
+ * Opening message for someone who is not an Admin. Models and keys are the Admin's job, so this says
+ * where things are and who to ask, not how to connect a provider.
+ */
+export function memberWorkspaceHello(name: string): string {
+  return (
+    `Hi — I'm **${name}**, your first workspace here.\n\n` +
+    `Welcome to SecureMind. This is your own space: chat, Knowledge files, and memory stay in the workspace they belong to.\n\n` +
+    `**Where things are**\n` +
+    `- **Insights** (right side): Models shows which model answers each kind of request, Security shows what was detected and replaced, Cost tracks your usage.\n` +
+    `- **Knowledge**: add files here and I can answer from them and point to the source.\n` +
+    `- **Settings** (bottom left): your profile, appearance and detection preferences.\n\n` +
+    `New here? Choose **Take the tour** at the top for a two-minute walk through. If I cannot answer yet, ask your administrator to connect a model.`
+  );
+}
+
+/** The Admin-facing first message, which tells the reader to connect a model. Not for members. */
+export function isAdminSetupHello(content: string): boolean {
+  return content.includes("your first workspace") && content.includes("Chat needs a model first");
+}
+
+export function noModelAssistantReply(edition: RuntimeEdition, isAdmin = true): string {
+  if (!isAdmin) {
+    return (
+      `Chat is not connected to a model yet — your message is fine. Your administrator sets that up, ` +
+      `so please ask them to connect a model. Detection still runs in your browser in the meantime.`
+    );
+  }
   if (edition === "cloud") {
     return (
       `Chat is not connected yet — your message is fine. This hosted install has no model until an Admin enables one.\n\n` +
