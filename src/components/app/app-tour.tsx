@@ -157,7 +157,7 @@ export function AppTour({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="absolute w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-indigo-300/80 bg-popover p-5 shadow-[0_18px_48px_rgba(0,0,0,0.45),0_0_0_1px_rgba(165,180,252,0.25),0_0_22px_rgba(99,102,241,0.28)]"
+        className="absolute w-[min(22rem,calc(100vw-2rem))] rounded-2xl border border-[var(--primary-border)] bg-popover p-5 shadow-[0_18px_48px_rgba(0,0,0,0.45),0_0_0_1px_rgba(165,180,252,0.25),0_0_22px_rgba(99,102,241,0.28)]"
         style={{ top: card.top, left: card.left }}
       >
         <CardArrow side={card.arrow} />
@@ -204,7 +204,7 @@ function Spotlight({ rect }: { rect: Rect }) {
       <div className={shade} style={{ top, left: 0, width: left, height }} />
       <div className={shade} style={{ top, left: left + width, right: 0, height }} />
       <div
-        className="pointer-events-none absolute rounded-xl ring-2 ring-indigo-300/80 shadow-[0_0_0_3px_rgba(129,140,248,0.22),0_0_22px_rgba(129,140,248,0.42)]"
+        className="pointer-events-none absolute rounded-xl ring-2 ring-[var(--primary-border)] shadow-[0_0_0_3px_rgba(129,140,248,0.22),0_0_22px_rgba(129,140,248,0.42)]"
         style={{ top, left, width, height }}
       />
     </>
@@ -212,7 +212,7 @@ function Spotlight({ rect }: { rect: Rect }) {
 }
 
 function CardArrow({ side }: { side: "up" | "down" | "left" | "right" }) {
-  const base = "absolute size-3 rotate-45 border-indigo-300/80 bg-popover";
+  const base = "absolute size-3 rotate-45 border-[var(--primary-border)] bg-popover";
   if (side === "down") return <span className={`${base} left-1/2 top-full -mt-1.5 -translate-x-1/2 border-b border-r`} />;
   if (side === "up") return <span className={`${base} bottom-full left-1/2 -mb-1.5 -translate-x-1/2 border-l border-t`} />;
   if (side === "left") return <span className={`${base} right-full top-8 -mr-1.5 border-b border-l`} />;
