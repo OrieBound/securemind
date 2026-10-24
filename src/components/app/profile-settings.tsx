@@ -50,7 +50,7 @@ export function ProfileAvatarBadge({
   );
 }
 
-export function ProfileSettings() {
+export function ProfileSettings({ view = "profile" }: { view?: "profile" | "security" } = {}) {
   const authSession = useAuthSession();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -62,7 +62,7 @@ export function ProfileSettings() {
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
-  const [tab, setTab] = useState<"profile" | "security">("profile");
+  const tab = view;
 
   const [displayName, setDisplayName] = useState("");
   const [handle, setHandle] = useState("");
@@ -316,38 +316,6 @@ export function ProfileSettings() {
 
   return (
     <div className="space-y-8 max-w-2xl">
-      <div role="tablist" aria-label="Profile sections" className="flex gap-1 border-b border-foreground/10">
-        {([
-          ["profile", "Profile"],
-          ["security", "Security"],
-        ] as const).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            id={`profile-tab-${id}`}
-            aria-selected={tab === id}
-            aria-controls={`profile-panel-${id}`}
-            tabIndex={tab === id ? 0 : -1}
-            onClick={() => setTab(id)}
-            onKeyDown={event => {
-              if (event.key === "ArrowRight" || event.key === "ArrowLeft") {
-                event.preventDefault();
-                setTab(id === "profile" ? "security" : "profile");
-              }
-            }}
-            className={cn(
-              "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium cursor-pointer transition-colors",
-              tab === id
-                ? "border-[var(--primary)] text-foreground"
-                : "border-transparent text-foreground/50 hover:text-foreground/80",
-            )}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
       {(notice || error) && (
         <p
           role="status"

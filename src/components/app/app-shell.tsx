@@ -178,6 +178,7 @@ import { ChatMarkdown } from "@/components/app/chat-markdown";
 import { CONTINUE_PROMPT, endsInsideCodeFence } from "@/lib/chat/truncation";
 import { applyFileFallback } from "@/lib/files/fallback";
 import { AppTour, tourStorageKey } from "@/components/app/app-tour";
+import { MfaReminderBanner, MfaStatusPill, useMfaStatus } from "@/components/app/mfa-status";
 import { resolveFileRequest } from "@/lib/turn-policy/file-request";
 import EmojiPicker, { Theme, type EmojiClickData } from "emoji-picker-react";
 import {
@@ -2246,6 +2247,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     !authSession
     || authSession.role === "super_admin"
     || authSession.role === "admin";
+  const mfa = useMfaStatus();
   const [tourInvite, setTourInvite] = useState(false);
   const [tourActive, setTourActive] = useState(false);
   const tourAccountKey = authSession?.email ?? "local";
@@ -6853,6 +6855,16 @@ _Preparing the file…_`);
                 >
                   Profile
                 </button>
+                {mfa.loaded && mfa.available && (
+                  <button
+                    type="button"
+                    className="w-full flex items-center justify-between gap-2 text-left rounded-lg px-3 py-2 text-[0.75rem] text-foreground/80 hover:bg-secondary cursor-pointer"
+                    onClick={() => openSettings("account-security")}
+                  >
+                    Account security
+                    <MfaStatusPill mfa={mfa} />
+                  </button>
+                )}
                 {authSession && (
                   <button
                     type="button"
@@ -6888,6 +6900,14 @@ _Preparing the file…_`);
           </Sheet>
           )}
         </div>
+
+        <MfaReminderBanner
+          mfa={mfa}
+          account={authSession?.email ?? "local"}
+          isAdmin={settingsIsAdmin}
+          suppressed={tourInvite || tourActive || (activeNav === "settings" && settingsSection === "account-security")}
+          onSetUp={() => openSettings("account-security")}
+        />
 
         {/* Phone navigation. The sidebar is hidden below md, so this row is the only way to
             switch workspace or page there. md:hidden keeps tablet and desktop unchanged. */}

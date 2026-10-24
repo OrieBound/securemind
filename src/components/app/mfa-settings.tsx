@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import qrcode from "qrcode-generator";
+import { MFA_CHANGED_EVENT } from "@/lib/client/mfa-nudge";
 import { Loader2, ShieldAlert, ShieldCheck } from "lucide-react";
 
 type MfaStatus = { available: boolean; enabled: boolean; recommended: boolean };
@@ -101,6 +102,7 @@ export function MfaSettings() {
       setSetup(null);
       setCode("");
       setView("on");
+      window.dispatchEvent(new Event(MFA_CHANGED_EVENT));
       setNotice("Two-step verification is on. You will be asked for a code each time you sign in.");
     } catch {
       setError("Network error.");
@@ -121,6 +123,7 @@ export function MfaSettings() {
       }
       setPassword("");
       setView("off");
+      window.dispatchEvent(new Event(MFA_CHANGED_EVENT));
       setNotice("Two-step verification is off. Your password alone now signs you in.");
     } catch {
       setError("Network error.");
