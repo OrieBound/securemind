@@ -194,7 +194,7 @@ export function AdminConsole({
     /** Shown once so the admin can hand it over. Cleared on Dismiss; never sent by email. */
     password: string;
   } | null>(null);
-  const [addOpen, setAddOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [passwordDialog, setPasswordDialog] = useState<{ username: string; email: string } | null>(null);
