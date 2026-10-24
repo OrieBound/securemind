@@ -176,6 +176,8 @@ import {
 import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { ChatMarkdown } from "@/components/app/chat-markdown";
 import { CONTINUE_PROMPT, endsInsideCodeFence } from "@/lib/chat/truncation";
+import { applyFileFallback } from "@/lib/files/fallback";
+import { resolveFileRequest } from "@/lib/turn-policy/file-request";
 import EmojiPicker, { Theme, type EmojiClickData } from "emoji-picker-react";
 import {
   apiAuthHeaders,
@@ -4204,6 +4206,13 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     abortRef.current = ctrl;
     const sendStart = Date.now();
     let ttftCaptured = false;
+    // Did this message ask for a file? The app decides this itself, so a model that ignores the file
+    // format can still be turned into a file card when the reply finishes.
+    const fileRequest = resolveFileRequest(
+      sanitized,
+      // The same history the request carries, so the app and the server agree on what was asked.
+      messages.filter(m => m.role !== "assistant" || m.content).map(m => ({ role: m.role, content: m.content })),
+    );
     let asstContent = "";
     const flushRef: { current: (() => void) | null } = { current: null };
 
@@ -4499,9 +4508,17 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       drainOutboundRef.current();
 
       if (sessionIdRef.current) {
-        const completedContent = asstContent.trim()
+        let completedContent = asstContent.trim()
           || messagesRef.current.find(m => m.id === asstId)?.content?.trim()
           || "";
+        const failed = Boolean(messagesRef.current.find(m => m.id === asstId)?.error);
+        if (completedContent && fileRequest && !failed) {
+          const fixed = applyFileFallback(completedContent, fileRequest);
+          if (fixed.changed) {
+            completedContent = fixed.content;
+            setMessages(p => p.map(m => (m.id === asstId ? { ...m, content: fixed.content } : m)));
+          }
+        }
         if (completedContent) {
           persistMessage(sessionIdRef.current, "assistant", completedContent).catch(err => {
             console.error("[messages] assistant save failed:", err);
