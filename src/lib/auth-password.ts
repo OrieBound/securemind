@@ -133,3 +133,36 @@ export function passwordChecklist(policy: DirectoryPasswordPolicy): Array<{
   }
   return items;
 }
+
+const GEN_UPPER = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+const GEN_LOWER = "abcdefghjkmnpqrstuvwxyz";
+const GEN_DIGIT = "23456789";
+const GEN_SYMBOL = "-_.!#";
+
+/** Uniform random index below `n`, without modulo bias. */
+function randomBelow(n: number): number {
+  const limit = Math.floor(0x100000000 / n) * n;
+  const buf = new Uint32Array(1);
+  do {
+    globalThis.crypto.getRandomValues(buf);
+  } while (buf[0] >= limit);
+  return buf[0] % n;
+}
+
+/**
+ * A random password that meets the directory policy. Leaves out look-alike characters (0/O, 1/l/I) so
+ * an admin can read it aloud or retype it. Uses the browser's or server's secure random source.
+ */
+export function generateDirectoryPassword(policy: DirectoryPasswordPolicy, length = 16): string {
+  const size = Math.max(length, policy.minLength);
+  const pools = [GEN_UPPER, GEN_LOWER, GEN_DIGIT];
+  if (policy.requireSymbol) pools.push(GEN_SYMBOL);
+  const all = GEN_UPPER + GEN_LOWER + GEN_DIGIT;
+  const chars = pools.map(pool => pool[randomBelow(pool.length)]);
+  while (chars.length < size) chars.push(all[randomBelow(all.length)]);
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = randomBelow(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
+}

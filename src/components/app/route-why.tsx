@@ -1,5 +1,6 @@
 "use client";
 
+import { formatUsd } from "@/lib/cost-cap-shared";
 import { signalPointsTotal, type RouteScoreCard } from "@/lib/models/route-scorecard";
 import { TIER_DEFINITIONS, type TierName } from "@/lib/models/tier-definitions";
 
@@ -8,7 +9,7 @@ function points(n: number): string {
 }
 
 function usd(n: number): string {
-  return n < 0.0001 ? "under $0.0001" : `$${n.toFixed(4)}`;
+  return formatUsd(n);
 }
 
 /**

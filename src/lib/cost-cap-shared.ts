@@ -68,9 +68,18 @@ export function parseMonthlyCostCapInput(
   return { ok: true, value: rounded };
 }
 
+/**
+ * Money for display: whole cents, rounded the usual way (half a cent or more goes up, less goes down).
+ * A real cost under half a cent would read "$0.00", which looks like free, so it reads "<$0.01".
+ */
+export function formatUsd(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(n)) return "$0.00";
+  const cents = Math.round((Math.abs(n) + Number.EPSILON) * 100);
+  if (cents === 0) return n === 0 ? "$0.00" : "<$0.01";
+  return `${n < 0 ? "-" : ""}$${(cents / 100).toFixed(2)}`;
+}
+
 export function formatUsdLabeled(n: number | null | undefined): string {
   if (n == null || Number.isNaN(n)) return "Unlimited";
-  if (n === 0) return "$0.00 USD";
-  if (n < 0.01) return `$${n.toFixed(4)} USD`;
-  return `$${n.toFixed(2)} USD`;
+  return `${formatUsd(n)} USD`;
 }

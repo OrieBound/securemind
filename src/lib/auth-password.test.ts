@@ -59,3 +59,27 @@ describe("checkPasswordAgainstPolicy", () => {
     expect(passwordRuleMet("short", hosted, "length")).toBe(false);
   });
 });
+
+describe("generateDirectoryPassword", () => {
+  it("meets the hosted policy every time and avoids look-alike characters", async () => {
+    isHostedRuntime.mockReturnValue(true);
+    const { directoryPasswordPolicy, generateDirectoryPassword, checkPasswordAgainstPolicy } = await import("./auth-password");
+    const policy = directoryPasswordPolicy();
+    const seen = new Set<string>();
+    for (let i = 0; i < 200; i++) {
+      const pw = generateDirectoryPassword(policy);
+      expect(checkPasswordAgainstPolicy(pw, policy)).toEqual({ ok: true });
+      expect(pw).not.toMatch(/[01OIl]/);
+      seen.add(pw);
+    }
+    expect(seen.size).toBe(200);
+  });
+
+  it("meets the local policy and respects a longer length", async () => {
+    const { directoryPasswordPolicy, generateDirectoryPassword } = await import("./auth-password");
+    const policy = directoryPasswordPolicy();
+    expect(generateDirectoryPassword(policy).length).toBe(16);
+    expect(generateDirectoryPassword(policy, 24).length).toBe(24);
+    expect(generateDirectoryPassword(policy, 4).length).toBe(policy.minLength);
+  });
+});

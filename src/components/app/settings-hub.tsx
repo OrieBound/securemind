@@ -15,6 +15,7 @@ import {
   Users,
 } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { formatUsd } from "@/lib/cost-cap-shared";
 import { cn } from "@/lib/utils";
 import { AppearanceSettings } from "@/components/app/appearance-settings";
 import { InferenceSettings } from "@/components/app/inference-settings";
@@ -313,9 +314,7 @@ type SavingsStats = {
 };
 
 function fmtUsd(d: number): string {
-  if (d === 0) return "$0.00";
-  if (d < 0.0001) return "<$0.0001";
-  return `$${d.toFixed(4)}`;
+  return formatUsd(d);
 }
 
 function fmtUsdLabeledLocal(d: number | null | undefined): string {

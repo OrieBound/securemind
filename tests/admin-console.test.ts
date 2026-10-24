@@ -257,6 +257,7 @@ describe("POST /api/admin/users", () => {
     expect(sendWelcomeAddedEmail).toHaveBeenCalledWith({
       to: "new@example.com",
       role: "admin",
+      signInUrl: expect.stringMatching(/^https?:\/\//),
     });
     const body = await res.json();
     expect(body.welcomeEmail).toEqual({ sent: false, reason: "not_configured" });

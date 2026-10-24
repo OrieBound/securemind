@@ -189,6 +189,7 @@ import {
 } from "@/lib/client/api-base";
 import { PRODUCT_POSITIONING } from "@/lib/branding";
 import { PortalBrandMark } from "@/components/app/portal-brand-mark";
+import { formatUsd } from "@/lib/cost-cap-shared";
 import { cn } from "@/lib/utils";
 import { shortProcessingError } from "@/lib/documents/stale-processing";
 import type { RouteScoreCard } from "@/lib/models/route-scorecard";
@@ -987,9 +988,7 @@ function turnCostForHit(hit: RouteHit, baselineModel: string): { costUsd: number
 }
 
 function fmtUsd(d: number): string {
-  if (d === 0) return "$0.00";
-  if (d < 0.0001) return "<$0.0001";
-  return `$${d.toFixed(4)}`;
+  return formatUsd(d);
 }
 
 // ─── constants ────────────────────────────────────────────────────────────────
