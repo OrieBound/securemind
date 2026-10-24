@@ -538,6 +538,17 @@
   margin: 0.85em 0;
   font-size: 0.95em;
 }
+.chat-prose th,
+.chat-prose td {
+  padding: 0.4em 0.85em 0.4em 0;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.chat-prose th {
+  font-weight: var(--weight-semibold);
+  border-bottom-color: var(--border-strong);
+}
 .chat-prose blockquote {
   border-left: 2px solid var(--primary);
   padding-left: 0.95em;

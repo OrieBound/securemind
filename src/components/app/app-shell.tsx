@@ -1394,6 +1394,7 @@ const MessageBubble = memo(function MessageBubble({
   onStopThinking,
   canContinue = false,
   onContinue,
+  isStreamingReply = false,
 }: {
   showTimestamp?: boolean;
   message: ChatMessage;
@@ -1410,6 +1411,8 @@ const MessageBubble = memo(function MessageBubble({
   /** Offer to continue a reply that was cut off (only the latest assistant message). */
   canContinue?: boolean;
   onContinue?: () => void;
+  /** This reply is still arriving (file cards show "Preparing file…" until their block closes). */
+  isStreamingReply?: boolean;
 }) {
   const [hovered, setHovered] = useState(false);
   const isUser = message.role === "user";
@@ -1487,6 +1490,8 @@ const MessageBubble = memo(function MessageBubble({
               <ChatMarkdown
                 content={isUser ? displayContent : message.content}
                 onLinkClick={onChatLinkClick}
+                streaming={!isUser && isStreamingReply}
+                truncated={!isUser && Boolean(message.truncated)}
               />
             </div>
           )
@@ -1748,6 +1753,8 @@ function WorkspaceSectionHeader({
 /** Saved cards show a short plain-text excerpt, so drop the markdown markers it was written with. */
 function previewPlainText(text: string): string {
   return text
+    // A file the assistant wrote shows as its name rather than vanishing from the preview.
+    .replace(/```file:\s*"?([^"`\n]+?)"?[ \t]*\n[\s\S]*?(?:```|$)/g, " [file: $1] ")
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/(\*\*|__)(.+?)\1/g, "$2")
     .replace(/(^|[\s(])[*_]([^*_\n]+)[*_](?=[\s).,;:!?]|$)/g, "$1$2")
@@ -7468,6 +7475,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
                             (msg.truncated ?? endsInsideCodeFence(msg.content))
                           }
                           onContinue={() => { void handleSend(CONTINUE_PROMPT); }}
+                          isStreamingReply={isStreaming && msg.id === streamingMessageId}
                         />
                       </div>
                     );

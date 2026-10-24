@@ -30,6 +30,7 @@ It is a **single-user personal project**. Default auth is `AUTH_MODE=local`. Opt
 - Local embeddings use the nomic task prefixes: `embedDocumentText()` at ingest, `embedQueryVariants()` at search (raw and prefixed, best score per chunk, so chunks stored before prefixes still match). `npm run knowledge:reindex` re-embeds old chunks. Never call `embedText` directly for ingest.
 - The **workspace name** is the assistant speaker identity in chat (Companion-style). Product chrome stays SecureMind; default seed workspace is **Mindy Locke**.
 - `reasonCode` is telemetry only — never put it in assistant-visible text.
+- **File requests** ("export this as Excel", "give me a Word document") are detected by `detectFileRequest()` in `src/lib/turn-policy/file-request.ts`. They change only the reply's shape: `fileOutputInstructions()` is appended for that turn and the reply limit rises to `FILE_REPLY_TOKENS`. They never change retrieval, Sources or the tier. The model writes the file in one fenced block whose info string is `file:<name.ext>`; the browser builds it on Download (`src/lib/files/`): `.xlsx`/`.csv` from CSV (several sheets via `--- sheet: Name ---`), `.docx`/`.md` from Markdown, other allowlisted types as text. Nothing is stored server-side. File names are cleaned and allowlisted (anything that runs on open is saved as `.txt`), spreadsheet cells that look like formulas are written as text, and files over 2 MB are refused.
 
 ### Prompt layers
 - `buildConversationalBase()` applies every turn (natural, concise, no forced ops pitch).
@@ -186,6 +187,8 @@ src/
       ollama.ts               ← Ollama streaming provider
       groq.ts                 ← Groq streaming provider + tier classifier
       bedrock.ts              ← optional Bedrock ConverseStream adapter
+    files/                    ← browser-built downloads: file-spec (names, allowlist), csv (injection guard), build-xlsx, build-docx
+    turn-policy/file-request.ts ← detects "give me this as a file" and adds the file: block instructions
   components/
     app/
       app-shell.tsx           ← main UI: sidebar, chat, intel panel, composer
@@ -196,6 +199,7 @@ src/
       profile-settings.tsx    ← My Profile panel (presets, prefs, Cognito password)
       admin-console.tsx       ← Admin directory; soft-delete / suspend / password reset
       appearance-settings.tsx ← dark/light theme selector
+      file-card.tsx           ← file card in chat replies, table CSV/Excel and code-block Download buttons
       theme-provider.tsx      ← client theme context (pairs with src/lib/theme.ts)
 tests/
   authz.test.ts               ← cross-tenant authorization tests

@@ -13,6 +13,10 @@ import {
 } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { CodeDownloadButton, FileCard, TableDownloads, type FileCardState } from "@/components/app/file-card";
+import { endsInsideCodeFence } from "@/lib/chat/truncation";
+import { parseFileInfo } from "@/lib/files/file-spec";
+import { codeInfoFromHast, tableRowsFromHast } from "@/lib/files/hast-table";
 
 /** Plain text of a React node tree (what the user would copy from a code block). */
 function textOf(node: ReactNode): string {
@@ -69,6 +73,8 @@ function CodeBlock({ children }: { children?: ReactNode }) {
     <div className="code-block">
       <div className="code-block-bar">
         <span className="code-block-lang">{language || "code"}</span>
+        <span className="flex items-center gap-1">
+        <CodeDownloadButton language={language} code={code} />
         <button
           type="button"
           onClick={() => void onCopy()}
@@ -78,6 +84,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
           {copied ? <Check className="size-3.5" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}
           <span aria-live="polite">{copied ? "Copied" : "Copy"}</span>
         </button>
+        </span>
       </div>
       <pre>{children}</pre>
     </div>
@@ -133,38 +140,69 @@ const MarkdownBlock = memo(function MarkdownBlock({
   );
 });
 
-/** Chat message markdown with code blocks (language label + copy) and cheap streaming updates. */
+function buildComponents(
+  onLinkClick: ((href: string | undefined) => void) | undefined,
+  fileState: FileCardState,
+): Components {
+  return {
+    a: ({ href, children }) => {
+      const internal = Boolean(href?.startsWith("/") && !href.startsWith("//"));
+      return (
+        <a
+          href={href}
+          onClick={() => onLinkClick?.(href)}
+          {...(!internal ? { target: "_blank", rel: "noreferrer noopener" } : {})}
+        >
+          {children}
+        </a>
+      );
+    },
+    pre: ({ node, children }) => {
+      // A fenced block with the info string file:<name> is a file the assistant wrote for download.
+      const spec = parseFileInfo(codeInfoFromHast(node));
+      if (spec) return <FileCard spec={spec} body={textOf(children).replace(/\n$/, "")} state={fileState} />;
+      return <CodeBlock>{children}</CodeBlock>;
+    },
+    table: ({ node, children }) => (
+      <>
+        <TableDownloads rows={tableRowsFromHast(node)} />
+        <table>{children}</table>
+      </>
+    ),
+  };
+}
+
+/**
+ * Chat message markdown: code blocks (language label, Copy, Download), tables with CSV and Excel
+ * buttons, file cards for `file:` blocks, and cheap streaming updates.
+ */
 export function ChatMarkdown({
   content,
   onLinkClick,
+  streaming = false,
+  truncated = false,
 }: {
   content: string;
   /** Called with the href of any link the reader clicks (used for the Bedrock highlight link). */
   onLinkClick?: (href: string | undefined) => void;
+  /** The reply is still arriving: a file block that is still open shows "Preparing file…". */
+  streaming?: boolean;
+  /** The reply hit its length limit: a file block left open is marked incomplete. */
+  truncated?: boolean;
 }) {
-  const components = useMemo<Components>(
-    () => ({
-      a: ({ href, children }) => {
-        const internal = Boolean(href?.startsWith("/") && !href.startsWith("//"));
-        return (
-          <a
-            href={href}
-            onClick={() => onLinkClick?.(href)}
-            {...(!internal ? { target: "_blank", rel: "noreferrer noopener" } : {})}
-          >
-            {children}
-          </a>
-        );
-      },
-      pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
-    }),
-    [onLinkClick],
-  );
+  const components = useMemo(() => buildComponents(onLinkClick, "ready"), [onLinkClick]);
+  const openFence = useMemo(() => endsInsideCodeFence(content), [content]);
+  const lastState: FileCardState = openFence ? (streaming ? "preparing" : truncated ? "incomplete" : "ready") : "ready";
+  const lastComponents = useMemo(() => buildComponents(onLinkClick, lastState), [onLinkClick, lastState]);
   const blocks = useMemo(() => splitMarkdownBlocks(content), [content]);
   return (
     <>
       {blocks.map((block, i) => (
-        <MarkdownBlock key={i} text={block} components={components} />
+        <MarkdownBlock
+          key={i}
+          text={block}
+          components={i === blocks.length - 1 ? lastComponents : components}
+        />
       ))}
     </>
   );
