@@ -50,6 +50,39 @@ describe("hosted analytics on Dynamo", () => {
     expect(spend.get("user-b")).toBe(0);
   });
 
+  it("counts voice toward spend and the cap, but not as a chat reply", async () => {
+    await recordInferenceEvent({
+      userId: "user-a",
+      provider: "groq",
+      model: "openai/gpt-oss-120b",
+      tier: "Standard",
+      promptTokens: 1000,
+      completionTokens: 500,
+      status: "ok",
+    });
+    await recordInferenceEvent({
+      userId: "user-a",
+      provider: "transcribe",
+      model: "amazon-transcribe-live",
+      tier: "Voice",
+      status: "ok",
+      extraCostUsd: 0.024,
+    });
+
+    const usage = await getUsageSummary({ userId: "user-a", range: "all" });
+    expect(usage.kpis.totalRequests).toBe(1);
+    expect(usage.byTier.map(t => t.tier)).toEqual(["Standard"]);
+    expect(usage.byModel.map(m => m.model)).not.toContain("amazon-transcribe-live");
+
+    const cost = await getCostSummary({ userId: "user-a", range: "all" });
+    expect(cost.kpis.pricedRequests).toBe(1);
+    expect(cost.kpis.estimatedCostUsd).toBeGreaterThan(0.024);
+    expect(cost.byModel.map(m => m.model)).toContain("amazon-transcribe-live");
+
+    const spend = await getUsersMonthSpendUsd(["user-a"]);
+    expect(spend.get("user-a")).toBeGreaterThan(0.024);
+  });
+
   it("records security events without raw values and does not leak across users", async () => {
     const n = await recordSecurityEvents([
       {

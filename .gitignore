@@ -133,3 +133,6 @@ skills-lock.json
 
 # Private, local-only security report
 docs/security-audit/05-final-release-assessment.md
+
+# Walkthrough video notes and recordings (local only)
+walkthrough/
