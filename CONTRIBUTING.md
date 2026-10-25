@@ -26,4 +26,4 @@ Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT
 
 ## Contact
 
-Use the [Contact page](https://securemind.chat/contact/) or [LinkedIn](https://www.linkedin.com/in/orie-hulan).
+Email [hello@securemind.chat](mailto:hello@securemind.chat), or use the [Contact page](https://securemind.chat/contact/) or [LinkedIn](https://www.linkedin.com/in/orie-hulan).

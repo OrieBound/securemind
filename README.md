@@ -141,8 +141,8 @@ npm run dev
 SecureMind is a personal project shared as is, with no support agreement. If you want to reach the author:
 
 - Questions and ideas: open a [discussion](https://github.com/OrieBound/securemind/discussions) or an [issue](https://github.com/OrieBound/securemind/issues).
-- Anything else: use the [Contact page](https://securemind.chat/contact/) or message the author on [LinkedIn](https://www.linkedin.com/in/orie-hulan).
-- Security reports: follow [SECURITY.md](SECURITY.md). Please do not put details in a public issue or a LinkedIn message.
+- Anything else: email [hello@securemind.chat](mailto:hello@securemind.chat), use the [Contact page](https://securemind.chat/contact/), or message the author on [LinkedIn](https://www.linkedin.com/in/orie-hulan).
+- Security reports: follow [SECURITY.md](SECURITY.md). Please do not put details in a public issue or a public message.
 
 ## License
 

@@ -7,7 +7,7 @@ SecureMind is a personal project shared as is. It reduces the risk of sending se
 Please report a vulnerability privately, so it can be fixed before it is public:
 
 1. Use **Security → Report a vulnerability** on this repository's GitHub page.
-2. If that is not available, use the [Contact page](https://securemind.chat/contact/), or message the author on [LinkedIn](https://www.linkedin.com/in/orie-hulan), and say you have a security report. Please do not put details in a public issue or a public post.
+2. If that is not available, email [hello@securemind.chat](mailto:hello@securemind.chat?subject=Security%20report) and say you have a security report. You can also use the [Contact page](https://securemind.chat/contact/). Please do not put details in a public issue or a public post.
 
 Include what you found, the steps to reproduce it and the version or commit. The author reads reports and will try to answer, but there is no promised response time or support agreement.
 
