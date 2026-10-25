@@ -73,6 +73,9 @@ export function formatGroqConnectivityError(err: unknown): string {
   const msg = errorText(err);
   if (looksLikeEdgeBlock(msg)) return CHAT_BLOCKED_HINT;
   const kind = classifyGroqError(err);
+  if (/rate_limit_exceeded|\b429\b/.test(msg)) {
+    return "Groq is rate limiting this key (its plan caps tokens per minute for this model). Wait a moment and try again, or pick another model under Settings → Models.";
+  }
   if (kind === "network") return VPN_HINT;
   if (kind === "auth") return BAD_KEY_HINT;
   if (kind === "model") {

@@ -43,6 +43,33 @@ async function getClient(): Promise<Groq> {
 
 export type GroqUsage = { promptTokens: number; completionTokens: number };
 
+/**
+ * Free (on_demand) Groq plans cap output tokens per minute per model, and Groq
+ * rejects a request whose max_tokens alone exceeds that cap. Learned from the
+ * 429 so later turns on the same model ask for a reply that fits.
+ */
+const MIN_REPLY_TOKENS = 256;
+const learnedOutputCaps = new Map<string, number>();
+
+/** Pull the enforced output-token limit out of a Groq OTPM 429, or null for any other error. */
+export function parseGroqOutputLimit(err: unknown): number | null {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (!/rate_limit_exceeded|\b429\b/.test(msg)) return null;
+  if (!/output tokens per minute|\(OTPM\)/i.test(msg)) return null;
+  const m = /Limit\s+(\d+)/i.exec(msg);
+  const limit = m ? Number(m[1]) : NaN;
+  return Number.isFinite(limit) && limit > 0 ? limit : null;
+}
+
+/** Leave headroom under the cap: the limit also counts other requests in the same minute. */
+export function fitReplyToLimit(limit: number): number {
+  return Math.max(MIN_REPLY_TOKENS, Math.floor(limit * 0.8));
+}
+
+export function forgetLearnedGroqCaps(): void {
+  learnedOutputCaps.clear();
+}
+
 export async function* streamGroqChat(
   messages: ChatMessage[],
   model: string,
@@ -64,15 +91,29 @@ export async function* streamGroqChat(
   };
 
   // stream_options supported by Groq API; groq-sdk types may lag behind
-  const stream = await client.chat.completions.create({
+  const open = (max: number) => client.chat.completions.create({
     model,
     messages: formattedMessages,
     stream: true,
     stream_options: { include_usage: true },
     temperature: 0.8,
-    max_tokens: maxTokens,
+    max_tokens: max,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any, { signal }) as unknown as AsyncIterable<GroqStreamChunk>;
+  } as any, { signal }) as unknown as Promise<AsyncIterable<GroqStreamChunk>>;
+
+  const learned = learnedOutputCaps.get(model);
+  let stream: AsyncIterable<GroqStreamChunk>;
+  try {
+    stream = await open(learned ? Math.min(maxTokens, learned) : maxTokens);
+  } catch (err) {
+    // One retry with a reply that fits the plan's output cap instead of failing the turn.
+    const limit = parseGroqOutputLimit(err);
+    if (limit === null) throw err;
+    const fitted = fitReplyToLimit(limit);
+    if (fitted >= maxTokens) throw err;
+    learnedOutputCaps.set(model, fitted);
+    stream = await open(fitted);
+  }
 
   // Think-token filter: some reasoning models (Qwen3, DeepSeek R1) output
   // <think>...</think> blocks before their answer. Strip them so only the
