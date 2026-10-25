@@ -53,3 +53,36 @@ export function encodePcm16Wav(pcm: Buffer, sampleRate = SAMPLE_RATE): Buffer {
   header.writeUInt32LE(pcm.length, 40);
   return Buffer.concat([header, pcm]);
 }
+
+/** Amazon Transcribe rejects a single audio frame that is too large ("Your stream is too big"). */
+export const TRANSCRIBE_FRAME_BYTES = 8 * 1024;
+
+/**
+ * Re-cut a stream of 16-bit PCM into frames of at most `maxBytes`, never splitting a sample.
+ * The hosted server can receive the whole recording as one large chunk, so frames cannot be assumed
+ * to arrive small. Empty chunks are skipped, and an odd trailing byte waits for the next chunk.
+ */
+export async function* splitPcmFrames(
+  chunks: AsyncIterable<Uint8Array>,
+  maxBytes = TRANSCRIBE_FRAME_BYTES,
+): AsyncGenerator<Uint8Array> {
+  const frame = maxBytes - (maxBytes % 2);
+  let carry: Uint8Array | null = null;
+  for await (const incoming of chunks) {
+    if (incoming.byteLength === 0) continue;
+    let data = incoming;
+    if (carry) {
+      const joined = new Uint8Array(carry.byteLength + incoming.byteLength);
+      joined.set(carry, 0);
+      joined.set(incoming, carry.byteLength);
+      data = joined;
+      carry = null;
+    }
+    const usable = data.byteLength - (data.byteLength % 2);
+    for (let i = 0; i < usable; i += frame) {
+      yield data.subarray(i, Math.min(i + frame, usable));
+    }
+    if (usable < data.byteLength) carry = data.subarray(usable);
+  }
+  if (carry && carry.byteLength > 0) yield carry;
+}

@@ -5,7 +5,7 @@
 
 import { withRealAwsEndpoints } from "@/lib/aws-credentials";
 import { getInstanceAwsStatus, resolveRuntimeSecrets } from "@/lib/instance-config";
-import { pcmFromWav, wavSampleRate } from "./pcm-wav";
+import { pcmFromWav, splitPcmFrames, wavSampleRate } from "./pcm-wav";
 
 export type AmazonTranscriptEvent = {
   kind: "partial" | "final";
@@ -50,8 +50,8 @@ export async function* transcribePcmStream(
 ): AsyncGenerator<AmazonTranscriptEvent> {
   const { StartStreamTranscriptionCommand } = await import("@aws-sdk/client-transcribe-streaming");
   const audioStream = (async function* () {
-    for await (const chunk of pcmChunks) {
-      if (chunk.byteLength === 0) continue;
+    // Small frames only: Transcribe refuses a large one, and the server can receive the audio in one piece.
+    for await (const chunk of splitPcmFrames(pcmChunks)) {
       yield { AudioEvent: { AudioChunk: chunk } };
     }
   })();
