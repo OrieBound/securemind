@@ -64,14 +64,28 @@ describe("the deploy role is trusted by one repository and one environment", () 
 describe("what the deploy role can do is narrow", () => {
   const deploy = statements(document("gha_deploy"));
 
-  it("allows a resource of * only for reads and for user pools", () => {
+  it("allows a resource of * only for reads and for creating a tagged user pool", () => {
     const wildcard = [...deploy].filter(([, body]) => /resources\s*=\s*\["\*"\]/.test(body) && !/effect\s*=\s*"Deny"/.test(body));
-    expect(wildcard.map(([sid]) => sid).sort()).toEqual(["ReadForPlan", "UserPools"]);
+    expect(wildcard.map(([sid]) => sid).sort()).toEqual(["CreateTaggedUserPools", "ReadForPlan"]);
+  });
+
+  it("reaches user pools only when they are tagged Project = SecureMind", () => {
+    // In an account shared with other projects, this keeps the role away from their pools.
+    const create = deploy.get("CreateTaggedUserPools")!;
+    expect(create).toMatch(/actions\s*=\s*\["cognito-idp:CreateUserPool"\]/);
+    expect(create).toMatch(/variable\s*=\s*"aws:RequestTag\/Project"[\s\S]*?"SecureMind"/);
+    const pools = deploy.get("UserPools")!;
+    expect(pools).toMatch(/variable\s*=\s*"aws:ResourceTag\/Project"[\s\S]*?"SecureMind"/);
+    expect(pools).not.toMatch(/resources\s*=\s*\["\*"\]/);
+    // Reading the list of pools is the only user-pool action allowed everywhere.
+    const reads = deploy.get("ReadForPlan")!;
+    expect(reads).toMatch(/cognito-idp:ListUserPools/);
+    expect(reads).not.toMatch(/cognito-idp:(Describe|Get|List)\*/);
   });
 
   it("never grants a whole service on every resource", () => {
     for (const [sid, body] of deploy) {
-      if (sid === "UserPools" || sid === "ReadForPlan") continue;
+      if (sid === "CreateTaggedUserPools" || sid === "ReadForPlan") continue;
       if (/effect\s*=\s*"Deny"/.test(body)) continue;
       expect(body, sid).not.toMatch(/resources\s*=\s*\["\*"\]/);
     }
