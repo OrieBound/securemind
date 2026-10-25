@@ -646,8 +646,8 @@ export const INTEL_HEIGHT = {
   paired: 360,
   tall: 320,
   /**
-   * Models routing + inline picker. With a provider filter and a search box the list runs to
-   * about 720px, so this is tall enough to show it without scrolling.
+   * Models routing + inline picker. The tier list is short; the open picker (search, provider
+   * buttons and a scrolling list) needs the height, so this stays tall.
    */
   routing: 760,
   /** Cost total: workspace + range chips + metric + CTA — no inner scroll. */

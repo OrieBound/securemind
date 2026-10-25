@@ -5797,7 +5797,7 @@ _Preparing the file…_`);
         <div className="flex-1 min-h-0 flex flex-col">
           <TabsContent value="context" className="mt-0 flex-1 min-h-0 data-[state=inactive]:hidden flex flex-col">
             <IntelPanelStack
-              storageKey="sm_intel_panels_usage_v7"
+              storageKey="sm_intel_panels_usage_v8"
               defaultOrder={["model", "last-response"]}
               panels={[
                 {

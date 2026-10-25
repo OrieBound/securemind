@@ -671,6 +671,12 @@ export async function* iterateChatSseFrames(
           clean = `${raw}\n\n${d.remediation}`;
         }
       }
+      if (actualProvider !== "bedrock") {
+        // A retired or unavailable model is taken off the active lists, so the next turn does not pick it again.
+        const { retireModelAfterChatFailure } = await import("@/lib/models/retire-failed-model");
+        const note = await retireModelAfterChatFailure({ err, provider: actualProvider, model: actualModel, userId: ctx.userId });
+        if (note) clean = `${clean}\n\n${note}`;
+      }
       yield sseDataFrame({ error: clean });
     }
   } finally {
