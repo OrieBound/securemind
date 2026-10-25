@@ -11,7 +11,6 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Check, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  ModelChoiceFilters,
   ModelPickerList,
   ProviderBadge,
   isAssignablePickerModel,
@@ -134,17 +133,6 @@ export function ComplexityTiersEditor({
     return () => window.removeEventListener("keydown", onKey);
   }, [openPicker, fixedPickerOpen, isPage]);
 
-  const choiceFilters = !isPage && pickerModels.length > 0 && !picking && !(modelSelectionMode === "fixed" && fixedPickerOpen) ? (
-    <div className="mb-2">
-      <ModelChoiceFilters
-        models={pickerModels}
-        query={modelQuery}
-        onQueryChange={setModelQuery}
-        providerFilter={providerFilter}
-        onProviderFilterChange={setProviderFilter}
-      />
-    </div>
-  ) : null;
 
   function assign(tier: string, id: string) {
     if (!isChatUsableModelId(id)) return;
@@ -279,11 +267,6 @@ export function ComplexityTiersEditor({
       )}
 
       {modelSelectionMode === "auto" && !picking && beforeList}
-      {modelSelectionMode === "auto" && choiceFilters}
-
-      {modelSelectionMode === "fixed" && (
-        choiceFilters
-      )}
 
       {modelSelectionMode === "fixed" && (
         <div className={cn("space-y-2 mb-1", isPage && "space-y-3")}>
