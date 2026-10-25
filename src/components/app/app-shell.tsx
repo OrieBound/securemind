@@ -63,6 +63,7 @@ const OPEN_SETTINGS_KEY = "sm_open_settings";
 import { ComposerInput, type ComposerInputHandle, type ComposerVoiceInsert } from "@/components/app/composer-input";
 import { VoiceSttSetupDialog } from "@/components/app/voice-stt-setup";
 import { recordingToWav } from "@/lib/transcribe/browser-wav";
+import { startDirectLiveStt } from "@/lib/transcribe/direct-client";
 import {
   startCloudLiveStt,
   supportsLivePcmUpload,
@@ -3845,7 +3846,8 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
 
     if (captionMode === "pcm-stream" && audioCtxRef.current) {
       setPreviewPending(true);
-      cloudLiveRef.current = startCloudLiveStt({
+      const startLive = sttNow?.capabilities.voiceStt?.directLive ? startDirectLiveStt : startCloudLiveStt;
+      cloudLiveRef.current = startLive({
         ctx: audioCtxRef.current,
         stream,
         onCaption: (stable, interim) => {
@@ -3939,24 +3941,14 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
           setVoiceError("Nothing was transcribed. Speak a bit longer, then tap Done.");
         }
         setVoiceStateSynced("idle");
+        return;
       } catch (err) {
         live.abort();
-        mediaStreamRef.current?.getTracks().forEach(t => t.stop());
-        mediaStreamRef.current = null;
-        audioCtxRef.current?.close().catch(() => {});
-        audioCtxRef.current = null;
         if (transcribeCancelledRef.current) return;
         console.error("[voice] live transcription error:", err);
-        if (previewFallback) {
-          setVoiceComposerInsert({ text: previewFallback, ...snap });
-          setVoiceError(null);
-        } else {
-          restoreComposerDraft();
-          setVoiceError(err instanceof Error ? err.message : "Transcription failed");
-        }
-        setVoiceStateSynced("idle");
+        // Live captions failed (network, expired address, provider error). The recording is still
+        // here, so fall through to the whole-recording pass below instead of losing it.
       }
-      return;
     }
 
     mediaStreamRef.current?.getTracks().forEach(t => t.stop());

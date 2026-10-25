@@ -3,7 +3,7 @@
  * Chromium `fetch` duplex only — Safari falls back to record-then-Done.
  */
 
-const TARGET_RATE = 16_000;
+export const TARGET_RATE = 16_000;
 
 export type LiveCaption = { kind: "partial" | "final" | "error"; text: string };
 
@@ -21,7 +21,7 @@ export function supportsLivePcmUpload(): boolean {
   }
 }
 
-function downsample(input: Float32Array, fromRate: number, toRate: number): Float32Array {
+export function downsample(input: Float32Array, fromRate: number, toRate: number): Float32Array {
   if (fromRate === toRate) return input;
   const ratio = fromRate / toRate;
   const length = Math.max(1, Math.round(input.length / ratio));
@@ -37,7 +37,7 @@ function downsample(input: Float32Array, fromRate: number, toRate: number): Floa
   return out;
 }
 
-function floatToInt16(input: Float32Array): Uint8Array {
+export function floatToInt16(input: Float32Array): Uint8Array {
   const out = new Uint8Array(input.length * 2);
   const view = new DataView(out.buffer);
   for (let i = 0; i < input.length; i++) {
