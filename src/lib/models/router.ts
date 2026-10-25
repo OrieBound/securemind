@@ -102,16 +102,6 @@ export function routeModel(task: ModelTask, tier?: string): ModelConfig {
   return TASK_ROUTES[task];
 }
 
-/** Returns the model name that will be used for chat at a given complexity tier. */
-export function chatModelForMode(tier: string): string {
-  return COMPLEXITY_TIERS[normalizeStoredTier(tier)]?.model ?? (process.env.OLLAMA_CHAT_MODEL ?? "llama3.2");
-}
-
-/** Returns whether the given tier routes to Groq. */
-export function isGroqMode(tier: string): boolean {
-  return COMPLEXITY_TIERS[normalizeStoredTier(tier)]?.provider === "groq";
-}
-
 /**
  * Returns a cost tier for a given provider + model.
  * Used in the UI to show cost efficiency at a glance.
@@ -194,11 +184,6 @@ export function buildOperationalRules(): string {
     `- For destructive or irreversible actions, state the blast radius before the steps.\n` +
     `- If a workspace-specific detail is not in the passages, answer what you can. Do not invent that detail, and do not announce that a search missed.`
   );
-}
-
-/** @deprecated Prefer buildConversationalBase + buildOperationalRules. */
-export function buildBaseRules(): string {
-  return buildConversationalBase() + buildOperationalRules();
 }
 
 /**

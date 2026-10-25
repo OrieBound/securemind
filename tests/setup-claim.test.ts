@@ -5,6 +5,8 @@
 import { resetRateLimits } from "@/lib/rate-limit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 const cognitoAdminAvailable = vi.fn();
 const cognitoDirectoryIsEmpty = vi.fn();
@@ -241,14 +243,9 @@ describe("POST /api/setup/claim", () => {
   });
 });
 
-describe("POST /api/auth/signup", () => {
-  it("is disabled in favor of first-run claim", async () => {
-    const { POST } = await import("@/app/api/auth/signup/route");
-    const res = await POST(jsonReq("http://localhost/api/auth/signup", {
-      email: "anyone@example.com",
-      password: "whatever1",
-    }));
-    expect(res.status).toBe(403);
+describe("self sign-up", () => {
+  it("has no route: accounts come from the first-run claim or an Admin invite", () => {
+    expect(existsSync(join(process.cwd(), "src/app/api/auth/signup"))).toBe(false);
   });
 });
 

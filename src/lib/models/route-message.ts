@@ -298,12 +298,6 @@ export function scoreMessage(message: string): {
   return { signals, rawScore, score: capped, caps };
 }
 
-/** Back-compat for eval scripts: the score and the ids of the signals that fired. */
-export function scoreMessageComplexity(message: string): { score: number; reasons: string[] } {
-  const r = scoreMessage(message);
-  return { score: r.score, reasons: ["baseline", ...r.signals.map(s => s.id)] };
-}
-
 /**
  * Carry-over: a short follow-up inherits the previous tier minus one level, so a thread
  * does not stay on an expensive tier forever. Only Plus and Max carry, and the carried

@@ -289,17 +289,6 @@ export function ProviderBadge({
   );
 }
 
-/** Where a model runs, in one sentence — used under grouped lists. */
-export function providerOrigin(provider: ModelProviderId): string {
-  if (provider === "groq") return "Runs on Groq using the saved API key.";
-  if (provider === "bedrock") return "Runs on AWS Bedrock using the selected profile's credentials.";
-  if (provider === "openai") return "Runs on OpenAI using the saved API key.";
-  if (provider === "anthropic") return "Runs on Anthropic using the saved API key.";
-  if (provider === "google") return "Runs on Gemini using the saved API key.";
-  if (provider === "xai") return "Runs on xAI Grok using the saved API key.";
-  return "Ollama (local) — runs on this machine only. Nothing leaves the host.";
-}
-
 /** Display name that always includes the vendor, e.g. "Llama 3.3 70B · Groq". */
 export function modelDisplayName(model: Pick<CatalogModel, "name" | "provider">): string {
   return `${model.name} · ${providerLabel(model.provider)}`;

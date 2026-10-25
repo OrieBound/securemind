@@ -138,10 +138,6 @@ export async function readAvatarMeta(userId: string): Promise<AvatarMeta | null>
   return diskReadMeta(userId);
 }
 
-export async function avatarExists(userId: string): Promise<boolean> {
-  return (await readAvatarMeta(userId)) !== null;
-}
-
 export async function readAvatar(userId: string): Promise<{ bytes: Buffer; meta: AvatarMeta } | null> {
   const bucket = avatarS3Bucket();
   if (bucket) return s3ReadAvatar(bucket, avatarObjectKey(userId));

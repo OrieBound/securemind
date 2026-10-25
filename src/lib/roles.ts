@@ -17,12 +17,6 @@ export function requireAdmin(identity: Identity): void {
   }
 }
 
-export function requireSuperAdmin(identity: Identity): void {
-  if (identity.role !== "super_admin") {
-    throw new IdentityError("Super Admin access required.", 403);
-  }
-}
-
 export function roleLabel(role: AppRole): string {
   if (role === "super_admin") return "Super Admin";
   if (role === "admin") return "Admin";

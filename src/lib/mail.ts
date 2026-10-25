@@ -38,7 +38,6 @@ function requestOrigin(req: Request): string | null {
 export function appPublicUrl(req?: Request): string {
   const raw =
     process.env.APP_PUBLIC_URL?.trim() ||
-    process.env.NEXTAUTH_URL?.trim() ||
     (req ? requestOrigin(req) : null) ||
     "http://localhost:3000";
   return raw.replace(/\/$/, "");

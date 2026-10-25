@@ -49,7 +49,3 @@ export async function resolveVendorApiKey(kind: WiredVendorKind): Promise<string
   }
   return null;
 }
-
-export async function hasVendorRuntime(kind: WiredVendorKind): Promise<boolean> {
-  return Boolean(await resolveVendorApiKey(kind));
-}

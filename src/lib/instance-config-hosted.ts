@@ -8,7 +8,6 @@ import type { AttributeValue } from "@aws-sdk/client-dynamodb";
 import { ATTR } from "@/lib/storage/dynamodb-schema";
 import {
   createDynamoDriver,
-  createMemoryDriver,
   type HostedDriver,
 } from "@/lib/workspaces/hosted-dynamo";
 import type { InstanceConfigRow } from "@/lib/instance-config";
@@ -245,11 +244,5 @@ let singleton: HostedInstanceConfigStore | null = null;
 
 export function hostedInstanceConfig(): HostedInstanceConfigStore {
   singleton ??= createHostedInstanceConfigStore(createDynamoDriver());
-  return singleton;
-}
-
-/** Tests only. */
-export function resetHostedInstanceConfigForTests(driver?: HostedDriver): HostedInstanceConfigStore {
-  singleton = createHostedInstanceConfigStore(driver ?? createMemoryDriver());
   return singleton;
 }

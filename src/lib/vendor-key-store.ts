@@ -1,17 +1,11 @@
 /**
  * Admin-pasted vendor API keys on hosted installs.
- * Parameter Store (SecureString) holds the values, or Secrets Manager on an install that has
- * not moved yet; InstanceConfig / Dynamo does not.
+ * Parameter Store (SecureString) holds the values; InstanceConfig / Dynamo does not.
  *
  * Local / on-prem still uses encrypted InstanceConfig (secret-at-rest).
  * AWS access keys are never stored here.
  */
 
-import {
-  GetSecretValueCommand,
-  PutSecretValueCommand,
-  SecretsManagerClient,
-} from "@aws-sdk/client-secrets-manager";
 import { GetParameterCommand, PutParameterCommand, SSMClient } from "@aws-sdk/client-ssm";
 import { secretRef, type SecretRef } from "@/lib/aws-secrets";
 import { withRealAwsEndpoints } from "@/lib/aws-credentials";
@@ -66,17 +60,12 @@ export function vendorKeyCacheIsLive(
   return now - savedAt < ttlMs;
 }
 
-/** Where the keys are stored: VENDOR_KEYS_PARAM, else the older VENDOR_KEYS_SECRET_ARN. */
+/** Where the keys are stored: the VENDOR_KEYS_PARAM parameter. */
 export function vendorKeysRef(): SecretRef | null {
-  return secretRef("VENDOR_KEYS_PARAM", "VENDOR_KEYS_SECRET_ARN");
+  return secretRef("VENDOR_KEYS_PARAM");
 }
 
-/** The stored identifier, kept for callers that only need to know whether one is set. */
-export function vendorKeysSecretId(): string | null {
-  return vendorKeysRef()?.id ?? null;
-}
-
-/** Tests only — in-memory stand-in for Secrets Manager. */
+/** Tests only — in-memory stand-in for Parameter Store. */
 export function resetVendorKeyStoreForTests(bundle?: VendorKeyBundle | null): void {
   cache = null;
   cacheAt = 0;
@@ -93,28 +82,16 @@ function region(): string {
 }
 
 async function readStored(ref: SecretRef): Promise<string | null> {
-  if (ref.kind === "ssm") {
-    const out = await new SSMClient({ region: region() }).send(
-      new GetParameterCommand({ Name: ref.id, WithDecryption: true }),
-    );
-    return out.Parameter?.Value ?? null;
-  }
-  const out = await new SecretsManagerClient({ region: region() }).send(
-    new GetSecretValueCommand({ SecretId: ref.id }),
+  const out = await new SSMClient({ region: region() }).send(
+    new GetParameterCommand({ Name: ref.id, WithDecryption: true }),
   );
-  return out.SecretString ?? null;
+  return out.Parameter?.Value ?? null;
 }
 
 async function writeStored(ref: SecretRef, value: string): Promise<void> {
-  if (ref.kind === "ssm") {
-    // Advanced tier so a long list of keys fits (8 KB, not 4 KB). Overwrite keeps one parameter.
-    await new SSMClient({ region: region() }).send(
-      new PutParameterCommand({ Name: ref.id, Value: value, Type: "SecureString", Overwrite: true, Tier: "Advanced" }),
-    );
-    return;
-  }
-  await new SecretsManagerClient({ region: region() }).send(
-    new PutSecretValueCommand({ SecretId: ref.id, SecretString: value }),
+  // Advanced tier so a long list of keys fits (8 KB, not 4 KB). Overwrite keeps one parameter.
+  await new SSMClient({ region: region() }).send(
+    new PutParameterCommand({ Name: ref.id, Value: value, Type: "SecureString", Overwrite: true, Tier: "Advanced" }),
   );
 }
 
