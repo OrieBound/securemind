@@ -181,7 +181,7 @@ import { AppTour, tourStorageKey } from "@/components/app/app-tour";
 import { hideTourButton, registerVisit } from "@/lib/client/tour-button";
 import { MfaReminderBanner, MfaStatusPill, useMfaStatus } from "@/components/app/mfa-status";
 import { resolveFileRequest } from "@/lib/turn-policy/file-request";
-import EmojiPicker, { Theme, type EmojiClickData } from "emoji-picker-react";
+import EmojiPicker, { EmojiStyle, Theme, type EmojiClickData } from "emoji-picker-react";
 import {
   apiAuthHeaders,
   apiUrl,
@@ -7734,6 +7734,7 @@ _Preparing the file…_`);
                 {showEmoji && (
                   <div ref={emojiPickerRef} className="absolute bottom-24 left-1/2 -translate-x-1/2 z-50 shadow-2xl rounded-2xl overflow-hidden">
                     <EmojiPicker
+                      emojiStyle={EmojiStyle.NATIVE}
                       theme={appearanceTheme === "dark" ? Theme.DARK : Theme.LIGHT}
                       onEmojiClick={onEmojiClick}
                       lazyLoadEmojis

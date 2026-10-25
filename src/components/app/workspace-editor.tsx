@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import EmojiPicker, { Theme, type EmojiClickData } from "emoji-picker-react";
+import EmojiPicker, { EmojiStyle, Theme, type EmojiClickData } from "emoji-picker-react";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/components/app/theme-provider";
 import { normalizeWorkspaceColor } from "@/lib/workspaces/color";
@@ -182,6 +182,7 @@ export function WorkspaceEditor({ workspace, onSave, onDelete }: Props) {
                 className="absolute left-0 top-11 z-50 shadow-2xl rounded-2xl overflow-hidden border border-foreground/10"
               >
                 <EmojiPicker
+                  emojiStyle={EmojiStyle.NATIVE}
                   theme={theme === "dark" ? Theme.DARK : Theme.LIGHT}
                   onEmojiClick={(data: EmojiClickData) => pickIcon(data.emoji)}
                   width={320}
