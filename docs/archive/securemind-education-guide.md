@@ -1,5 +1,8 @@
 # SecureMind Education Guide
 
+> **Historical, not current.** Written in August 2026 and kept for reference. It describes an older design (seven tiers, Neon, Secrets Manager). For how SecureMind works today, read docs/feature-guide.md and docs/technical-source-brief.md.
+
+
 This guide explains SecureMind as it exists in this repository today. It is written as a learning document, not as marketing copy.
 
 SecureMind is a single-user, privacy-aware AI workspace. Its core value is not a generic chatbot. The real product is the combination of:
@@ -32,7 +35,7 @@ It is intentionally not described as:
 - enterprise-compliant hosted security product
 - a personality-driven companion app
 
-The repo rules in [AGENTS.md](../AGENTS.md) are strict because the project is built around trust boundaries.
+The repo rules in [AGENTS.md](../../AGENTS.md) are strict because the project is built around trust boundaries.
 
 ## 2. The Big Picture
 
@@ -64,12 +67,12 @@ Storage
 
 ## 3. Startup and Entry Points
 
-The main app route is [src/app/page.tsx](../src/app/page.tsx). It does almost nothing itself:
+The main app route is [src/app/page.tsx](../../src/app/page.tsx). It does almost nothing itself:
 
 - wraps the UI in `AuthGate`
 - renders `AppShell`
 
-`AuthGate` ensures the app can run in local mode or authenticated mode. `AppShell` is the real frontend hub in [src/components/app/app-shell.tsx](../src/components/app/app-shell.tsx).
+`AuthGate` ensures the app can run in local mode or authenticated mode. `AppShell` is the real frontend hub in [src/components/app/app-shell.tsx](../../src/components/app/app-shell.tsx).
 
 `AppShell` owns most of the visible product behavior:
 
@@ -86,7 +89,7 @@ This file is large because it is effectively the application shell for the whole
 
 ## 4. Identity and Auth Model
 
-Identity is intentionally centralized in [src/lib/identity.ts](../src/lib/identity.ts).
+Identity is intentionally centralized in [src/lib/identity.ts](../../src/lib/identity.ts).
 
 That file is one of the most important in the project because it enforces this rule:
 
@@ -111,7 +114,7 @@ JWT verification uses `jose`, and Cognito verification accepts both `localhost` 
 
 The main product boundary is the workspace, not a chat "mode."
 
-Workspaces are created and listed in [src/app/api/workspaces/route.ts](../src/app/api/workspaces/route.ts). The default seeded workspace is `Mindy Locke`.
+Workspaces are created and listed in [src/app/api/workspaces/route.ts](../../src/app/api/workspaces/route.ts). The default seeded workspace is `Mindy Locke`.
 
 A workspace owns:
 
@@ -124,13 +127,13 @@ A workspace owns:
 
 This matters because SecureMind is supposed to keep operational context scoped. A runbook in one workspace should not silently inform answers in another.
 
-The schema for that starts in [prisma/schema.prisma](../prisma/schema.prisma) with the `Workspace` model and its related tables.
+The schema for that starts in [prisma/schema.prisma](../../prisma/schema.prisma) with the `Workspace` model and its related tables.
 
 ## 6. Session Loading and Chat Thread Setup
 
 When the user opens a workspace, the client loads `/api/session`.
 
-The route in [src/app/api/session/route.ts](../src/app/api/session/route.ts):
+The route in [src/app/api/session/route.ts](../../src/app/api/session/route.ts):
 
 - verifies the workspace belongs to the current user
 - finds the latest session with actual message activity
@@ -152,7 +155,7 @@ This is the most important runtime path in the app.
 
 ### 7.1 Browser-side redaction
 
-Before a message leaves the browser, the composer uses `scrubPII` from [src/lib/pii.ts](../src/lib/pii.ts).
+Before a message leaves the browser, the composer uses `scrubPII` from [src/lib/pii.ts](../../src/lib/pii.ts).
 
 That module:
 
@@ -174,9 +177,9 @@ These are product rules for values the scanner already matched. They are not a c
 
 ### 7.2 Turn classification
 
-After the sanitized message reaches the server, `/api/chat` in [src/app/api/chat/route.ts](../src/app/api/chat/route.ts) calls `prepareChatTurn()` from [src/lib/chat/run-chat-stream.ts](../src/lib/chat/run-chat-stream.ts).
+After the sanitized message reaches the server, `/api/chat` in [src/app/api/chat/route.ts](../../src/app/api/chat/route.ts) calls `prepareChatTurn()` from [src/lib/chat/run-chat-stream.ts](../../src/lib/chat/run-chat-stream.ts).
 
-`prepareChatTurn()` first calls `decideTurn()` from [src/lib/turn-policy/decide-turn.ts](../src/lib/turn-policy/decide-turn.ts).
+`prepareChatTurn()` first calls `decideTurn()` from [src/lib/turn-policy/decide-turn.ts](../../src/lib/turn-policy/decide-turn.ts).
 
 That classifier decides things like:
 
@@ -197,7 +200,7 @@ That separation keeps the app from mixing "what model should answer this?" with 
 
 ### 7.3 Retrieval
 
-If the turn needs workspace evidence, `prepareChatTurn()` calls `retrieveSemanticMemory()` from [src/lib/memory.ts](../src/lib/memory.ts).
+If the turn needs workspace evidence, `prepareChatTurn()` calls `retrieveSemanticMemory()` from [src/lib/memory.ts](../../src/lib/memory.ts).
 
 That function:
 
@@ -219,7 +222,7 @@ The retrieval layer is purposely conservative about what can become a citation.
 
 Still inside `prepareChatTurn()`, the server builds the system prompt with:
 
-- `buildSystemPrompt()` from [src/lib/models/router.ts](../src/lib/models/router.ts)
+- `buildSystemPrompt()` from [src/lib/models/router.ts](../../src/lib/models/router.ts)
 - turn-mode instructions from `modePromptInstructions()`
 - optional workspace context
 - optional session summary
@@ -235,7 +238,7 @@ This layered prompt design matters:
 
 ### 7.5 Model routing
 
-SecureMind routes by complexity tier in [src/lib/models/router.ts](../src/lib/models/router.ts).
+SecureMind routes by complexity tier in [src/lib/models/router.ts](../../src/lib/models/router.ts).
 
 The available chat tiers are:
 
@@ -257,7 +260,7 @@ Today:
 
 ### 7.6 Provider execution and streaming
 
-`streamChat()` in [src/lib/models/provider.ts](../src/lib/models/provider.ts) is the unified provider runner.
+`streamChat()` in [src/lib/models/provider.ts](../../src/lib/models/provider.ts) is the unified provider runner.
 
 It hides provider-specific logic for:
 
@@ -282,7 +285,7 @@ Streaming happens through SSE. The route returns a streaming response and the se
 
 ### 7.7 Persistence and telemetry
 
-The client persists sanitized messages through `/api/messages` in [src/app/api/messages/route.ts](../src/app/api/messages/route.ts).
+The client persists sanitized messages through `/api/messages` in [src/app/api/messages/route.ts](../../src/app/api/messages/route.ts).
 
 That route:
 
@@ -325,7 +328,7 @@ Not for:
 
 ### 8.2 Session summary
 
-The rolling summary is maintained through `/api/summarize` in [src/app/api/summarize/route.ts](../src/app/api/summarize/route.ts).
+The rolling summary is maintained through `/api/summarize` in [src/app/api/summarize/route.ts](../../src/app/api/summarize/route.ts).
 
 This route uses a cheap model to compress recent conversation into:
 
@@ -362,7 +365,7 @@ That keeps the evidence layer honest.
 
 Document upload is the second major product path after chat.
 
-The route is [src/app/api/documents/route.ts](../src/app/api/documents/route.ts). The processing logic lives in [src/lib/documents.ts](../src/lib/documents.ts).
+The route is [src/app/api/documents/route.ts](../../src/app/api/documents/route.ts). The processing logic lives in [src/lib/documents.ts](../../src/lib/documents.ts).
 
 The ingest pipeline is:
 
@@ -380,7 +383,7 @@ The ingest pipeline is:
 
 Different file types use different extraction paths:
 
-- images: Groq vision extract in [src/lib/image-extract.ts](../src/lib/image-extract.ts)
+- images: Groq vision extract in [src/lib/image-extract.ts](../../src/lib/image-extract.ts)
 - PDF: `pdf-parse`
 - DOCX: `mammoth`
 - text/code/json/markdown: UTF-8 decode
@@ -410,7 +413,7 @@ The chunks are stored as `MemoryFragment` rows, and the vector value is written 
 
 ## 10. Security Policy and Safe Terms
 
-Security policy is managed in [src/lib/security-policy.ts](../src/lib/security-policy.ts) and exposed through [src/app/api/settings/security/route.ts](../src/app/api/settings/security/route.ts).
+Security policy is managed in [src/lib/security-policy.ts](../../src/lib/security-policy.ts) and exposed through [src/app/api/settings/security/route.ts](../../src/app/api/settings/security/route.ts).
 
 The active instance policy includes:
 
@@ -438,7 +441,7 @@ That is enforced in `validateSafeTerm()`.
 
 ## 11. Provider and Credential Model
 
-Provider configuration is managed through [src/lib/instance-config.ts](../src/lib/instance-config.ts) and `/api/settings/providers`.
+Provider configuration is managed through [src/lib/instance-config.ts](../../src/lib/instance-config.ts) and `/api/settings/providers`.
 
 The project draws a hard line between:
 
@@ -462,7 +465,7 @@ Why it matters:
 
 ## 12. Database Design
 
-The schema in [prisma/schema.prisma](../prisma/schema.prisma) is the data backbone of the app.
+The schema in [prisma/schema.prisma](../../prisma/schema.prisma) is the data backbone of the app.
 
 Core tables:
 
@@ -480,7 +483,7 @@ Core tables:
 
 ### Why Postgres + pgvector
 
-The database choice is explained in [docs/adr/0002-storage-choice.md](./adr/0002-storage-choice.md).
+The database choice is explained in [docs/adr/0002-storage-choice.md](../adr/0002-storage-choice.md).
 
 The short version:
 
@@ -493,7 +496,7 @@ The short version:
 
 The `embedding` column is `Unsupported("vector(768)")` in Prisma.
 
-That is why [src/lib/memory.ts](../src/lib/memory.ts) does raw SQL for:
+That is why [src/lib/memory.ts](../../src/lib/memory.ts) does raw SQL for:
 
 - vector updates
 - similarity search
@@ -508,7 +511,7 @@ SecureMind includes three analytics areas:
 - Usage
 - Cost
 
-The query layer is in [src/lib/analytics/queries.ts](../src/lib/analytics/queries.ts).
+The query layer is in [src/lib/analytics/queries.ts](../../src/lib/analytics/queries.ts).
 
 Analytics are based on sanitized metadata, not raw prompts or secret values.
 
@@ -581,7 +584,7 @@ This section translates `package.json` into architecture.
 
 - `clsx`, `tailwind-merge`
   Why: compose and deduplicate Tailwind class strings.
-  Used in: [src/lib/utils.ts](../src/lib/utils.ts) and many UI components.
+  Used in: [src/lib/utils.ts](../../src/lib/utils.ts) and many UI components.
 
 - `class-variance-authority`
   Why: typed variant APIs for reusable UI primitives.
@@ -610,17 +613,17 @@ This section translates `package.json` into architecture.
 
 - `@prisma/adapter-pg`
   Why: Prisma 7 Postgres adapter required by the current DB setup.
-  Used in: [src/lib/db.ts](../src/lib/db.ts).
+  Used in: [src/lib/db.ts](../../src/lib/db.ts).
 
 - `pg`
   Why: underlying Postgres pool and a few direct script-level database operations.
-  Used in: [src/lib/db.ts](../src/lib/db.ts), `scripts/backup-db.mjs`.
+  Used in: [src/lib/db.ts](../../src/lib/db.ts), `scripts/backup-db.mjs`.
 
 ### AI providers and embeddings
 
 - `groq-sdk`
   Why: primary cloud inference path, vision extraction path, and audio transcription route.
-  Used in: [src/lib/models/groq.ts](../src/lib/models/groq.ts), [src/lib/image-extract.ts](../src/lib/image-extract.ts), [src/app/api/transcribe/route.ts](../src/app/api/transcribe/route.ts).
+  Used in: [src/lib/models/groq.ts](../../src/lib/models/groq.ts), [src/lib/image-extract.ts](../../src/lib/image-extract.ts), [src/app/api/transcribe/route.ts](../../src/app/api/transcribe/route.ts).
 
 - `@aws-sdk/client-bedrock`, `@aws-sdk/client-bedrock-runtime`, `@aws-sdk/credential-providers`, `@aws-sdk/client-sts`
   Why: optional Bedrock chat/embedding path and AWS credential resolution.
@@ -638,25 +641,25 @@ This section translates `package.json` into architecture.
 
 - `pdf-parse`
   Why: extract text from PDF uploads.
-  Used in: [src/lib/documents.ts](../src/lib/documents.ts).
+  Used in: [src/lib/documents.ts](../../src/lib/documents.ts).
 
 - `mammoth`
   Why: extract raw text from DOCX uploads.
-  Used in: [src/lib/documents.ts](../src/lib/documents.ts).
+  Used in: [src/lib/documents.ts](../../src/lib/documents.ts).
 
 - `react-markdown`, `remark-gfm`
   Why: render assistant markdown and GitHub-flavored markdown in the chat UI.
-  Used in: [src/components/app/app-shell.tsx](../src/components/app/app-shell.tsx).
+  Used in: [src/components/app/app-shell.tsx](../../src/components/app/app-shell.tsx).
 
 ### Auth, mail, and tokens
 
 - `jose`
   Why: JWT verification and JWKS support.
-  Used in: [src/lib/identity.ts](../src/lib/identity.ts), `src/middleware.ts`, login/auth flows.
+  Used in: [src/lib/identity.ts](../../src/lib/identity.ts), `src/middleware.ts`, login/auth flows.
 
 - `nodemailer`
   Why: mail delivery support for auth/admin flows.
-  Used in: [src/lib/mail.ts](../src/lib/mail.ts).
+  Used in: [src/lib/mail.ts](../../src/lib/mail.ts).
 
 ### Charts and interactive UI
 
@@ -666,7 +669,7 @@ This section translates `package.json` into architecture.
 
 - `emoji-picker-react`
   Why: emoji selection in workspace and composer UI.
-  Used in: [src/components/app/app-shell.tsx](../src/components/app/app-shell.tsx), `workspace-editor.tsx`.
+  Used in: [src/components/app/app-shell.tsx](../../src/components/app/app-shell.tsx), `workspace-editor.tsx`.
 
 ### Testing and quality
 
@@ -737,21 +740,21 @@ If you are explaining SecureMind to someone else, these are the most important i
 
 If you want to re-learn the project later, use this order:
 
-1. [AGENTS.md](../AGENTS.md)
-2. [README.md](../README.md)
-3. [prisma/schema.prisma](../prisma/schema.prisma)
-4. [src/lib/identity.ts](../src/lib/identity.ts)
-5. [src/lib/pii.ts](../src/lib/pii.ts)
-6. [src/lib/turn-policy/decide-turn.ts](../src/lib/turn-policy/decide-turn.ts)
-7. [src/lib/chat/run-chat-stream.ts](../src/lib/chat/run-chat-stream.ts)
-8. [src/lib/memory.ts](../src/lib/memory.ts)
-9. [src/lib/documents.ts](../src/lib/documents.ts)
-10. [src/lib/models/router.ts](../src/lib/models/router.ts)
-11. [src/lib/models/provider.ts](../src/lib/models/provider.ts)
-12. [src/lib/security-policy.ts](../src/lib/security-policy.ts)
-13. [src/lib/instance-config.ts](../src/lib/instance-config.ts)
-14. [src/lib/analytics/queries.ts](../src/lib/analytics/queries.ts)
-15. [src/components/app/app-shell.tsx](../src/components/app/app-shell.tsx)
+1. [AGENTS.md](../../AGENTS.md)
+2. [README.md](../../README.md)
+3. [prisma/schema.prisma](../../prisma/schema.prisma)
+4. [src/lib/identity.ts](../../src/lib/identity.ts)
+5. [src/lib/pii.ts](../../src/lib/pii.ts)
+6. [src/lib/turn-policy/decide-turn.ts](../../src/lib/turn-policy/decide-turn.ts)
+7. [src/lib/chat/run-chat-stream.ts](../../src/lib/chat/run-chat-stream.ts)
+8. [src/lib/memory.ts](../../src/lib/memory.ts)
+9. [src/lib/documents.ts](../../src/lib/documents.ts)
+10. [src/lib/models/router.ts](../../src/lib/models/router.ts)
+11. [src/lib/models/provider.ts](../../src/lib/models/provider.ts)
+12. [src/lib/security-policy.ts](../../src/lib/security-policy.ts)
+13. [src/lib/instance-config.ts](../../src/lib/instance-config.ts)
+14. [src/lib/analytics/queries.ts](../../src/lib/analytics/queries.ts)
+15. [src/components/app/app-shell.tsx](../../src/components/app/app-shell.tsx)
 
 That order mirrors the real architecture from policy and data boundaries into runtime behavior and then UI.
 

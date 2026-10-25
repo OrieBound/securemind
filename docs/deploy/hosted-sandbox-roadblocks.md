@@ -1,5 +1,7 @@
 # Hosted sandbox: roadblocks we hit
 
+> **Historical log.** Entries that store keys in Secrets Manager were superseded on 2026-10-18: the hosted edition keeps them in Parameter Store (see infra/README.md, Secrets model).
+
 **Last stamped: 2026-10-04.** Lab notes from the first hosted apply. The maintainer `main` pipeline stays on its own sandbox stack. Another account is a second bootstrap, not a retarget of that stack.
 
 Use this as an operator log and as interview notes: each item is **symptom → cause → what we did**. Dated chronology is in [Timeline](#timeline) below; README carries a short copy of the same stamp.

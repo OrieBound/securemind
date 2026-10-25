@@ -34,7 +34,7 @@ Groq, Gemini, OpenAI, Anthropic, and Grok run only after a key is saved. Bedrock
 - Detection is pattern-based and can miss values. There is no path that restores a replaced value.
 - One operator directory. It is not multi-tenant hosting.
 - Two-step verification with an authenticator app is optional on the hosted edition and recommended for admins. The local Docker sign-in does not support it. See [docs/mfa.md](docs/mfa.md).
-- Built and tested on a Windows computer with Chrome, Docker Desktop and an AWS account in us-east-1. Use it from a desktop browser. The layout fits phone and tablet widths, but macOS and Linux installs, Apple Silicon, other browsers and real phones have not been tested. The pre-built Docker image is for 64-bit Intel and AMD; on Apple Silicon use `docker compose up --build`.
+- Built and tested on a Windows computer with Chrome, Docker Desktop and an AWS account in us-east-1. Use it from a desktop browser. The layout fits phone and tablet widths, but macOS and Linux installs, Apple Silicon, other browsers and real phones have not been tested. Compose builds the image on your own machine, so it is not tied to one processor type.
 - Citations come from Knowledge you ingested. Conversation history is not a source.
 - The hosted data store is DynamoDB. Local Docker uses Postgres with pgvector.
 
@@ -50,7 +50,7 @@ Docker Compose on this computer. Postgres, local sign-in, and Ollama come up tog
 - [Docker](https://docs.docker.com/get-docker/) with Compose v2. The command is `docker compose`, with a space.
 - About 8 GB of free disk. The first start downloads container images plus `llama3.2:3b` and `nomic-embed-text`.
 - Enough free memory for a 3B chat model. 8 GB of RAM on the machine is a practical floor.
-- These ports free: `3000` (app), `5432` (Postgres), `4566` (local sign-in), `11434` (Ollama).
+- Port `3000` free. The database, local sign-in and Ollama stay inside Docker and publish no ports (the contributor setup below publishes them on localhost).
 
 No AWS account is needed. A model API key is not required, but it is strongly recommended: the built-in local models use your own computer's resources and, unless it is very powerful, they are slow. Groq has a free tier and is a good first key. On AWS, use Bedrock or a key, since there is no local model.
 
@@ -113,7 +113,7 @@ Make your own private repository from the code, then follow [docs/deploy/aws-fro
 
 ### Confirm
 
-The user pool starts empty. Print the one-time setup code with `terraform -chdir=infra/terraform output -raw setup_claim_secret`, open your Amplify address, and enter the code with the email and password you choose. That account becomes the Owner. The code is not a password. A local Docker install needs no setup code.
+The user pool starts empty. Print the one-time setup code with `terraform -chdir=infra/terraform output -raw setup_claim_secret`, open your Amplify address, and enter the code with the email and password you choose. That account becomes the Owner. The code is not a password. A Docker install makes its own setup code on first start (see [Confirm](#confirm) above).
 
 ## Contributing on the host
 
@@ -122,10 +122,13 @@ Node.js 22 or newer.
 ```bash
 npm install
 cp .env.example .env.local
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db floci ollama ollama-init
-npx prisma migrate deploy
+npm run docker:up                 # database, local sign-in and Ollama on localhost ports
+npx prisma db push                # create the schema
+npx prisma db execute --file scripts/add-vector-embedding.sql
 npm run dev
 ```
+
+Before a commit: `npx tsc --noEmit`, `npm run lint` and `npm test` (CI runs all three plus `npm run build`).
 
 ## Scripts
 
@@ -133,6 +136,7 @@ npm run dev
 |---|---|
 | `npm run dev` | Dev server (port 3000) |
 | `npm test` | Vitest |
+| `npm run lint` | ESLint (CI fails on errors) |
 | `npm run docker:onprem` | Full Compose stack, built from this repo |
 | `npm run infra:up` | Apply Terraform in the account your `.env.deploy` profile points at |
 

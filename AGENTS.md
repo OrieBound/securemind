@@ -7,7 +7,7 @@ SecureMind is a **privacy-aware AI workspace** for models, Knowledge, memory, co
 
 Present sanitization as **risk reduction**, never as a guarantee of complete PII removal, security, or regulatory compliance. Avoid copy such as “PII-safe”, “fully secure”, “guaranteed redaction”, or “compliance-ready”. Users remain responsible for reviewing content and meeting their obligations.
 
-It is a **single-user personal project**. Default auth is `AUTH_MODE=local`. Optional Floci Cognito is for local experiments only. Do not describe it as production-ready, multi-tenant, or compliant.
+It is a **personal project**: one install serves one organization (team size is in README.md). Host `npm run dev` defaults to `AUTH_MODE=local`. Optional Floci Cognito is for local experiments only. Do not describe it as production-ready, multi-tenant, or compliant.
 
 ## Tech stack (exact versions matter)
 - **Frontend**: Next.js 16 (App Router, Turbopack), TypeScript, Tailwind CSS v4, shadcn/ui
@@ -102,7 +102,7 @@ It is a **single-user personal project**. Default auth is `AUTH_MODE=local`. Opt
 
 ### Cost efficiency
 - Most user-facing chat routes to mid or high tiers; trivial messages route to Micro.
-- Never add AWS services unless explicitly requested — default to Groq + Neon.
+- Never add AWS services unless explicitly requested. Hosted uses only what Terraform defines; local defaults are Groq or Ollama with Postgres.
 
 ## Testing
 - `npm test` runs Vitest. New PII patterns require test cases in `src/lib/pii.test.ts`, including a false-positive case.
@@ -158,7 +158,7 @@ src/
     aws-credentials.ts        ← AWS SDK credential chain + ALLOW_REAL_AWS gate
     instance-config.ts        ← Admin provider settings (never AWS creds; vendor keys encrypted at rest)
     secret-at-rest.ts         ← AES-256-GCM for UI-entered vendor keys
-    aws-secrets.ts            ← hosted: load the encryption key + setup code from Parameter Store (or an older Secrets Manager ARN) at startup
+    aws-secrets.ts            ← hosted: load the encryption key + setup code from Parameter Store at startup
     security-headers.ts       ← CSP and the other security headers (UI and API)
     totp.ts                   ← RFC 6238 codes, readable and tested; not used to authenticate
     document-storage.ts       ← local original-file store (not Postgres)

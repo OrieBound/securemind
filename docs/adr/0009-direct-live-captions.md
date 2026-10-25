@@ -31,9 +31,12 @@ The browser opens its own WebSocket to `transcribestreaming.<region>.amazonaws.c
 
 - Audio no longer passes through our server on this path. It still leaves for AWS before any text scan,
   exactly as before, and the voice notice already says so.
-- A signed-in user holding an address can stream audio to Transcribe in this account for as long as the
-  connection stays open. Sign-in is invite-only, the rate limit slows scripts, and the monthly budget alarm
-  is the backstop. A per-connection cap is not possible from our side because the connection is not ours.
+- Voice counts toward the per-user monthly cost cap: the route refuses to sign an address once the user is
+  over it, and each session is recorded as one estimated minute when it is signed (the server never sees how
+  long a browser-to-AWS session lasts). The browser ends a session after ten minutes.
+- A modified browser could ignore that limit and keep one connection open longer. Sign-in is invite-only,
+  the rate limit slows scripts, and the monthly budget alarm is the backstop. A server-side cap per
+  connection is not possible because the connection is not ours.
 - Anyone who can run script in the page could read the address during its five minutes, which is why the
   role is narrow. The CSP is defence in depth here, not a complete barrier (see `security-headers.ts`).
 - Terraform adds one role and two small policies, and the deploy role's boundary gains one `sts:AssumeRole`

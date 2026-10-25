@@ -24,7 +24,7 @@ The algorithm is written out in [src/lib/totp.ts](../src/lib/totp.ts) and checke
 
 ## What you see
 
-**Turning it on (My Profile, Two-step verification):**
+**Turning it on (Settings → Account security, Two-step verification):**
 
 1. Choose "Set up two-step verification". The server asks Cognito for a new secret for you and shows a QR code and the same secret as text.
 2. Scan it with an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password, Authy).
