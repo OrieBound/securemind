@@ -192,7 +192,7 @@ def header_footer(section) -> None:
     add_text(hp, "SECUREMIND", size=9, color=VIOLET, bold=True)
     add_text(hp, "   ·   Feature guide", size=9, color=MUTED)
     hp.add_run("\t")
-    add_text(hp, "Version  1.1", size=9, color=MUTED)
+    add_text(hp, "Version  1.2", size=9, color=MUTED)
 
     footer = section.footer
     footer.is_linked_to_previous = False
@@ -212,7 +212,7 @@ def header_footer(section) -> None:
     top_el.set(qn("w:color"), RULE)
     top.append(top_el)
     p_pr.append(top)
-    add_text(fp, "Version 1.1", size=9, color=MUTED)
+    add_text(fp, "Version 1.2", size=9, color=MUTED)
     fp.add_run("\t")
     add_text(fp, "Page ", size=9, color=MUTED)
     add_field(fp, " PAGE ")
@@ -284,8 +284,8 @@ def build() -> None:
     meta = doc.add_paragraph()
     meta.paragraph_format.space_before = Pt(10)
     meta.paragraph_format.space_after = Pt(8)
-    add_text(meta, "Version 1.1", size=11, color=VIOLET, bold=True)
-    add_text(meta, "   ·   19 October 2026", size=11, color=MUTED)
+    add_text(meta, "Version 1.2", size=11, color=VIOLET, bold=True)
+    add_text(meta, "   ·   25 October 2026", size=11, color=MUTED)
 
     body(
         doc,
@@ -356,6 +356,9 @@ def build() -> None:
             ["Provider chip", "Shows how many models of that provider, such as Gemini or Anthropic, can be assigned. It is not a request count."],
             ["Blue count", "How many replies were routed to that tier, for the workspace and date range selected in Insights."],
             ["Vendor API key", "A provider credential managed by the administrator. Groq and xAI, the provider of Grok, are separate providers."],
+            ["Score card", "The \"Why this tier?\" link under a reply. It lists the signals that raised or lowered the score, any adjustment, and the tier that ran."],
+            ["Task model", "A helper model an administrator approves for one narrow job, such as turning a reply into a file. It is off until chosen."],
+            ["Portal", "The logo, name, and short phrase in the top-left of the workspace, set by an administrator."],
             ["Cost estimate", "An approximate usage cost based on recorded activity and configured provider rates, not an invoice."],
             ["Detection", "Best-effort identification of sensitive patterns so matched content can be reviewed and redacted."],
         ],
@@ -383,7 +386,12 @@ def build() -> None:
     h2(doc, "Voice transcription")
     body(
         doc,
-        "Voice input uses a configured transcription service: Amazon Transcribe or Groq Whisper. The transcript appears in the composer for review before sending. For hosted transcription, audio is sent to the selected service before the resulting text can be scanned. On the hosted edition with Amazon Transcribe, words appear while you speak, a session ends after ten minutes, and voice counts toward the monthly cost cap.",
+        "Voice input uses a configured transcription service: Amazon Transcribe or Groq Whisper. The transcript appears in the composer for review before sending. For hosted transcription, audio is sent to the selected service before the resulting text can be scanned. On the hosted edition with Amazon Transcribe, words appear while you speak, a session ends after ten minutes, and voice counts toward the monthly cost cap and is refused once a person is over it. Your browser connects to Amazon Transcribe with a short-lived address that the server signs, so the audio does not pass through the SecureMind server. If live captions fail for any reason, the whole recording is transcribed in one pass when you press the tick.",
+    )
+    h2(doc, "Task models")
+    body(
+        doc,
+        "Chat chooses a model by complexity tier. A task model is separate: a helper an administrator approves for one narrow job. The one job today is building a downloadable file when the chat model did not produce the file format. It is off until an administrator chooses a model under Settings, Models. It always uses exactly the model that was chosen, and never falls back to another provider. It sees only the reply text, after card numbers, social security numbers and secrets have been replaced, and a vendor model needs the vendor notice accepted first.",
     )
 
     h1(doc, "5  Installation options")
@@ -441,6 +449,14 @@ def build() -> None:
     )
     body(
         doc,
+        "Every reply carries a \"Why this tier?\" link. It opens a score card: the baseline, each signal that fired with its points, any adjustment, and the tier that ran. No message text is stored on the card. A message that is answered from your documents is never run on the cheapest tiers: a short question about a document runs on at least Standard, and a summary or analysis across documents runs on at least Plus.",
+    )
+    body(
+        doc,
+        "If a provider retires a model, the next reply that picks it fails with the provider's answer. SecureMind then takes that model off the chat menus, says so in the reply, and leaves it off until a later Test passes. A temporary problem such as a rate limit or an outage does not unlist anything.",
+    )
+    body(
+        doc,
         "The technical guide explains the routing rules, which parts of the conversation influence the decision, and how the application handles an unavailable model. This guide does not restate those rules.",
     )
     h2(doc, "Continuing a conversation")
@@ -457,6 +473,20 @@ def build() -> None:
         "Voice transcription supplies text to the composer using the configured service. Review the transcript, and any detected sensitive information, before sending it.",
     )
     figure(doc, "2", "Chat. Status labels sit above the composer. The chevron hides them.")
+    h2(doc, "Files from chat")
+    body(
+        doc,
+        "Ask for a file, such as an Excel spreadsheet, a Word document, a CSV or a Markdown note, and the reply carries a file card with a Download button. The browser builds the file when you press Download. Nothing is stored on the server. File names are cleaned, anything that would run when opened is saved as a plain text file, spreadsheet cells that look like formulas are written as text, and a file over 2 MB is refused.",
+    )
+    body(
+        doc,
+        "If the model did not write the file format, the browser first tries to build a file from the reply itself, such as a table or a document. Only when that finds nothing, and an administrator has approved a task model, does the helper build it. A request for a file changes the shape of the reply. It does not change what is searched or which tier runs.",
+    )
+    h2(doc, "A member's first visit")
+    body(
+        doc,
+        "A member's first workspace opens with a short welcome, and a Take the tour button walks through the main areas. The button stops appearing after three visits, or sooner if you close it.",
+    )
 
     h1(doc, "8  Knowledge")
     purpose(doc, "Let conversations draw on documents and images you provide, with relevant sources available to support answers.")
@@ -467,6 +497,10 @@ def build() -> None:
     body(
         doc,
         "On a local installation the original file is also stored. Extracted text is scrubbed before it is chunked and embedded. Converting an image to a vector does not make the image safe. The extracted content is redacted before embedding. The hosted data path does not store that original through the same local file step.",
+    )
+    body(
+        doc,
+        "Uploads are limited before any parser runs: a file is at most 10 MB, and a Word or Excel file is opened with a hard cap on how large it may unpack, so a file that lies about its size is refused. Each person can add a limited number of files a day and store a limited total.",
     )
     body(
         doc,
@@ -503,7 +537,7 @@ def build() -> None:
     purpose(doc, "Make model activity, estimated costs, and detected sensitive-data findings visible while you work.")
     body(
         doc,
-        "Insights is the right-hand panel beside chat, with Models, Security, and Cost. It is one of SecureMind’s main transparency features. Collapse it when you want more room for the conversation.",
+        "Insights is the right-hand panel beside chat, with Models, Usage, Cost, and Security. Each opens a full page for the longer view. It is one of SecureMind’s main transparency features. Collapse it when you want more room for the conversation.",
     )
     body(
         doc,
@@ -522,7 +556,7 @@ def build() -> None:
     h2(doc, "Cost")
     body(
         doc,
-        "Cost provides an approximate breakdown of model API and Bedrock usage, using recorded activity and provider rates. It is useful for comparing models, observing spending trends, and judging an approximate spending range.",
+        "Cost provides an approximate breakdown of model API, Bedrock, and voice-transcription usage, using recorded activity and provider rates. Each estimate is raised by 10 percent and rounded up, so it tends high rather than low. It is useful for comparing models, observing spending trends, and judging an approximate spending range. The page also compares what you spent with what the same replies would have cost if every one had used the most expensive default tier. That gap is the routing saving. It is not money returned.",
     )
     body(
         doc,
@@ -530,7 +564,7 @@ def build() -> None:
     )
     body(
         doc,
-        "Per-user caps use these estimates as a precaution. When a configured threshold is reached, further billable model calls for that user stop. Ollama calls are not part of that cap. The cap cannot make the provider’s final bill equal the displayed estimate.",
+        "Per-user caps use these estimates as a precaution. When a configured threshold is reached, further billable model calls and voice sessions for that user stop. Ollama calls are not part of that cap. The cap cannot make the provider’s final bill equal the displayed estimate.",
     )
     h2(doc, "Security")
     body(
@@ -559,6 +593,15 @@ def build() -> None:
         "The available-model list shows the models offered through configured connections. Enable, Test, and Check access are three controls, as defined in section 3. Hide and Show manage the chat list. A hidden model can still be the model a tier runs. Check failed means the last check did not succeed.",
     )
     figure(doc, "4", "Settings, Models. Enable, Test, and Check access.")
+    body(
+        doc,
+        "A model a provider has retired is taken off the chat menus automatically the first time a reply fails because of it, and it stays under the not-working group until a Test passes.",
+    )
+    h2(doc, "Task models")
+    body(
+        doc,
+        "Under Settings, Models, an administrator can approve a helper model for building files, as described in section 4. The setting is off by default. Voice transcription is chosen in the same panel.",
+    )
     h2(doc, "Complexity tiers and Fixed model")
     body(
         doc,
@@ -620,6 +663,10 @@ def build() -> None:
         doc,
         "Profile lets you set a profile image, change your display name, and add a description about yourself. The photo is available to a signed-in session. It is not a public link. Account security, where the installation uses its sign-in service, lets you change your password and turn on two-step verification with an authenticator app.",
     )
+    body(
+        doc,
+        "Two-step verification is optional and uses real Amazon Cognito, so it is available on the hosted edition. The local Docker sign-in does not support codes, and the page hides the control there. You set it up by scanning a QR code and typing a code to confirm. At sign-in, after your password, you type the six-digit code. Turning it off needs your password again, and repeated wrong passwords are slowed down. Administrators see a recommendation until they turn it on, and the Owner can reset someone else’s second step from the Admin page if a phone is lost.",
+    )
 
     h1(doc, "15  Appearance")
     purpose(doc, "Choose a comfortable display theme.")
@@ -646,13 +693,21 @@ def build() -> None:
         doc,
         "Cost caps are precautionary limits based on estimated use. The application blocks covered billable requests when the estimate reaches the cap. Administrators should still review actual charges with the provider. These limits are not provider-enforced billing budgets.",
     )
+    body(
+        doc,
+        "Add user creates an account with a password the administrator types or generates, and sends a welcome email when outgoing email is set up. A deleted person can be restored. A person who is deleted loses sign-in, but their workspaces, Knowledge and history are not erased.",
+    )
+    body(
+        doc,
+        "The Portal card sets the logo, name, and short phrase shown in the top-left of the workspace. The sign-in page, the browser title, and email stay SecureMind.",
+    )
     figure(doc, "6", "Admin. Directory, roles, and estimated caps.")
 
     h1(doc, "17  Getting started")
     purpose(doc, "Help a new user reach a working model and understand how to begin.")
     body(
         doc,
-        "Getting started appears while chat is not ready. It points toward Settings, Setup, and Models: connect a model source, make a model available, and send a first message. Sensitive-data review and Insights are part of that introduction. The full setup steps are on the website, as described in section 5.",
+        "Getting started appears while chat is not ready. It points toward Settings, Setup, and Models: connect a model source, make a model available, and send a first message. Sensitive-data review and Insights are part of that introduction. A member who joins an installation that is already set up sees a short welcome and can take a tour. The full setup steps are on the website, as described in section 5.",
     )
 
     h1(doc, "18  How the parts fit")
@@ -689,7 +744,7 @@ def build() -> None:
     )
     body(
         doc,
-        "SecureMind does not accept pasted AWS access keys. Local Bedrock uses the credential chain in section 4. Raw audio sent for hosted transcription is processed before the transcript can be reviewed and redacted.",
+        "SecureMind does not accept pasted AWS access keys. Local Bedrock uses the credential chain in section 4. Raw audio sent for hosted transcription is processed before the transcript can be reviewed and redacted. The model’s reply is not scanned for sensitive values, and a signed-in session stays valid until it expires, up to an hour, even after you sign out.",
     )
 
     try:
