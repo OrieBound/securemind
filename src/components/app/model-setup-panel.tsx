@@ -22,6 +22,8 @@ export type RuntimeStatusPayload = {
       ready: boolean;
       provider: VoiceSttChoice | null;
       choice?: VoiceSttChoice | null;
+      /** Hosted: the mic streams straight to Amazon Transcribe and words show while you speak. */
+      directLive?: boolean;
       note: string;
     };
     embeddings: { ready: boolean; provider: string | null };

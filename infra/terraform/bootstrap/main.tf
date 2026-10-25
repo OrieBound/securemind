@@ -187,8 +187,15 @@ data "aws_iam_policy_document" "boundary" {
       "bedrock:ListFoundationModels",
       "bedrock:ListInferenceProfiles",
       "transcribe:StartStreamTranscription",
+      "transcribe:StartStreamTranscriptionWebSocket",
     ]
     resources = ["*"]
+  }
+  # The compute role may sign short-lived browser addresses by assuming the one-purpose Transcribe role.
+  statement {
+    sid       = "AssumeTranscribeStreamRole"
+    actions   = ["sts:AssumeRole"]
+    resources = ["arn:aws:iam::${local.account}:role/securemind-transcribe-stream-*"]
   }
   statement {
     sid = "Directory"

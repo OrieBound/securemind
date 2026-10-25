@@ -258,6 +258,9 @@ module "amplify" {
   access_contact_url       = var.access_contact_url
   permissions_boundary_arn = var.permissions_boundary_arn
   avatar_s3_bucket_name    = local.avatar_bucket_name
+
+  # Live voice captions straight from the browser to Amazon Transcribe, in the same region as the app.
+  transcribe_stream_region = var.aws_region
 }
 
 # Custom domain. Needs the Amplify app and the API to exist, and never feeds back into them

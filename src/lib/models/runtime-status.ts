@@ -18,6 +18,7 @@ import { runtimeEdition, runtimeDeployment } from "@/lib/runtime-env";
 import { SUPPORTED_DOC_FORMATS_SHORT } from "@/lib/documents/constants";
 import { pickImageExtractBackend } from "@/lib/image-extract";
 import { pickTranscribeBackend, transcribeUnavailableMessage } from "@/lib/transcribe/backend";
+import { transcribeStreamConfig } from "@/lib/transcribe/stream-session";
 
 export type RuntimeStatus = {
   edition: "local" | "cloud";
@@ -36,6 +37,8 @@ export type RuntimeStatus = {
       ready: boolean;
       provider: "transcribe" | "groq" | null;
       choice: "transcribe" | "groq" | null;
+      /** Hosted only: the browser can stream the mic straight to Amazon Transcribe and show words as they are spoken. */
+      directLive: boolean;
       note: string;
     };
     embeddings: { ready: boolean; provider: "ollama" | "bedrock" | null };
@@ -137,6 +140,7 @@ export async function getRuntimeStatus(): Promise<RuntimeStatus> {
         ready: voiceBackend != null,
         provider: voiceBackend,
         choice: voiceChoice,
+        directLive: edition === "cloud" && voiceBackend === "transcribe" && transcribeStreamConfig() !== null,
         note: voiceNote,
       },
       embeddings: {

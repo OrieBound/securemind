@@ -90,6 +90,12 @@ variable "branch_name" {
   default = "main"
 }
 
+variable "transcribe_stream_region" {
+  type        = string
+  default     = ""
+  description = "Region for direct live captions (the browser talks to Amazon Transcribe itself). Empty turns the feature off."
+}
+
 data "aws_iam_policy_document" "amplify_assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -236,6 +242,66 @@ data "aws_iam_policy_document" "amplify_bedrock" {
   }
 }
 
+# Direct live captions. The browser opens its own WebSocket to Amazon Transcribe using an address the
+# server signs with temporary credentials from THIS role, not from the compute role. It can do one
+# thing: start a Transcribe streaming connection. The compute role may only assume it.
+locals {
+  direct_captions = var.transcribe_stream_region != ""
+}
+
+data "aws_iam_policy_document" "transcribe_stream_trust" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.compute.arn]
+    }
+  }
+}
+
+resource "aws_iam_role" "transcribe_stream" {
+  count                = local.direct_captions ? 1 : 0
+  name                 = "securemind-transcribe-stream-${var.env_name}"
+  description          = "Signs short-lived Amazon Transcribe streaming addresses for the browser. Nothing else."
+  assume_role_policy   = data.aws_iam_policy_document.transcribe_stream_trust.json
+  permissions_boundary = var.permissions_boundary_arn != "" ? var.permissions_boundary_arn : null
+  tags = {
+    Project = "SecureMind"
+    Env     = var.env_name
+  }
+}
+
+data "aws_iam_policy_document" "transcribe_stream" {
+  statement {
+    sid       = "OpenTranscribeStream"
+    actions   = ["transcribe:StartStreamTranscriptionWebSocket"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "transcribe_stream" {
+  count  = local.direct_captions ? 1 : 0
+  name   = "securemind-transcribe-stream-${var.env_name}"
+  role   = aws_iam_role.transcribe_stream[0].id
+  policy = data.aws_iam_policy_document.transcribe_stream.json
+}
+
+data "aws_iam_policy_document" "amplify_assume_transcribe_stream" {
+  count = local.direct_captions ? 1 : 0
+  statement {
+    sid       = "AssumeTranscribeStreamRole"
+    actions   = ["sts:AssumeRole"]
+    resources = [aws_iam_role.transcribe_stream[0].arn]
+  }
+}
+
+resource "aws_iam_role_policy" "amplify_assume_transcribe_stream" {
+  count  = local.direct_captions ? 1 : 0
+  name   = "securemind-amplify-assume-transcribe-stream-${var.env_name}"
+  role   = aws_iam_role.compute.id
+  policy = data.aws_iam_policy_document.amplify_assume_transcribe_stream[0].json
+}
+
 resource "aws_iam_role_policy" "amplify_bedrock" {
   name   = "securemind-amplify-bedrock-${var.env_name}"
   role   = aws_iam_role.compute.id
@@ -375,7 +441,11 @@ resource "aws_amplify_app" "this" {
     DYNAMODB_FRAGMENTS_TABLE  = var.fragments_table_name
     VENDOR_KEYS_PARAM         = var.vendor_keys_param_name
     AVATAR_S3_BUCKET          = var.avatar_s3_bucket_name
-  }, var.access_contact_url != "" ? { NEXT_PUBLIC_ACCESS_CONTACT_URL = var.access_contact_url } : {})
+    }, var.access_contact_url != "" ? { NEXT_PUBLIC_ACCESS_CONTACT_URL = var.access_contact_url } : {},
+    local.direct_captions ? {
+      TRANSCRIBE_STREAM_ROLE_ARN = aws_iam_role.transcribe_stream[0].arn
+      TRANSCRIBE_STREAM_REGION   = var.transcribe_stream_region
+  } : {})
 
   tags = {
     Project = "SecureMind"

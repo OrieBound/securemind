@@ -97,6 +97,7 @@ It is a **single-user personal project**. Default auth is `AUTH_MODE=local`. Opt
 - `.env.local` is in `.gitignore`. `.env.example` is the one env file that is committed, and it contains no values.
 - All API routes must use `export const runtime = "nodejs"` (never edge — Ollama needs localhost).
 - **Two-step verification** is optional authenticator-app (TOTP) sign-in through real Cognito only (`docs/mfa.md`). Cognito makes the secret and checks every code; `src/lib/totp.ts` is for tests, teaching and `npm run totp`, never for deciding whether someone may sign in. The signed-in routes under `src/app/api/auth/mfa/**` act only on the caller's own access token (via `requireMfaSession`) and take no user identifier from the request. Turning it off needs the password again. Admin reset goes through `adminResetDirectoryUserMfa`, which respects the Super Admin protection. The local Floci sign-in does not support it, so it is hidden there, not faked. Never log a code, a secret or a session string.
+- **Direct live captions** (hosted voice): the browser streams the microphone to Amazon Transcribe itself over a WebSocket (`src/lib/transcribe/direct-client.ts`, ADR 0009). `POST /api/transcribe/live-session` signs the address with temporary credentials from a separate role (`securemind-transcribe-stream-*`) that can only call `transcribe:StartStreamTranscriptionWebSocket`; the compute role's own credentials never reach the browser, and the secret key is never in the address. The route checks `getIdentity`, the cloud edition, the Admin's Transcribe choice and audio acknowledgement, and a per-user rate limit, and it never logs the address. Off unless `TRANSCRIBE_STREAM_ROLE_ARN` and `TRANSCRIBE_STREAM_REGION` are both set; the page's CSP allows only that one `wss://transcribestreaming.<region>.amazonaws.com:8443` origin, and only then. Keep the region and role in Terraform, never in the UI.
 - **Security headers** come from `src/lib/security-headers.ts` (CSP, HSTS on the cloud edition, frame, sniff, referrer and permissions policies), applied by `next.config.ts` and the Lambdas. The browser may connect only to itself and the chat API origin (`NEXT_PUBLIC_API_BASE_URL`). Do not add a third-party script, font or frame source without changing that module and its tests.
 
 ### Cost efficiency
@@ -133,6 +134,7 @@ src/
       models/ollama/pull/route.ts ← admin-initiated allowlisted Ollama pull (never automatic)
       settings/task-models/route.ts ← Admin-approved helper model per task (file formatting); members read, Admin writes
       files/format/route.ts       ← build a file block with the approved helper (404 when none is set)
+      transcribe/live-session/route.ts ← hosted: short-lived signed Transcribe WebSocket address for the browser (404 unless configured)
       runtime/status/route.ts     ← first-run dependency status (no catalog stampede)
       me/profile/route.ts         ← self GET/PATCH UserProfile (+ workspace brief list)
       me/security/route.ts        ← self security metadata (auth mode, password availability)

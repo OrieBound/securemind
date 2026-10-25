@@ -109,7 +109,7 @@ Voice is off until the operator picks a backend and acknowledges that **audio le
 Two backends:
 
 - **Groq Whisper** — audio is posted to Groq. Local and hosted. While the mic is open, the growing recording is transcribed in chunks for a preview.
-- **Amazon Transcribe** — streaming PCM on hosted Chromium when the Amplify role may call `transcribe:StartStreamTranscription`. Billed on the operator’s AWS account, same gate as Bedrock. The final pass on Done can differ slightly from the live preview.
+- **Amazon Transcribe** — streaming PCM on hosted Chromium. Billed on the operator’s AWS account, same gate as Bedrock; each spoken second is billed once, and the words shown while speaking come from that same stream. When the hosted install has `TRANSCRIBE_STREAM_ROLE_ARN` and `TRANSCRIBE_STREAM_REGION` set, the browser opens its own WebSocket to Transcribe using an address the server signs with a separate one-purpose role (ADR 0009), so words appear as they are spoken. Without them, audio goes through `/api/transcribe/live`, where Amplify delivers the upload in one piece and words appear after Done. If live captions fail, the recording is transcribed in one pass instead.
 
 The composer inserts the final transcript at the cursor. The user still reviews and sends. Nothing in the audio path restores or stores the raw waveform as a chat message.
 

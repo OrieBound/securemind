@@ -23,7 +23,19 @@ export type SecurityHeaderOptions = {
   dev?: boolean;
   /** Cloud edition on HTTPS: adds HSTS and upgrade-insecure-requests. Off for http://localhost. */
   https?: boolean;
+  /**
+   * Hosted install with direct live captions: the one AWS region whose Transcribe streaming
+   * endpoint (wss, port 8443) the browser may open. Ignored unless it looks like a region name.
+   */
+  transcribeStreamRegion?: string;
 };
+
+const AWS_REGION = /^[a-z]{2}(-[a-z]+)+-\d{1,2}$/;
+
+/** The Transcribe streaming WebSocket origin for a region, or null if the region is not a plain region name. */
+export function transcribeStreamOrigin(region: string | null | undefined): string | null {
+  return region && AWS_REGION.test(region) ? `wss://transcribestreaming.${region}.amazonaws.com:8443` : null;
+}
 
 /** The origin of a URL, or null if it is not a usable http(s) URL. */
 export function originOf(value: string | null | undefined): string | null {
@@ -49,7 +61,13 @@ export function apiOriginsFromEnv(env: Record<string, string | undefined> = proc
 export function buildCsp(opts: SecurityHeaderOptions = {}): string {
   const apiOrigins = (opts.apiOrigins ?? []).map(originOf).filter((o): o is string => Boolean(o));
   const scriptSrc = ["'self'", "'unsafe-inline'", ...(opts.dev ? ["'unsafe-eval'"] : [])];
-  const connectSrc = ["'self'", ...apiOrigins, ...(opts.dev ? ["ws:", "wss:"] : [])];
+  const transcribeOrigin = transcribeStreamOrigin(opts.transcribeStreamRegion);
+  const connectSrc = [
+    "'self'",
+    ...apiOrigins,
+    ...(transcribeOrigin ? [transcribeOrigin] : []),
+    ...(opts.dev ? ["ws:", "wss:"] : []),
+  ];
 
   const directives: string[] = [
     "default-src 'self'",
@@ -109,5 +127,10 @@ export function securityOptionsFromEnv(env: Record<string, string | undefined> =
     dev: env.NODE_ENV !== "production",
     // Cloud edition, or a Docker install served over HTTPS (docker-compose.tls.yml sets this).
     https: env.SECUREMIND_EDITION === "cloud" || env.SECUREMIND_HTTPS === "true",
+    // Only when direct live captions are set up (both settings present), so no install opens a hole it does not use.
+    transcribeStreamRegion:
+      env.SECUREMIND_EDITION === "cloud" && env.TRANSCRIBE_STREAM_ROLE_ARN?.trim()
+        ? env.TRANSCRIBE_STREAM_REGION?.trim()
+        : undefined,
   };
 }

@@ -132,3 +132,27 @@ describe("API headers", () => {
     expect(API_SECURITY_HEADERS["Strict-Transport-Security"]).toMatch(/max-age/);
   });
 });
+
+describe("direct live captions (Amazon Transcribe WebSocket)", () => {
+  const origin = "wss://transcribestreaming.us-east-1.amazonaws.com:8443";
+
+  it("allows exactly one Transcribe streaming origin, only when a region is given", () => {
+    expect(buildCsp({ transcribeStreamRegion: "us-east-1" })).toContain(`connect-src 'self' ${origin}`);
+    expect(buildCsp({})).not.toContain("transcribestreaming");
+  });
+
+  it("never turns a bad region into a wildcard or another host", () => {
+    for (const region of ["", "*", "us-east-1.evil.example", "us-east-1:443/x", "US-EAST-1"]) {
+      expect(buildCsp({ transcribeStreamRegion: region }), region).not.toContain("transcribestreaming");
+    }
+    expect(buildCsp({ transcribeStreamRegion: "us-east-1" })).not.toMatch(/connect-src[^;]*\*/);
+  });
+
+  it("is enabled by the environment only on the cloud edition with the role configured", () => {
+    const base = { NODE_ENV: "production", TRANSCRIBE_STREAM_REGION: "us-east-1" };
+    const role = "arn:aws:iam::123456789012:role/r";
+    expect(securityOptionsFromEnv({ ...base, SECUREMIND_EDITION: "cloud", TRANSCRIBE_STREAM_ROLE_ARN: role }).transcribeStreamRegion).toBe("us-east-1");
+    expect(securityOptionsFromEnv({ ...base, SECUREMIND_EDITION: "cloud" }).transcribeStreamRegion).toBeUndefined();
+    expect(securityOptionsFromEnv({ ...base, TRANSCRIBE_STREAM_ROLE_ARN: role }).transcribeStreamRegion).toBeUndefined();
+  });
+});
