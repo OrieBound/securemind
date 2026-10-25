@@ -107,7 +107,6 @@ import { SessionAvatar } from "@/components/app/user-avatar";
 import { isReferenceOnlyModel } from "@/lib/models/reference-catalog";
 import { catalogSelectionStatus } from "@/lib/models/model-availability";
 import {
-  DEFAULT_TIER_MODELS,
   displayModelForTier,
   effectiveTierOverrides,
   sanitizeTierOverrides,
@@ -455,8 +454,6 @@ const SELECTABLE_MODELS = [
   { id: "llama-3.1-8b-instant",                       label: "Llama 3.1 8B",         speed: "560 T/s",  tier: "$"   as const },
 ];
 
-// Default model assigned to each complexity tier (mirrors router.ts COMPLEXITY_TIERS)
-const DEFAULT_MODE_MODELS: Record<string, string> = DEFAULT_TIER_MODELS;
 
 function shortModelName(id: string): string {
   const map: Record<string, string> = {
@@ -1145,7 +1142,6 @@ async function persistMessage(
   }
 }
 
-function pct(v: number) { return `${Math.round(v * 100)}%`; }
 
 function nameInitials(name: string) {
   return name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
@@ -2286,10 +2282,6 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     setTourInvite(false);
     setTourActive(false);
   }, [tourAccountKey]);
-  const settingsActorRole =
-    authSession?.role === "super_admin" || authSession?.role === "admin" || authSession?.role === "member"
-      ? authSession.role
-      : ("owner" as const);
   const defaultSettingsSection: SettingsSection =
     settingsIsAdmin
       ? "admin"
@@ -2301,7 +2293,6 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   const [insightsTab, setInsightsTab] = useState<InsightsTabId>("context");
   const [featureOrder, setFeatureOrder] = useWorkspaceFeatureOrder();
   const [settingsSection, setSettingsSectionState] = useState<SettingsSection>(() => defaultSettingsSection);
-  const settingsReturnSectionRef = useRef<SettingsSection | null>(null);
   const lastWorkNavRef = useRef<NavId>("thread");
   const [settingsAnimatingOut, setSettingsAnimatingOut] = useState(false);
   const [settingsEntering, setSettingsEntering] = useState(false);
@@ -2623,7 +2614,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     else setSettingsSectionState("insights-security");
   }, [analyticsView, asUserParam]);
 
-  const [mode, setMode]           = useState<Mode>("Standard" as Mode);
+  const [mode]                    = useState<Mode>("Standard" as Mode);
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const [streamStartedAt, setStreamStartedAt] = useState<number | null>(null);
@@ -2721,7 +2712,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   const [routeStatsRange, setRouteStatsRange] = useState<StatsRange>("today");
   const [routeStatsWorkspaceId, setRouteStatsWorkspaceId] = useState("all");
   const [piiStatsRange, setPiiStatsRange]     = useState<StatsRange>("today");
-  const [piiStatsWorkspaceId, setPiiStatsWorkspaceId] = useState("all");
+  const [piiStatsWorkspaceId] = useState("all");
   const [routeHistory, setRouteHistory]       = useState<RouteHit[]>([]);
   /** Server cost summary for Insights → Cost (same source as /analytics/cost). */
   const [serverCost, setServerCost] = useState<InsightsCostPayload | null>(null);
@@ -3144,7 +3135,6 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
       } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspaceId]);
 
   // ── memory fetch ────────────────────────────────────────────────────────────
@@ -3355,7 +3345,6 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
         setSessionLoading(false);
       })
       .finally(() => setWorkspacesReady(true));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadSession = (workspaceId: string, agentName: string) => {
@@ -4822,7 +4811,6 @@ _Preparing the file…_`);
     setTurnCount(0);
     composerRef.current?.clear();
     loadSession(agent.id, agent.name);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWorkspaceId]);
 
   const handleWorkspaceClick = useCallback((agent: Workspace) => {

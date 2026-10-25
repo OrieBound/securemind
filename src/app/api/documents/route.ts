@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
   }
 
   let extractedText = "";
-  let drafts: DocumentChunkDraft[] = [];
+  const drafts: DocumentChunkDraft[] = [];
   let extractMeta: Record<string, unknown> | undefined;
   let errorCode: string | null = null;
   let errorMessage: string | null = null;

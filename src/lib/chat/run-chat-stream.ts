@@ -453,7 +453,7 @@ export async function prepareChatTurn(
   const { citations: promptCitations, promptBlock } = turn.shouldRetrieve
     ? packageEvidence(evidenceHits)
     : { citations: [] as ReturnType<typeof packageEvidence>["citations"], promptBlock: "" };
-  let citations = promptCitations;
+  const citations = promptCitations;
   if (promptBlock) {
     systemPrompt += promptBlock;
   } else if (turn.shouldRetrieve) {
