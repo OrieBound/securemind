@@ -380,6 +380,16 @@ resource "aws_api_gateway_method" "warm_any" {
   authorization = "NONE"
 }
 
+# An explicit GET on /warm, next to the catch-all ANY above. ANY still answers the browser's
+# preflight (OPTIONS) and anything else; GET is what the wake-up call uses, and a method setting
+# (the lower throttle below) can only be attached to a named method, not to ANY.
+resource "aws_api_gateway_method" "warm_get" {
+  rest_api_id   = aws_api_gateway_rest_api.this.id
+  resource_id   = aws_api_gateway_resource.warm.id
+  http_method   = "GET"
+  authorization = "NONE"
+}
+
 resource "aws_api_gateway_integration" "chat_post" {
   rest_api_id             = aws_api_gateway_rest_api.this.id
   resource_id             = aws_api_gateway_resource.chat.id
@@ -430,6 +440,15 @@ resource "aws_api_gateway_integration" "warm" {
   rest_api_id             = aws_api_gateway_rest_api.this.id
   resource_id             = aws_api_gateway_resource.warm.id
   http_method             = aws_api_gateway_method.warm_any.http_method
+  integration_http_method = "POST"
+  type                    = "AWS_PROXY"
+  uri                     = "arn:aws:apigateway:${data.aws_region.current.name}:lambda:path/2015-03-31/functions/${aws_lambda_function.warm.arn}/invocations"
+}
+
+resource "aws_api_gateway_integration" "warm_get" {
+  rest_api_id             = aws_api_gateway_rest_api.this.id
+  resource_id             = aws_api_gateway_resource.warm.id
+  http_method             = aws_api_gateway_method.warm_get.http_method
   integration_http_method = "POST"
   type                    = "AWS_PROXY"
   uri                     = "arn:aws:apigateway:${data.aws_region.current.name}:lambda:path/2015-03-31/functions/${aws_lambda_function.warm.arn}/invocations"
@@ -492,6 +511,8 @@ resource "aws_api_gateway_deployment" "this" {
       var.cognito_user_pool_arn,
       aws_api_gateway_method.chat_options.id,
       aws_api_gateway_method.warm_any.id,
+      aws_api_gateway_method.warm_get.id,
+      aws_api_gateway_integration.warm_get.id,
       aws_api_gateway_integration.chat_post.id,
       aws_api_gateway_integration.chat_options.id,
       aws_api_gateway_integration_response.chat_options.id,
@@ -504,6 +525,7 @@ resource "aws_api_gateway_deployment" "this" {
     create_before_destroy = true
   }
   depends_on = [
+    aws_api_gateway_integration.warm_get,
     aws_api_gateway_integration.chat_post,
     aws_api_gateway_integration.chat_options,
     aws_api_gateway_integration.warm,
@@ -562,14 +584,14 @@ resource "aws_api_gateway_method_settings" "all" {
 resource "aws_api_gateway_method_settings" "warm" {
   rest_api_id = aws_api_gateway_rest_api.this.id
   stage_name  = aws_api_gateway_stage.prod.stage_name
-  method_path = "warm/ANY"
+  method_path = "warm/GET"
 
   settings {
     throttling_rate_limit  = var.warm_throttle_rate_limit
     throttling_burst_limit = var.warm_throttle_burst_limit
   }
 
-  depends_on = [aws_api_gateway_method_settings.all]
+  depends_on = [aws_api_gateway_method_settings.all, aws_api_gateway_integration.warm_get]
 }
 
 output "api_base_url" {
