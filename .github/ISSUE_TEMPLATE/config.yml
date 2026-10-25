@@ -3,6 +3,9 @@ contact_links:
   - name: Report a security problem
     url: https://github.com/OrieBound/securemind/security/advisories/new
     about: Please report vulnerabilities privately. Do not open a public issue.
+  - name: Contact the author by email
+    url: mailto:hello@securemind.chat
+    about: For anything that does not belong in a public issue.
   - name: Ask a question or share an idea
     url: https://github.com/OrieBound/securemind/discussions
     about: Questions, ideas and "how do I" topics belong in Discussions.
