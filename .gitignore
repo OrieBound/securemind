@@ -130,3 +130,6 @@ scripts/.floci-*.env
 .agents/
 .windsurf/
 skills-lock.json
+
+# Private, local-only security report
+docs/security-audit/05-final-release-assessment.md
