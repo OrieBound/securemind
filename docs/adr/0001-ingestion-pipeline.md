@@ -1,5 +1,7 @@
 ## ADR 0001: Conversation ingestion → memory → retrieval pipeline
 
+> **Superseded in part.** Hosted storage is DynamoDB with native vectors (ADR 0007) and infrastructure is Terraform (ADR 0008). Aurora and OpenSearch below are history.
+
 **Status**: Partially shipped · **Last updated**: 2026-08-03 · **Audience**: Backend + cognition architecture
 
 ---

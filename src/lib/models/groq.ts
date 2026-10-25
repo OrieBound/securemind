@@ -124,11 +124,6 @@ export async function* streamGroqChat(
   onFinish?.({ truncated });
 }
 
-/** Sync check for env-only paths (image extract tests). Prefer hasGroqRuntime in chat. */
-export function isGroqAvailable(): boolean {
-  return !!process.env.GROQ_API_KEY;
-}
-
 /**
  * Includes Admin-configured InstanceConfig keys.
  * Vendor API (Groq) traffic requires external-risk acknowledgment — Bedrock is
@@ -154,8 +149,6 @@ export const VENDOR_RISK_REQUIRED_CODE = "VENDOR_RISK_REQUIRED";
 
 export const VENDOR_RISK_REQUIRED_MESSAGE =
   "Vendor APIs (e.g. Groq) are blocked until you acknowledge the risk in Settings → Models.";
-
-export const GROQ_NOT_CONFIGURED_CODE = "GROQ_NOT_CONFIGURED";
 
 export const GROQ_NOT_CONFIGURED_MESSAGE =
   "Groq is not configured. Add a Groq API key in Settings → Models, " +

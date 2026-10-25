@@ -23,10 +23,6 @@ import {
   type SafeTermKind,
 } from "@/lib/pii";
 
-export function isPiiSensitivityTier(v: unknown): v is PiiSensitivityTier {
-  return parsePiiSensitivityTier(v) !== null;
-}
-
 export function tierRank(tier: PiiSensitivityTier): number {
   return SENSITIVITY_TIERS.indexOf(tier);
 }

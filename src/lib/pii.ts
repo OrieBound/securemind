@@ -89,16 +89,6 @@ export type SafeTerm = {
 export const DOCUMENTATION_MAIL_DOMAINS = ["example.com", "example.org", "example.net"] as const;
 export const DOCUMENTATION_MAIL_TLDS = ["test", "invalid", "localhost", "example"] as const;
 
-function normalizeDomainValue(value: string): string {
-  return value.trim().toLowerCase().replace(/^\*\./, "");
-}
-
-export function isDocumentationMailDomain(value: string): boolean {
-  const v = normalizeDomainValue(value);
-  return (DOCUMENTATION_MAIL_DOMAINS as readonly string[]).includes(v)
-    || (DOCUMENTATION_MAIL_TLDS as readonly string[]).includes(v);
-}
-
 /** Shipped catalog entries (`id` starts with `default-`). Visible and removable. */
 export function isShippedDefaultSafeTerm(term: Pick<SafeTerm, "id">): boolean {
   return term.id.startsWith("default-");

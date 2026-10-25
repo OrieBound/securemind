@@ -233,8 +233,7 @@ export async function POST(req: NextRequest) {
     if (err instanceof CognitoAdminError) {
       return Response.json({ error: err.message }, { status: err.status });
     }
-    const msg = err instanceof Error ? err.message : "Create failed";
-    console.warn("[admin/users]", msg.slice(0, 160));
-    return Response.json({ error: msg }, { status: 502 });
+    console.warn("[admin/users] create failed:", err instanceof Error ? err.name : "error");
+    return Response.json({ error: "Could not create the user. Try again." }, { status: 502 });
   }
 }

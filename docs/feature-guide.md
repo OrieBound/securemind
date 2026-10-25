@@ -171,10 +171,11 @@ Settings → Models is where a source becomes a model chat can run, and where yo
 
 **Connections** is the top of the page.
 
-- Vendor APIs. An administrator saves a key for Groq, Gemini, OpenAI, or Anthropic. The key is stored encrypted on this install. Chat will not list that vendor until the key can list models and you allow vendor APIs.
+- Vendor APIs. An administrator saves a key for Groq, Gemini, OpenAI, Anthropic, or xAI (Grok). The key is stored encrypted on this install. Chat will not list that vendor until the key can list models and you allow vendor APIs.
 - Amazon Bedrock. Turn on billable AWS and choose the profile and region. The credential stays in the AWS CLI or the instance role. Enabling Bedrock does not assign a model to a tier and does not change rows you already set.
 - Local models. Ollama on this machine. Installed chat models can be used without the cloud-style check. Embeddings use a local embedding model.
-- Voice. Off until you choose Groq Whisper or Amazon Transcribe and acknowledge that the audio is sent to that service before any text scan. The transcript lands in the composer. You still review it when you send.
+- Voice. Off until you choose Groq Whisper or Amazon Transcribe and acknowledge that the audio is sent to that service before any text scan. The transcript lands in the composer. You still review it when you send. On the hosted edition with Amazon Transcribe, the browser streams the microphone straight to Transcribe, so words appear while you speak; a session ends after ten minutes. Voice counts toward the monthly cost cap, and is refused once you are over it.
+- Task models. Off by default. An administrator may approve one helper model to build a downloadable file when the chat model did not produce one. It sees only the reply text, with card numbers, SSNs and secrets already replaced, and outside vendors need the vendor notice accepted first.
 
 **The model list** is everything those sources offered. A cloud model stays under **Not in chat yet** until you press **Enable** and it answers. If it cannot answer, it stays there with the reason. **Check access** tries each listed model for that key once. **Hide** takes a model off the chat list. **Show** puts it back. A model that is hidden can still sit on a tier, which is the yellow mark in Insights.
 
@@ -182,17 +183,21 @@ Settings → Models is where a source becomes a model chat can run, and where yo
 
 Why it is there: the administrator decides which accounts and which local models this install may call, proves a cloud model can answer before it enters chat, and decides which model each tier uses. Members then chat against that setup.
 
-## Workspace (Settings)
+## Detection (Settings)
 
 This page is the detection policy for the whole install: sensitivity, and the safe terms that may be skipped. It is administrator-owned. It is separate from an individual workspace’s name and description, which you edit on that workspace.
 
 Why it is there: the scan should follow one rule for the install, set by the person who operates it, rather than a different rule from each browser.
 
-## My Profile
+## Profile
 
-Your display name, a preset picture or a cropped photo, and your password when the install uses Cognito. The photo is stored for this install and served only to a signed-in session. It is not a public link.
+Your display name, and a preset picture or a cropped photo. The photo is stored for this install and served only to a signed-in session. It is not a public link.
 
-Why it is there: the directory and the chat chrome need to know who is signed in, and you should be able to change your own password without an administrator reading it.
+## Account security
+
+Your password, and optional two-step verification with an authenticator app, when the install uses Cognito. Turning two-step verification off needs your password again. Administrators see a recommendation until they turn it on. The local Docker sign-in does not support it, so the page hides it there. See `docs/mfa.md`.
+
+Why they are there: the directory and the chat chrome need to know who is signed in, and you should be able to change your own password and second step without an administrator reading it.
 
 ## Appearance
 
@@ -219,3 +224,19 @@ Why it is there: the first session has one job, which is to reach a model. The r
 ## How the parts fit
 
 You run the install. The administrator connects keys and Bedrock, sets the detection rule, creates people, and sets caps. Each person works inside a workspace. Chat reviews a message, then a tier or a fixed model answers. Knowledge and memory stay in that workspace. Insights shows what ran, what it cost, and what the scanner flagged. Nothing in that chain requires SecureMind to hold your keys on a service you do not operate.
+
+## Files from chat
+
+Ask for a file ("export this as Excel", "give me a Word document") and the reply carries a file card with a Download button. The browser builds the file when you press it: `.xlsx` or `.csv` from a table, `.docx` or `.md` from text, and a few plain-text types. Nothing is stored on the server. File names are cleaned, anything that would run when opened is saved as `.txt`, spreadsheet cells that look like formulas are written as text, and files over 2 MB are refused. If the model did not write a file block, the browser first tries to build one from the reply itself, then (only if an administrator approved one under Task models) asks the helper model.
+
+## First visit for members
+
+A member's first workspace opens with a short welcome, and a **Take the tour** button walks through the main areas. The button stops appearing after three visits or when you close it.
+
+## Portal name and logo
+
+On the Admin page, the **Portal** card lets an administrator set the logo, name and short phrase in the top-left of the workspace. The sign-in page, browser title and email stay SecureMind.
+
+## Retired models
+
+When a provider retires a model, the next chat that picks it fails with the provider's "not found" or "deprecated" answer. SecureMind then takes that model off the chat menus (it moves to the "not working" group) and says so in the reply, until a later Test passes. Temporary problems such as rate limits or an outage leave the model listed.

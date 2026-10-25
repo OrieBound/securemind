@@ -956,7 +956,7 @@ export function createHostedAppStore(driver: HostedDriver) {
       const owned = await findOwned(userId, workspaceId);
       if (!owned) return null;
 
-      let sessions = await listSessions(userId, workspaceId);
+      const sessions = await listSessions(userId, workspaceId);
       sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
       let session = sessions[0];

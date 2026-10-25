@@ -7,6 +7,7 @@ import { hitRateLimit } from "@/lib/rate-limit";
 import { runtimeEdition } from "@/lib/runtime-env";
 import { pickTranscribeBackend, transcribeUnavailableMessage } from "@/lib/transcribe/backend";
 import { createTranscribeStreamUrl, transcribeStreamConfig } from "@/lib/transcribe/stream-session";
+import { LIVE_SESSION_ESTIMATE_MINUTES, recordTranscribeUsage, voiceCostCapResponse } from "@/lib/transcribe/voice-usage";
 
 /**
  * Hosted only. Returns a short-lived signed WebSocket address so the browser can stream the
@@ -64,8 +65,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const overCap = await voiceCostCapResponse(userId);
+  if (overCap) return overCap;
+
   try {
     const session = await createTranscribeStreamUrl(config, userId);
+    await recordTranscribeUsage(userId, LIVE_SESSION_ESTIMATE_MINUTES, "amazon-transcribe-live");
     return Response.json(session, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     console.error("[transcribe/live-session] could not sign:", err instanceof Error ? `${err.name}: ${err.message.slice(0, 300)}` : "unknown error");

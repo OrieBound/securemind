@@ -334,7 +334,7 @@ def build() -> None:
     body(doc, "Guide sections")
     body(
         doc,
-        "3 Terms and controls  ·  4 Connections and credentials  ·  5 Installation options  ·  6 Workspaces  ·  7 Chat  ·  8 Knowledge  ·  9 Memory  ·  10 Saved  ·  11 Insights  ·  12 Model settings  ·  13 Detection policy  ·  14 My Profile  ·  15 Appearance  ·  16 Admin console  ·  17 Getting started  ·  18 How the parts fit  ·  19 Scope and limitations",
+        "3 Terms and controls  ·  4 Connections and credentials  ·  5 Installation options  ·  6 Workspaces  ·  7 Chat  ·  8 Knowledge  ·  9 Memory  ·  10 Saved  ·  11 Insights  ·  12 Model settings  ·  13 Detection policy  ·  14 Profile and account security  ·  15 Appearance  ·  16 Admin console  ·  17 Getting started  ·  18 How the parts fit  ·  19 Scope and limitations",
     )
 
     h1(doc, "3  Terms and controls")
@@ -383,7 +383,7 @@ def build() -> None:
     h2(doc, "Voice transcription")
     body(
         doc,
-        "Voice input uses a configured transcription service: Amazon Transcribe or Groq Whisper. The transcript appears in the composer for review before sending. For hosted transcription, audio is sent to the selected service before the resulting text can be scanned.",
+        "Voice input uses a configured transcription service: Amazon Transcribe or Groq Whisper. The transcript appears in the composer for review before sending. For hosted transcription, audio is sent to the selected service before the resulting text can be scanned. On the hosted edition with Amazon Transcribe, words appear while you speak, a session ends after ten minutes, and voice counts toward the monthly cost cap.",
     )
 
     h1(doc, "5  Installation options")
@@ -614,11 +614,11 @@ def build() -> None:
     )
     figure(doc, "5", "Settings, Detection. Sensitivity and safe terms.")
 
-    h1(doc, "14  My Profile")
+    h1(doc, "14  Profile and account security")
     purpose(doc, "Manage how you are identified in the application and maintain your account details.")
     body(
         doc,
-        "My Profile lets you set a profile image, change your display name, and add a description about yourself. The photo is available to a signed-in session. It is not a public link. Where the installation uses its sign-in service, password controls let you change your password.",
+        "Profile lets you set a profile image, change your display name, and add a description about yourself. The photo is available to a signed-in session. It is not a public link. Account security, where the installation uses its sign-in service, lets you change your password and turn on two-step verification with an authenticator app.",
     )
 
     h1(doc, "15  Appearance")

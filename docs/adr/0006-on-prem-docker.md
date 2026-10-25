@@ -1,5 +1,7 @@
 ## ADR 0006: On-prem distribution via Docker Compose
 
+> **Note.** The cloud edition now uses DynamoDB (ADR 0007), not Neon or Aurora. Host development needs `-f docker-compose.dev.yml` so the app can reach the database (`npm run docker:up`).
+
 **Status**: Accepted · **Date**: 2026-08-08
 
 ---

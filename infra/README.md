@@ -91,7 +91,7 @@ Open the site, enter that code plus the email and password **you** choose. The s
 | `modules/secrets` | `vendor-keys` parameter (Parameter Store, Advanced tier); optional bootstrap Groq parameter |
 | `modules/api` | API Gateway + streaming `/chat` + `/warm` |
 | `modules/monitoring` | CloudTrail trail and its private bucket, five CloudWatch alarms on an SNS topic, a monthly AWS Budget (`alert_email`, `monthly_budget_usd`, `enable_cloudtrail`) |
-| `modules/amplify` | Amplify app (no GitHub token); the `app-secrets` Parameter Store parameter (instance encryption key and first-run setup code) |
+| `modules/amplify` | Amplify app (no GitHub token); the `app-secrets` Parameter Store parameter (instance encryption key and first-run setup code); the `securemind-transcribe-stream-<env>` role that signs short-lived Amazon Transcribe addresses for live voice captions (it can only open a Transcribe stream; on by default, in the app's region; ADR 0009) |
 
 ## Secrets model
 

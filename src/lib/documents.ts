@@ -433,11 +433,10 @@ export async function processDocument(
       },
     });
 
-    console.log(
-      `[documents] ${doc.name}: ${embedded}/${chunks.length} chunks embedded → ${finalStatus}`,
-    );
+    // Id only: a file name can itself be personal data.
+    console.info(`[documents] ${documentId}: ${embedded}/${chunks.length} chunks embedded → ${finalStatus}`);
   } catch (err) {
-    console.error("[documents] processDocument failed:", err);
+    console.error("[documents] processDocument failed:", err instanceof Error ? err.name : "error");
     await db.document
       .update({ where: { id: documentId }, data: { status: "failed" } })
       .catch(() => {});
@@ -519,11 +518,9 @@ async function processHostedDocument(
       fragmentIds,
       chunks: storedChunks,
     });
-    console.log(
-      `[documents] ${doc.name}: ${embedded}/${chunks.length} chunks embedded → ${finalStatus}`,
-    );
+    console.info(`[documents] ${documentId}: ${embedded}/${chunks.length} chunks embedded → ${finalStatus}`);
   } catch (err) {
-    console.error("[documents] hosted processDocument failed:", err);
+    console.error("[documents] hosted processDocument failed:", err instanceof Error ? err.name : "error");
     await updatePersistedDocument(ownerUserId, documentId, { status: "failed" }).catch(() => {});
   }
 }

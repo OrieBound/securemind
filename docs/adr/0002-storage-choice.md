@@ -1,5 +1,7 @@
 ## ADR 0002: Keep Postgres + pgvector as the primary store
 
+> **Superseded in part.** The hosted edition uses DynamoDB (ADR 0007); Neon is not the default anywhere. Local and on-prem stay on Postgres + pgvector.
+
 **Status**: Superseded for **hosted AWS** by [ADR 0007](0007-hosted-dynamodb-vectors.md). **Still accepted** for local / on-prem (Docker Compose Postgres + pgvector) and as the optional Neon adapter. · **Date**: 2026-08-01 · **Updated**: 2026-08-24 · **Supersedes**: the Aurora Serverless v2 assumption in `AGENTS.md`
 
 > **2026-08-24.** Hosted AWS no longer defaults to Neon. DynamoDB native vector search (`SearchVectors`) is the AWS edition store. This ADR remains the rationale for why local development stays on Postgres, and why Neon is an optional hosted Postgres path rather than the AWS default. Do not treat the original “DynamoDB rejected” row as current for cloud.

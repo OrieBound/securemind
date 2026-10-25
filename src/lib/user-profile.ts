@@ -425,20 +425,3 @@ export async function setProfileStatus(opts: {
   });
   return toPublic(updated);
 }
-
-export async function findProfileByEmailOrSub(
-  emailOrUsername: string,
-): Promise<{ userId: string } | null> {
-  const q = emailOrUsername.trim().toLowerCase();
-  if (usesHostedAppStore()) {
-    const row = await hostedAppStore().getProfile(q);
-    if (row) return { userId: row.userId };
-    return null;
-  }
-  const byEmail = await db.userProfile.findFirst({
-    where: { email: { equals: q, mode: "insensitive" } },
-    select: { userId: true },
-  });
-  if (byEmail) return byEmail;
-  return db.userProfile.findUnique({ where: { userId: emailOrUsername }, select: { userId: true } });
-}

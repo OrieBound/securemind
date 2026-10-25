@@ -1,5 +1,5 @@
 /**
- * Cognito (Floci or real AWS) helpers for server-side signup/login.
+ * Cognito (Floci or real AWS) helpers for server-side sign-in.
  *
  * Browser never talks to Cognito directly — API routes call these so the
  * endpoint URL and any future client secret stay on the server.
@@ -8,8 +8,6 @@
 import {
   CognitoIdentityProviderClient,
   InitiateAuthCommand,
-  SignUpCommand,
-  ConfirmSignUpCommand,
   ChangePasswordCommand,
   ForgotPasswordCommand,
   ConfirmForgotPasswordCommand,
@@ -86,34 +84,6 @@ export type AuthTokens = {
   refreshToken?: string;
   expiresIn: number;
 };
-
-export async function cognitoSignUp(email: string, password: string): Promise<{ userConfirmed: boolean }> {
-  const out = await cip().send(
-    new SignUpCommand({
-      ClientId: clientId(),
-      Username: email,
-      Password: password,
-      UserAttributes: [
-        { Name: "email", Value: email },
-      ],
-    }),
-  );
-  return { userConfirmed: Boolean(out.UserConfirmed) };
-}
-
-/**
- * Floci often auto-confirms; real Cognito may require a code.
- * When confirmation is required, the login route surfaces that to the UI.
- */
-export async function cognitoConfirmSignUp(email: string, code: string): Promise<void> {
-  await cip().send(
-    new ConfirmSignUpCommand({
-      ClientId: clientId(),
-      Username: email,
-      ConfirmationCode: code,
-    }),
-  );
-}
 
 type CognitoAuthResult = {
   AccessToken?: string;

@@ -13,7 +13,6 @@ import {
   GROQ_PRICING_VERSION,
 } from "./groq";
 import {
-  BEDROCK_MODEL_PRICING,
   BEDROCK_PRICING_EFFECTIVE,
   BEDROCK_PRICING_VERSION,
   estimateBedrockTurnCostUsd,
@@ -22,7 +21,6 @@ import {
 import {
   isVendorPricedProvider,
   lookupVendorRates,
-  VENDOR_MODEL_PRICING,
   VENDOR_PRICING_EFFECTIVE,
   VENDOR_PRICING_VERSION,
   vendorFloorRates,
@@ -212,15 +210,6 @@ export function estimateSavingsVsBaseline(opts: {
   if (baselineRaw == null) return null;
   const baseline = applyConservativeUplift(baselineRaw);
   return Math.max(0, baseline - actual.estimatedCostUsd);
-}
-
-/** Models with a known list price (for pickers / diagnostics). */
-export function listPricedModelIds(): string[] {
-  return [
-    ...Object.keys(GROQ_MODEL_PRICING),
-    ...Object.keys(BEDROCK_MODEL_PRICING),
-    ...Object.values(VENDOR_MODEL_PRICING).flatMap(entries => entries.map(e => e.prefix)),
-  ];
 }
 
 export function hasListPrice(

@@ -5,14 +5,13 @@ import { ChevronDown, Cloud, ExternalLink, HardDrive, KeyRound, LayoutList, Mic,
 import { cn } from "@/lib/utils";
 import { SelectMenu } from "@/components/ui/select-menu";
 import {
-  ModelPickerList,
   buildSettingsCatalogModels,
   chatSelectableModels,
   useModelCatalog,
   useModelTester,
   type CatalogModel,
 } from "@/components/app/model-catalog";
-import { ModelInventory, partitionModels, providerCountsLine, vendorMenuPhrase, type InventoryView } from "@/components/app/model-inventory";
+import { ModelInventory, partitionModels, vendorMenuPhrase, type InventoryView } from "@/components/app/model-inventory";
 import { ComplexityTiersEditor, type ComplexityTiersBind } from "@/components/app/complexity-tiers-editor";
 import {
   formatGroqConnectivityError,
@@ -131,7 +130,7 @@ export function InferenceSettings(props: Props) {
   const onProvidersChanged = props.onProvidersChanged;
   const [status, setStatus] = useState<ProviderStatus | null>(null);
   const [groq, setGroq] = useState<CatalogModel[]>([]);
-  const [bedrock, setBedrock] = useState<CatalogModel[]>([]);
+  const [, setBedrock] = useState<CatalogModel[]>([]);
   const [ollama, setOllama] = useState<CatalogModel[]>([]);
   const [openai, setOpenai] = useState<CatalogModel[]>([]);
   const [anthropic, setAnthropic] = useState<CatalogModel[]>([]);
@@ -533,21 +532,6 @@ export function InferenceSettings(props: Props) {
     () => ollama.filter(m => m.modality !== "text"),
     [ollama],
   );
-
-  const modelCount = (p: WiredVendorKind | "bedrock" | "ollama") =>
-    p === "groq"
-      ? groq.length
-      : p === "bedrock"
-        ? bedrock.length
-        : p === "ollama"
-          ? ollama.length
-          : p === "openai"
-            ? openai.length
-            : p === "anthropic"
-              ? anthropic.length
-              : p === "xai"
-                ? xai.length
-                : google.length;
 
   const inMenuCount = (p: WiredVendorKind) =>
     chatSelectableModels(allModels.filter(m => m.provider === p)).length;

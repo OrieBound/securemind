@@ -28,28 +28,6 @@ type SecurityInfo = {
   passwordPolicy?: DirectoryPasswordPolicy;
 };
 
-export function ProfileAvatarBadge({
-  presetId,
-  displayName,
-  email,
-  photoUrl = null,
-}: {
-  presetId: string;
-  displayName: string | null;
-  email: string | null;
-  photoUrl?: string | null;
-}) {
-  return (
-    <UserAvatarFace
-      presetId={presetId}
-      displayName={displayName}
-      email={email}
-      photoUrl={photoUrl}
-      size="sm"
-    />
-  );
-}
-
 export function ProfileSettings({ view = "profile" }: { view?: "profile" | "security" } = {}) {
   const authSession = useAuthSession();
   const [loading, setLoading] = useState(true);

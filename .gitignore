@@ -125,3 +125,11 @@ site-dev.*
 *-dev.out.log
 *-dev.err.log
 scripts/.floci-*.env
+
+# Local agent/editor tooling (not part of the app)
+.agents/
+.windsurf/
+skills-lock.json
+
+# Private, local-only security report
+docs/security-audit/05-final-release-assessment.md

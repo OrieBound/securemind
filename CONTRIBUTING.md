@@ -13,10 +13,11 @@ SecureMind is a personal project shared as is. Contributions are welcome, and th
 ```bash
 npm ci
 npm run typecheck
+npm run lint
 npm test
 ```
 
-Both checks should pass. CI runs them on every pull request, and a maintainer must approve the run for outside contributors.
+All three should pass (CI also runs `npm run build`). CI runs them on every pull request, and a maintainer must approve the run for outside contributors.
 
 Please keep a change focused on one thing. New detection patterns need test cases in `src/lib/pii.test.ts`, including a false-positive case. A route that reads or writes user-owned data needs a cross-tenant test in `tests/authz.test.ts`. The rules the project follows are in [AGENTS.md](AGENTS.md).
 

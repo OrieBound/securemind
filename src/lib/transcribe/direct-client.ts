@@ -13,6 +13,11 @@ import { downsample, floatToInt16, TARGET_RATE, type CloudLiveSttHandle } from "
 
 /** After Done, how long to wait for Amazon to send the last words and close the connection. */
 const FINISH_TIMEOUT_MS = 8_000;
+/**
+ * Longest one session may run. Each session is counted toward the cost cap as a flat estimate
+ * when it starts (voice-usage.ts), so the browser stops sending audio after this.
+ */
+export const MAX_SESSION_MS = 10 * 60_000;
 
 type Session = { url: string; sampleRate: number };
 
@@ -64,6 +69,11 @@ export function startDirectLiveStt(opts: {
       queued.push(pcm);
     }
   };
+
+  const sessionTimer = setTimeout(() => {
+    stopMic();
+    endStream();
+  }, MAX_SESSION_MS);
 
   processor.onaudioprocess = ev => {
     if (closed) return;
@@ -135,6 +145,7 @@ export function startDirectLiveStt(opts: {
   function stopMic() {
     if (closed) return;
     closed = true;
+    clearTimeout(sessionTimer);
     processor.disconnect();
     mute.disconnect();
     source.disconnect();

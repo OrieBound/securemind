@@ -88,7 +88,3 @@ export function catalogKindForDetectedKind(kind: DetectedKeyKind): VendorCatalog
   if (kind === "xai") return "xai";
   return "none";
 }
-
-export function vendorApiSpec(kind: string): VendorApiSpec | null {
-  return WIRED_VENDOR_APIS.find(v => v.kind === kind) ?? null;
-}

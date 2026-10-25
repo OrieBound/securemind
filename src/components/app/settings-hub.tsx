@@ -671,7 +671,6 @@ export function SettingsHub({
   activeMode,
   complexityTiers,
   isAdmin = false,
-  actorRole = "member",
   canEditSecurity = false,
   securityPending = null,
   onProposeSecurity,

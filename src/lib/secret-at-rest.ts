@@ -82,13 +82,3 @@ export function decryptSecret(value: string | null | undefined): string | null {
   ]);
   return dec.toString("utf8");
 }
-
-export function encryptSecretField<T extends string | null | undefined>(value: T): T {
-  if (value == null || value === "") return value;
-  return encryptSecret(value) as T;
-}
-
-export function decryptSecretField<T extends string | null | undefined>(value: T): T {
-  if (value == null || value === "") return value;
-  return decryptSecret(value) as T;
-}

@@ -45,6 +45,21 @@ vi.mock("@aws-sdk/client-sts", () => ({
   },
 }));
 
+const capState = { capped: false };
+const recordInferenceEvent = vi.fn(async () => {});
+vi.mock("@/lib/cost-cap", () => ({
+  getUserCostCapStatus: async () => ({
+    capped: capState.capped,
+    spentUsd: 12,
+    capUsd: 10,
+    resetsAt: "2026-11-01T00:00:00.000Z",
+    warningLevel: null,
+  }),
+}));
+vi.mock("@/lib/analytics/write", () => ({
+  recordInferenceEvent: (...a: unknown[]) => recordInferenceEvent(...(a as [])),
+}));
+
 const ROLE = "arn:aws:iam::123456789012:role/securemind-transcribe-stream-prod";
 
 function post() {
@@ -58,6 +73,7 @@ beforeEach(async () => {
   state.awsOk = true;
   state.choice = "transcribe";
   state.acked = true;
+  capState.capped = false;
   process.env.TRANSCRIBE_STREAM_ROLE_ARN = ROLE;
   process.env.TRANSCRIBE_STREAM_REGION = "us-east-1";
   assumeRole.mockResolvedValue({
@@ -137,6 +153,25 @@ describe("POST /api/transcribe/live-session", () => {
     // Another account is not held back by the first one's burst.
     state.identity = "user-b";
     expect((await POST(post())).status).toBe(200);
+  });
+
+  it("is refused once the user is over their monthly cost cap, before anything is signed", async () => {
+    capState.capped = true;
+    const { POST } = await import("@/app/api/transcribe/live-session/route");
+    const res = await POST(post());
+    expect(res.status).toBe(402);
+    expect((await res.json()).code).toBe("cost_cap_exceeded");
+    expect(assumeRole).not.toHaveBeenCalled();
+    expect(recordInferenceEvent).not.toHaveBeenCalled();
+  });
+
+  it("records each session toward the cost cap as a flat estimate", async () => {
+    const { POST } = await import("@/app/api/transcribe/live-session/route");
+    await POST(post());
+    expect(recordInferenceEvent).toHaveBeenCalledTimes(1);
+    const ev = (recordInferenceEvent.mock.calls[0] as unknown as [Record<string, unknown>])[0];
+    expect(ev).toMatchObject({ userId: "user-a", provider: "transcribe", tier: "Voice", status: "ok" });
+    expect(ev.extraCostUsd).toBeCloseTo(0.024);
   });
 
   it("reports a signing failure without echoing the error to the browser", async () => {

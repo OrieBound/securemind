@@ -162,7 +162,3 @@ export function getDynamoVectors(): VectorFragmentRepository {
   if (!singleton) singleton = dynamoVectorsFromEnv();
   return singleton;
 }
-
-export function resetDynamoVectorsForTests(): void {
-  singleton = null;
-}

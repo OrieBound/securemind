@@ -1,5 +1,7 @@
 ## ADR 0003: Local AWS scaffolding via Docker Compose + Floci
 
+> **Superseded in part.** Neon is no longer a supported default; hosted storage is DynamoDB (ADR 0007).
+
 **Status**: Accepted · **Date**: 2026-08-01
 
 ---
@@ -31,6 +33,6 @@ by pointing `.env.local` at Compose URLs (see `.env.example`).
 - Cognito JWT verification is implemented in `getIdentity()`; local pool provisioning
   is via `npm run floci:cognito` (Admin/Member groups included).
 - `AUTH_MODE=local` remains the default so existing single-user installs keep working.
-- Operator guide: `docs/deploy/floci-local.md` (feature matrix + internal test checklist).
+- Operator guide: `docs/archive/floci-local.md` (historical; today's local setup is `docs/deploy/on-prem-docker.md`).
 - App Runner and Aurora Serverless are **not** emulated; host Next.js + Compose Postgres
   are the local stand-ins.

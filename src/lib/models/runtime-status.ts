@@ -10,7 +10,6 @@ import { isOllamaEmbedModel, probeOllama } from "@/lib/models/ollama";
 import { routeModel } from "@/lib/models/router";
 import {
   decideChatRuntime,
-  MODEL_PROVIDER_REQUIRED_CODE,
   type ChatSetupGuidance,
 } from "@/lib/models/resolve-chat-runtime";
 import { probeHardware } from "@/lib/models/local-recommendations";
@@ -166,8 +165,4 @@ export async function getRuntimeStatus(): Promise<RuntimeStatus> {
         },
     setup: decision.ok ? null : decision.setup,
   };
-}
-
-export function isModelProviderRequired(code: string | null | undefined): boolean {
-  return code === MODEL_PROVIDER_REQUIRED_CODE;
 }

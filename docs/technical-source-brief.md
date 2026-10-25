@@ -64,7 +64,7 @@ Turn kinds (deterministic, before retrieval):
 - Workspace-grounded and investigation turns retrieve, accept hits at a fused score of 0.40 (`GROUNDED_MIN_SCORE`), and show only sources the answer actually cited. A short question straight after a grounded answer is treated as a follow-up on the same sources.
 - The fused score is vector similarity plus up to 0.12 for the share of the question's key words found in the chunk (`src/lib/retrieval-rank.ts`). A candidate set three times the size of the result is fetched first, so a literal keyword match outside the vector top results still surfaces. On a local install the embedding model gets its task prefixes (`search_document:` when storing, raw and `search_query:` forms when searching), and `npm run knowledge:reindex` re-embeds older chunks.
 - Attachments are read in the turn. Comparing an attachment to workspace Knowledge is the case that also retrieves.
-- Short unclear turns prefer the Micro tier and ask for clarification.
+- Short unclear turns ask for clarification. They are scored like any other turn; real conversation is never routed to Micro.
 - Vision attachments route to `meta-llama/llama-4-scout-17b-16e-instruct` on Groq when that path is available.
 
 Citations are documentary. Conversation history is continuity, not a Source. The assistant’s own earlier replies are not stored as memory facts. Long-term facts come only from user-authored statements (`/api/summarize`). Semantic retrieval for citations is the document category only.
@@ -165,7 +165,7 @@ What is not implemented: a full-policy server scrub of chat text, scanning the m
 
 ## Knowledge and memory
 
-Knowledge is documents the user adds (upload, or a chat attachment saved into the workspace). Text, PDF, and code are extracted; spreadsheets can be queried in a constrained way. Original files stay in a local store or, hosted, are not the Postgres blob. Chunks are embedded and retrieved only inside that workspace, above similarity 0.5.
+Knowledge is documents the user adds (upload, or a chat attachment saved into the workspace). Text, PDF, and code are extracted; spreadsheets can be queried in a constrained way. Original files stay in a local store or, hosted, are not the Postgres blob. Chunks are embedded and retrieved only inside that workspace. Retrieval ranks by a fused score (vector similarity plus a keyword bonus, `src/lib/retrieval-rank.ts`): a grounded turn accepts hits from 0.40, a silent search on a general turn needs 0.55 before it shows Sources.
 
 Memory has two layers:
 
@@ -202,7 +202,7 @@ There is no custom VPC. These are regional managed services.
 
 ## Sign-in security and response headers
 
-Two-step verification is optional and uses an authenticator app (TOTP) through real Cognito. When an account has it on, the password step returns a short-lived sign-in session instead of a cookie, and `/api/auth/login/mfa` finishes the sign-in with the 6-digit code. Cognito makes the secret and checks every code. Setting it up (QR code and a typeable key, confirmed by a code) and turning it off (password required again) are in My Profile. Admins see a recommendation until they turn it on, and an Owner or Admin can reset someone's second step from the Admin page for a lost phone. SMS codes are not offered. The local Docker sign-in cannot do codes, so the control is hidden there. It does not end sessions that already exist, and it is not required unless the operator sets the pool to `ON`. See `docs/mfa.md`.
+Two-step verification is optional and uses an authenticator app (TOTP) through real Cognito. When an account has it on, the password step returns a short-lived sign-in session instead of a cookie, and `/api/auth/login/mfa` finishes the sign-in with the 6-digit code. Cognito makes the secret and checks every code. Setting it up (QR code and a typeable key, confirmed by a code) and turning it off (password required again, rate limited) are in Settings → Account security. Admins see a recommendation until they turn it on, and an Owner or Admin can reset someone's second step from the Admin page for a lost phone. SMS codes are not offered. The local Docker sign-in cannot do codes, so the control is hidden there. It does not end sessions that already exist, and it is not required unless the operator sets the pool to `ON`. See `docs/mfa.md`.
 
 Every response from the app carries a Content-Security-Policy and the usual protective headers: no framing, no content sniffing, a strict referrer policy, and permissions limited to the microphone for voice input. On the hosted edition HSTS is added. The browser may connect only to its own origin and the chat API origin, because model vendors are called from the server. The policy still allows inline scripts, since Next.js writes inline hydration scripts; nonces would need middleware. The chat and warm Lambdas and API Gateway's own error responses add the sniffing, referrer and HSTS headers.
 

@@ -1,5 +1,8 @@
 # Local staging with Floci (internal test guide)
 
+> **Historical, not current.** Describes an older local-AWS lab (App Runner, Neon, SAM, Secrets Manager). Today's local setup is in docs/deploy/on-prem-docker.md; Floci runs inside Docker Compose as the local sign-in.
+
+
 Use this to practice SecureMind **on your machine** with as much AWS-shaped wiring as Floci can provide — **without** App Runner, Aurora Serverless, or real Bedrock streaming bills.
 
 > Floci is the emulator (port `4566`). It is **not** a full replacement for production AWS.

@@ -88,6 +88,11 @@ variable "vendor_keys_param_arn" {
 variable "auth_mode" {
   type    = string
   default = "cognito"
+  validation {
+    # The hosted API must verify Cognito tokens; "local" would hand every caller the owner identity.
+    condition     = var.auth_mode == "cognito"
+    error_message = "The hosted API only supports auth_mode = \"cognito\"."
+  }
 }
 
 variable "cognito_user_pool_id" {
@@ -170,6 +175,7 @@ resource "aws_s3_bucket_ownership_controls" "avatars" {
 locals {
   env_vars = {
     NODE_OPTIONS              = "--enable-source-maps"
+    NODE_ENV                  = "production"
     DATABASE_MODE             = "dynamodb"
     STORAGE_BACKEND           = "dynamodb"
     AUTH_MODE                 = var.auth_mode

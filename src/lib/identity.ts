@@ -198,11 +198,6 @@ export async function getIdentity(req: Request): Promise<Identity> {
 const STATUS_TTL_MS = 30_000;
 const statusCache = new Map<string, { blocked: boolean; at: number }>();
 
-/** Test hook. */
-export function clearIdentityStatusCache(): void {
-  statusCache.clear();
-}
-
 /**
  * A suspended or deleted account keeps a valid access token until it expires. Look the profile
  * up (cached for 30 seconds) and refuse those accounts. If the lookup itself fails the token

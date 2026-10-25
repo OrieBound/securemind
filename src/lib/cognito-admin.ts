@@ -76,7 +76,7 @@ function cognitoEndpoint(): string | undefined {
 }
 
 /** Floci / LocalStack only. Real Cognito must use the IAM/SSO default chain. */
-function useFlociStub(): boolean {
+function shouldUseFlociStub(): boolean {
   const origin = cognitoEndpoint();
   if (!origin) return false;
   return !isAwsHostedEndpoint(origin);
@@ -87,7 +87,7 @@ let _endpoint: string | undefined;
 let _floci: boolean | undefined;
 
 function cip(): CognitoIdentityProviderClient {
-  const floci = useFlociStub();
+  const floci = shouldUseFlociStub();
   const endpoint = floci ? cognitoEndpoint() : undefined;
   if (!_client || _endpoint !== endpoint || _floci !== floci) {
     _client = new CognitoIdentityProviderClient({
@@ -262,7 +262,7 @@ async function ensureOwnerGroup(username: string): Promise<void> {
  * Ensures that user is in the Owner Cognito group when possible.
  */
 export async function ensureOwnerBootstrap(users?: DirectoryUser[]): Promise<string | null> {
-  let ownerUserId = await getOwnerUserId();
+  const ownerUserId = await getOwnerUserId();
   if (ownerUserId) return ownerUserId;
 
   const directory = users ?? (await listDirectoryUsersRaw());
@@ -615,7 +615,7 @@ export async function adminResetDirectoryUserMfa(
   username: string,
   opts?: { actorRole?: AppRole; actorUserId?: string | null },
 ): Promise<void> {
-  if (useFlociStub()) {
+  if (shouldUseFlociStub()) {
     throw new CognitoAdminError(
       "Two-step verification is not available with the local sign-in used by Docker.",
       501,

@@ -145,7 +145,7 @@ To review a release before running it, check out a specific commit (`git checkou
 
 ## Related
 
-- [floci-local.md](./floci-local.md) — Floci feature matrix + host-dev checklist  
+- [Older Floci lab notes](../archive/floci-local.md) — historical, kept for reference  
 - [ADR 0006](../adr/0006-on-prem-docker.md) — decision record  
 - [infra/README.md](../../infra/README.md) — AWS cloud path  
 
