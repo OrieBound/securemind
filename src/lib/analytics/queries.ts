@@ -10,6 +10,13 @@ import { hostedAppStore } from "@/lib/workspaces/hosted-dynamo";
 import { findOwnedWorkspace, usesHostedAppStore } from "@/lib/workspaces/store";
 import { resolveDateRange, type AnalyticsRange } from "./types";
 
+/**
+ * Voice (Amazon Transcribe) is recorded as an inference event so its spend counts toward the
+ * monthly cap and shows on the Cost page. It is not a chat reply, so Usage leaves it out: it has
+ * no tier, tokens or grounding, and would otherwise inflate reply counts and the tier chart.
+ */
+const VOICE_PROVIDER = "transcribe";
+
 export type AnalyticsFilter = {
   userId: string;
   range: AnalyticsRange;
@@ -292,7 +299,7 @@ export async function getSecuritySummary(filter: AnalyticsFilter) {
 }
 
 export async function getUsageSummary(filter: AnalyticsFilter) {
-  const events = await loadInferenceRows(filter, 5000);
+  const events = (await loadInferenceRows(filter, 5000)).filter(e => e.provider !== VOICE_PROVIDER);
 
   const total = events.length;
   const ok = events.filter(e => (e.status ?? "ok") === "ok").length;
@@ -395,7 +402,8 @@ export async function getCostSummary(filter: AnalyticsFilter) {
   for (const e of events) {
     const cost = e.estimatedCostUsd;
     if (cost == null) continue;
-    pricedRequests += 1;
+    const isVoice = e.provider === VOICE_PROVIDER;
+    if (!isVoice) pricedRequests += 1; // spend counts, but a voice session is not a request
     totalCost += cost;
     const p = e.promptTokens ?? 0;
     const c = e.completionTokens ?? 0;
@@ -444,7 +452,7 @@ export async function getCostSummary(filter: AnalyticsFilter) {
       routingSavingsUsd: routingSavings,
       projectedMonthlyUsd: projectedMonthly,
       pricedRequests,
-      unpricedRequests: events.length - pricedRequests,
+      unpricedRequests: events.filter(e => e.provider !== VOICE_PROVIDER).length - pricedRequests,
     },
     overTime: [...byDay.entries()]
       .sort(([a], [b]) => a.localeCompare(b))
