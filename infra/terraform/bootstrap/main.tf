@@ -150,11 +150,6 @@ data "aws_iam_policy_document" "boundary" {
     resources = ["arn:aws:ssm:*:${local.account}:parameter/securemind/*"]
   }
   statement {
-    sid       = "AppSecretsOlderInstalls"
-    actions   = ["secretsmanager:DescribeSecret", "secretsmanager:GetSecretValue", "secretsmanager:PutSecretValue"]
-    resources = ["arn:aws:secretsmanager:*:${local.account}:secret:securemind/*"]
-  }
-  statement {
     sid     = "Avatars"
     actions = ["s3:DeleteObject", "s3:GetObject", "s3:ListBucket", "s3:PutObject"]
     resources = [
@@ -287,9 +282,6 @@ data "aws_iam_policy_document" "gha_deploy" {
       "lambda:List*",
       "logs:Describe*",
       "logs:List*",
-      "secretsmanager:DescribeSecret",
-      "secretsmanager:GetResourcePolicy",
-      "secretsmanager:ListSecrets",
       "ssm:DescribeParameters",
       "sts:GetCallerIdentity",
       # AWS provider probes these on almost every apply.
@@ -339,11 +331,6 @@ data "aws_iam_policy_document" "gha_deploy" {
     sid       = "Stacks"
     actions   = ["cloudformation:*"]
     resources = ["arn:aws:cloudformation:*:${local.account}:stack/securemind-*/*"]
-  }
-  statement {
-    sid       = "OlderSecrets"
-    actions   = ["secretsmanager:*"]
-    resources = ["arn:aws:secretsmanager:*:${local.account}:secret:securemind/*"]
   }
   statement {
     sid = "Parameters"
@@ -595,12 +582,97 @@ resource "aws_iam_role_policy" "gha_deploy" {
   policy = data.aws_iam_policy_document.gha_deploy.json
 }
 
+# ---------------------------------------------------------------------------------------------
+# Plan role: what the pull-request plan job uses instead of the deploy role
+#
+# A plan runs code from the pull request, so it gets a role that can only read. It trusts the same
+# GitHub Environment as the deploy role (required reviewers still approve the run). AWS's
+# ReadOnlyAccess covers what Terraform reads to compare state; the denies below keep it from
+# reading data that belongs to people or to other projects in the account. CI plans with
+# -lock=false, so this role never writes the state lock either.
+# ---------------------------------------------------------------------------------------------
+
+resource "aws_iam_role" "gha_plan" {
+  name               = "securemind-gha-plan-${var.env_name}"
+  assume_role_policy = data.aws_iam_policy_document.gha_trust.json
+  tags = {
+    Project = "SecureMind"
+    Env     = var.env_name
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "gha_plan_readonly" {
+  role       = aws_iam_role.gha_plan.name
+  policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
+}
+
+data "aws_iam_policy_document" "gha_plan" {
+  # Terraform reads this project's SecureString parameters to compare them.
+  statement {
+    sid       = "DecryptAppParameters"
+    actions   = ["kms:Decrypt"]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "kms:ViaService"
+      values   = ["ssm.${data.aws_region.current.name}.amazonaws.com"]
+    }
+    condition {
+      test     = "StringLike"
+      variable = "kms:EncryptionContext:PARAMETER_ARN"
+      values   = ["arn:aws:ssm:*:${local.account}:parameter/securemind/*"]
+    }
+  }
+  statement {
+    sid           = "NoObjectReadsOutsideState"
+    effect        = "Deny"
+    actions       = ["s3:GetObject", "s3:GetObjectVersion"]
+    not_resources = ["${aws_s3_bucket.state.arn}/*"]
+  }
+  statement {
+    sid           = "NoParameterReadsOutsideProject"
+    effect        = "Deny"
+    actions       = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath", "ssm:GetParameterHistory"]
+    not_resources = ["arn:aws:ssm:*:${local.account}:parameter/securemind/*"]
+  }
+  statement {
+    sid    = "NoDataReads"
+    effect = "Deny"
+    actions = [
+      "dynamodb:BatchGetItem",
+      "dynamodb:GetItem",
+      "dynamodb:Query",
+      "dynamodb:Scan",
+      "logs:FilterLogEvents",
+      "logs:GetLogEvents",
+      "logs:GetQueryResults",
+      "logs:StartQuery",
+      "secretsmanager:GetSecretValue",
+      "cognito-idp:AdminGetUser",
+      "cognito-idp:ListUsers",
+      "cognito-idp:ListUsersInGroup",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "gha_plan" {
+  name   = "securemind-gha-plan-${var.env_name}"
+  role   = aws_iam_role.gha_plan.id
+  policy = data.aws_iam_policy_document.gha_plan.json
+}
+
 output "state_bucket" {
   value = aws_s3_bucket.state.bucket
 }
 
 output "gha_role_arn" {
   value = aws_iam_role.gha.arn
+}
+
+output "gha_plan_role_arn" {
+  value       = aws_iam_role.gha_plan.arn
+  description = "Set as the GitHub variable AWS_PLAN_ROLE_ARN. The pull-request plan job uses it; it can only read."
 }
 
 output "permissions_boundary_arn" {

@@ -11,7 +11,7 @@ describe("Amplify production env keys", () => {
     const yml = readFileSync(join(process.cwd(), "amplify.yml"), "utf8");
     const tf = readFileSync(join(process.cwd(), "infra/terraform/modules/amplify/main.tf"), "utf8");
     expect(yml).toContain("amplify-production-env-keys.json");
-    expect(tf).toContain("amplify-production-env-keys.json");
+    expect(tf).toMatch(/build_spec\s*=\s*file\("\$\{path\.module\}\/\.\.\/\.\.\/\.\.\/\.\.\/amplify\.yml"\)/);
     expect(tf).toMatch(/AVATAR_S3_BUCKET\s*=\s*var\.avatar_s3_bucket_name/);
   });
 
