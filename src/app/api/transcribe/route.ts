@@ -62,8 +62,8 @@ export async function POST(req: NextRequest) {
         : await transcribeWithAmazon(Buffer.from(await audio.arrayBuffer()));
     return NextResponse.json({ text: text ?? "", provider: backend });
   } catch (err) {
-    console.error("[transcribe] provider request failed");
     const message = err instanceof Error ? err.message : "";
+    console.error("[transcribe] provider request failed:", err instanceof Error ? `${err.name}: ${message.slice(0, 300)}` : "unknown error");
     const denied = /accessdenied|not authorized|unrecognizedclient/i.test(message);
     return NextResponse.json(
       {

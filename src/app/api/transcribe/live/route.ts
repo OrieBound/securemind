@@ -76,8 +76,9 @@ export async function POST(req: NextRequest) {
           controller.enqueue(encoder.encode(`${JSON.stringify(ev)}\n`));
         }
         controller.close();
-      } catch {
-        console.error("[transcribe/live] stream failed");
+      } catch (err) {
+        // Name and message only, never the audio. The message is the provider's or SDK's own error text.
+        console.error("[transcribe/live] stream failed:", err instanceof Error ? `${err.name}: ${err.message.slice(0, 300)}` : "unknown error");
         try {
           controller.enqueue(
             encoder.encode(`${JSON.stringify({ kind: "error", text: "Transcription failed" })}\n`),
