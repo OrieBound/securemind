@@ -19,6 +19,15 @@ function gate(text: string, counter: { n: number }): string {
   return r.sanitized;
 }
 
+/**
+ * The same gate for one piece of text written outside a chat turn: a saved message, a summarize
+ * transcript, workspace context or a corrected memory fact. Each of these is stored or sent to a
+ * model, so the non-exemptible categories are replaced before that happens.
+ */
+export function scrubServerText(text: string): string {
+  return gate(text, { n: 0 });
+}
+
 export function scrubChatRequestServerSide(body: ChatRequestBody): { body: ChatRequestBody; redactions: number } {
   const counter = { n: 0 };
   const next: ChatRequestBody = {

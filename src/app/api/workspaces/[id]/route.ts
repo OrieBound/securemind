@@ -11,6 +11,7 @@
 
 import { NextRequest } from "next/server";
 import { getIdentity } from "@/lib/identity";
+import { scrubServerText } from "@/lib/chat/server-scrub";
 import { normalizeWorkspaceColor } from "@/lib/workspaces/color";
 import {
   deleteWorkspace,
@@ -27,6 +28,10 @@ const MAX_CONTEXT = 2000;
 const NOT_FOUND = () => Response.json({ error: "Workspace not found" }, { status: 404 });
 
 /** Returns undefined when absent, null when explicitly cleared. */
+function scrubNullable(value: string | null | undefined): string | null | undefined {
+  return typeof value === "string" ? scrubServerText(value) : value;
+}
+
 function optional(value: unknown, max: number): string | null | undefined {
   if (value === undefined) return undefined;
   if (value === null) return null;
@@ -79,7 +84,8 @@ export async function PATCH(
     ...(optional(body.emoji, 8) !== undefined && { emoji: optional(body.emoji, 8) ?? "🗂️" }),
     ...(color !== undefined && { color: color ?? "#6366f1" }),
     ...(body.description !== undefined && { description: optional(body.description, MAX_DESCRIPTION) }),
-    ...(body.context !== undefined && { context: optional(body.context, MAX_CONTEXT) }),
+    // Context is added to the system prompt on operational turns, so it gets the server gate too.
+    ...(body.context !== undefined && { context: scrubNullable(optional(body.context, MAX_CONTEXT)) }),
     ...(body.modelOverride !== undefined && { modelOverride: optional(body.modelOverride, 128) }),
   };
 
@@ -88,9 +94,9 @@ export async function PATCH(
     if (!workspace) return NOT_FOUND();
     return Response.json(workspace);
   } catch (err) {
-    console.error("[workspaces PATCH]", err);
-    const message = err instanceof Error ? err.message : "Update failed";
-    return Response.json({ error: message }, { status: 500 });
+    // Name only: a database error can echo the submitted values.
+    console.error("[workspaces PATCH] update failed:", err instanceof Error ? err.name : "error");
+    return Response.json({ error: "Update failed" }, { status: 500 });
   }
 }
 

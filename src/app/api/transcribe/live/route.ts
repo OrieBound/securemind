@@ -8,14 +8,16 @@ import { runtimeEdition } from "@/lib/runtime-env";
 import { transcribePcmStream } from "@/lib/transcribe/amazon";
 import { pickTranscribeBackend, transcribeUnavailableMessage } from "@/lib/transcribe/backend";
 import { wavSampleRate } from "@/lib/transcribe/pcm-wav";
+import { recordTranscribeUsage, voiceCostCapResponse } from "@/lib/transcribe/voice-usage";
 
 /**
  * Cloud-only live STT: browser sends 16 kHz mono PCM; we emit NDJSON
  * `{ kind, text }` partials and finals. Local / on-prem does not use this route.
  */
 export async function POST(req: NextRequest) {
+  let userId: string;
   try {
-    await getIdentity(req);
+    userId = (await getIdentity(req)).userId;
   } catch (err) {
     const res = identityErrorResponse(err);
     if (res) return res;
@@ -50,18 +52,25 @@ export async function POST(req: NextRequest) {
       { status: 503 },
     );
   }
+  const overCap = await voiceCostCapResponse(userId);
+  if (overCap) return overCap;
+
   if (!req.body) {
     return Response.json({ error: "audio stream missing" }, { status: 400 });
   }
 
   const body = req.body;
+  let audioBytes = 0;
   async function* pcmChunks() {
     const reader = body.getReader();
     try {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        if (value && value.byteLength > 0) yield value;
+        if (value && value.byteLength > 0) {
+          audioBytes += value.byteLength;
+          yield value;
+        }
       }
     } finally {
       reader.releaseLock();
@@ -75,6 +84,8 @@ export async function POST(req: NextRequest) {
         for await (const ev of transcribePcmStream(pcmChunks(), wavSampleRate())) {
           controller.enqueue(encoder.encode(`${JSON.stringify(ev)}\n`));
         }
+        // 16-bit mono PCM: two bytes per sample.
+        await recordTranscribeUsage(userId, audioBytes / (wavSampleRate() * 2) / 60, "amazon-transcribe-live");
         controller.close();
       } catch (err) {
         // Name and message only, never the audio. The message is the provider's or SDK's own error text.

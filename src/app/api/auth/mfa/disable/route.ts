@@ -3,6 +3,7 @@ export const runtime = "nodejs";
 import { NextRequest } from "next/server";
 import { cognitoCheckPassword, cognitoMfaDisable, mapMfaError } from "@/lib/cognito";
 import { mfaJson, requireMfaSession } from "@/lib/auth-mfa-guard";
+import { hitRateLimit } from "@/lib/rate-limit";
 
 /**
  * Turn two-step verification off. Needs the account password again, so a stolen session
@@ -26,6 +27,12 @@ export async function POST(req: NextRequest) {
   const password = typeof body.password === "string" ? body.password : "";
   if (!password) {
     return mfaJson({ error: "Enter your password to turn this off.", code: "wrong_password" }, 422);
+  }
+
+  // The password re-check is a guessing oracle, so it gets the same per-account limit as sign-in.
+  const wait = hitRateLimit("mfa-disable:acct", email, 5, 60_000);
+  if (wait > 0) {
+    return mfaJson({ error: "Too many attempts. Wait a minute and try again.", code: "rate_limited" }, 429);
   }
 
   try {

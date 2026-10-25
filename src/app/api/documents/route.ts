@@ -74,6 +74,13 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const { userId } = await getIdentity(req);
 
+  // Refuse an oversized upload before the whole body is read into memory. The multipart wrapper
+  // adds a little, so allow 1 MB of slack; the exact file-size check below still applies.
+  const declared = Number(req.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_FILE_BYTES + 1024 * 1024) {
+    return NextResponse.json({ error: `File exceeds the ${MAX_FILE_MB} MB limit` }, { status: 413 });
+  }
+
   let formData: FormData;
   try {
     formData = await req.formData();
@@ -203,8 +210,10 @@ export async function POST(req: NextRequest) {
       errorCode = err.code;
       errorMessage = err.message;
     } else {
+      // The parser's own message can quote file contents, so store a plain one and log the name.
       errorCode = "EXTRACT_FAILED";
-      errorMessage = err instanceof Error ? err.message : "Text extraction failed";
+      errorMessage = "Text could not be extracted from this file.";
+      console.warn("[documents] extraction failed:", err instanceof Error ? err.name : "error");
     }
   }
 

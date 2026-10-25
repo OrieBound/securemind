@@ -81,8 +81,8 @@ variable "create_bedrock_dashboard" {
 
 variable "cognito_deletion_protection" {
   type        = string
-  default     = "INACTIVE"
-  description = "ACTIVE for a real install: deleting the user pool would delete every user. Leave INACTIVE for a sandbox you tear down."
+  default     = "ACTIVE"
+  description = "Deleting the user pool deletes every user, so this is on by default. Set INACTIVE only for a sandbox you tear down."
 }
 
 variable "alert_email" {

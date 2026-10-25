@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { decodeMessage, encodeMessage } from "./event-stream";
-import { startDirectLiveStt } from "./direct-client";
+import { MAX_SESSION_MS, startDirectLiveStt } from "./direct-client";
 
 const enc = new TextEncoder();
 
@@ -200,5 +200,27 @@ describe("startDirectLiveStt", () => {
     ws.onmessage!({ data: "text frame" });
     expect(captions).toEqual([]);
     handle.abort();
+  });
+
+  it("stops sending audio and ends the stream after the session limit", async () => {
+    vi.useFakeTimers();
+    try {
+      const { ctx, feed } = fakeAudio();
+      const handle = startDirectLiveStt({ ctx, stream: {} as MediaStream, onCaption: () => {} });
+      await vi.advanceTimersByTimeAsync(0);
+      const ws = FakeSocket.instances[0]!;
+      ws.open();
+      feed([0.1, 0.2, 0.3, 0.4]);
+      await vi.advanceTimersByTimeAsync(MAX_SESSION_MS);
+      const last = decodeMessage(ws.sent[ws.sent.length - 1]!)!;
+      expect(last.payload.length).toBe(0); // end-of-stream sent
+      const count = ws.sent.length;
+      feed([0.1, 0.2, 0.3, 0.4]);
+      expect(ws.sent.length).toBe(count); // mic no longer sends
+      ws.close(1000);
+      await handle.finish();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

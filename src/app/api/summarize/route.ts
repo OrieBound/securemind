@@ -21,6 +21,7 @@ import { pickBackgroundVendorModel, type BackgroundVendorModel } from "@/lib/mod
 import { getVendorConsentFlags } from "@/lib/instance-config";
 import { db } from "@/lib/db";
 import { getIdentity } from "@/lib/identity";
+import { scrubServerText } from "@/lib/chat/server-scrub";
 import { normalizeFactKey } from "@/lib/memory/format";
 import { usesHostedAppStore } from "@/lib/workspaces/store";
 import { hostedAppStore } from "@/lib/workspaces/hosted-dynamo";
@@ -122,14 +123,19 @@ export async function POST(req: NextRequest) {
 
   const { model, provider } = routeModel("summarize");
 
+  // The transcript comes from the browser and goes to a model, so the server gate runs first.
+  const safeSummary = scrubServerText(String(existingSummary ?? ""));
+  const safeFacts = Object.fromEntries(
+    Object.entries(existingFacts ?? {}).map(([k, v]) => [k, scrubServerText(String(v))]),
+  );
   const transcript = messages
-    .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+    .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${scrubServerText(String(m.content ?? ""))}`)
     .join("\n");
 
   const parts: string[] = [];
-  if (existingSummary) parts.push(`Existing summary:\n${existingSummary}`);
-  if (Object.keys(existingFacts).length)
-    parts.push(`Existing facts:\n${JSON.stringify(existingFacts, null, 2)}`);
+  if (safeSummary) parts.push(`Existing summary:\n${safeSummary}`);
+  if (Object.keys(safeFacts).length)
+    parts.push(`Existing facts:\n${JSON.stringify(safeFacts, null, 2)}`);
   parts.push(`New conversation to incorporate:\n${transcript}`);
 
   const userContent = parts.join("\n\n");

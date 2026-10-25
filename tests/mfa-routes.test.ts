@@ -308,6 +308,16 @@ describe("POST /api/auth/mfa/disable", () => {
     expect(state.disable).not.toHaveBeenCalled();
   });
 
+  it("limits password guesses on the re-check", async () => {
+    state.checkPassword.mockResolvedValue(false);
+    for (let i = 0; i < 5; i++) {
+      expect((await disablePost(req("POST", "/api/auth/mfa/disable", { password: "bad" }, true))).status).toBe(403);
+    }
+    const res = await disablePost(req("POST", "/api/auth/mfa/disable", { password: "bad" }, true));
+    expect(res.status).toBe(429);
+    expect(state.checkPassword).toHaveBeenCalledTimes(5);
+  });
+
   it("needs a password at all", async () => {
     const res = await disablePost(req("POST", "/api/auth/mfa/disable", {}, true));
     expect(res.status).toBe(422);

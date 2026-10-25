@@ -8,13 +8,15 @@ import { runtimeEdition } from "@/lib/runtime-env";
 import { transcribeWithAmazon } from "@/lib/transcribe/amazon";
 import { pickTranscribeBackend, transcribeUnavailableMessage } from "@/lib/transcribe/backend";
 import { transcribeWithGroq } from "@/lib/transcribe/groq-whisper";
+import { recordTranscribeUsage, voiceCostCapResponse } from "@/lib/transcribe/voice-usage";
 
 /** Audio larger than this is rejected before it reaches the provider. */
 const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
 
 export async function POST(req: NextRequest) {
+  let userId: string;
   try {
-    await getIdentity(req);
+    userId = (await getIdentity(req)).userId;
   } catch (err) {
     const res = identityErrorResponse(err);
     if (res) return res;
@@ -46,6 +48,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const overCap = await voiceCostCapResponse(userId);
+  if (overCap) return overCap;
+
   const formData = await req.formData();
   const audio = formData.get("audio");
   if (!audio || !(audio instanceof File)) {
@@ -56,10 +61,15 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const text =
-      backend === "groq"
-        ? await transcribeWithGroq(groqApiKey!, audio)
-        : await transcribeWithAmazon(Buffer.from(await audio.arrayBuffer()));
+    let text: string;
+    if (backend === "groq") {
+      text = await transcribeWithGroq(groqApiKey!, audio);
+    } else {
+      const wav = Buffer.from(await audio.arrayBuffer());
+      text = await transcribeWithAmazon(wav);
+      // 16 kHz mono 16-bit PCM is 32,000 bytes a second; the 44-byte header is negligible.
+      await recordTranscribeUsage(userId, wav.length / 32_000 / 60, "amazon-transcribe");
+    }
     return NextResponse.json({ text: text ?? "", provider: backend });
   } catch (err) {
     const message = err instanceof Error ? err.message : "";

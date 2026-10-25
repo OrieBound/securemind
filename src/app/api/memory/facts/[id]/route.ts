@@ -7,6 +7,7 @@ export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { getIdentity } from "@/lib/identity";
+import { scrubServerText } from "@/lib/chat/server-scrub";
 import { postgresMemory } from "@/lib/storage/postgres";
 import { hostedAppStore } from "@/lib/workspaces/hosted-dynamo";
 import { usesHostedAppStore } from "@/lib/workspaces/store";
@@ -47,7 +48,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     }
     const updated = await store.putFact({
       ...existing,
-      value: typeof body.value === "string" ? body.value : existing.value,
+      value: typeof body.value === "string" ? scrubServerText(body.value) : existing.value,
       pinned: typeof body.pinned === "boolean" ? body.pinned : existing.pinned,
       forgotten: typeof body.forgotten === "boolean" ? body.forgotten : existing.forgotten,
       correctedAt: new Date().toISOString(),
@@ -58,7 +59,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   }
 
   const updated = await postgresMemory.patchFact(userId, workspaceId, id, {
-    value: typeof body.value === "string" ? body.value : undefined,
+    value: typeof body.value === "string" ? scrubServerText(body.value) : undefined,
     pinned: typeof body.pinned === "boolean" ? body.pinned : undefined,
     forgotten: typeof body.forgotten === "boolean" ? body.forgotten : undefined,
   });

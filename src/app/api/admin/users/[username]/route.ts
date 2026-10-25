@@ -215,8 +215,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     if (err instanceof CognitoAdminError) {
       return Response.json({ error: err.message }, { status: err.status });
     }
-    const msg = err instanceof Error ? err.message : "Update failed";
-    console.warn("[admin/users/:id]", msg.slice(0, 160));
-    return Response.json({ error: msg }, { status: 502 });
+    console.warn("[admin/users/:id] update failed:", err instanceof Error ? err.name : "error");
+    return Response.json({ error: "Could not update the user. Try again." }, { status: 502 });
   }
 }
