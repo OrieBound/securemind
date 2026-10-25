@@ -99,7 +99,8 @@ In your GitHub repository: **Settings → Environments → New environment**, na
 
 | Variable | Value |
 |---|---|
-| `AWS_ROLE_ARN` | The `gha_role_arn` output from Phase 2 (`terraform output gha_role_arn`) |
+| `AWS_ROLE_ARN` | The `gha_role_arn` output from Phase 2 (`terraform output gha_role_arn`). Used by the deploy job |
+| `AWS_PLAN_ROLE_ARN` | The `gha_plan_role_arn` output from Phase 2. A read-only role for the pull-request plan job |
 | `TF_STATE_BUCKET` | The `state_bucket` output from Phase 2 (`terraform output state_bucket`) |
 | `AWS_REGION` | The region you deployed into, e.g. `us-east-1` |
 | `PERMISSIONS_BOUNDARY_ARN` | The `permissions_boundary_arn` output from Phase 2 (`terraform output permissions_boundary_arn`) |

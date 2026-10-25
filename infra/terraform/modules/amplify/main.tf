@@ -90,6 +90,12 @@ variable "branch_name" {
   default = "main"
 }
 
+variable "ssr_log_retention_days" {
+  type        = number
+  default     = 30
+  description = "Days to keep the Next.js server logs (/aws/amplify/<app id>). Amplify creates the group with no expiry."
+}
+
 variable "transcribe_stream_region" {
   type        = string
   default     = ""
@@ -400,32 +406,8 @@ resource "aws_amplify_app" "this" {
   # Distinct from the service role: injected into Next.js compute. It has no Amplify management rights.
   compute_role_arn = aws_iam_role.compute.arn
 
-  build_spec = <<-EOT
-    version: 1
-    frontend:
-      phases:
-        preBuild:
-          commands:
-            - export DATABASE_URL="$${DATABASE_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
-            - export DIRECT_URL="$${DIRECT_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
-            - npm ci
-            - npx prisma generate
-        build:
-          commands:
-            - export DATABASE_URL="$${DATABASE_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
-            - export DIRECT_URL="$${DIRECT_URL:-postgresql://ci:ci@127.0.0.1:5432/ci}"
-            - node -e "const fs=require('fs'); const k=JSON.parse(fs.readFileSync('infra/scripts/amplify-production-env-keys.json','utf8')); fs.appendFileSync('.env.production', k.map(n=>n+'='+(process.env[n]||'')).join('\\n')+'\\nSECUREMIND_EDITION=cloud\\nSTORAGE_BACKEND=dynamodb\\n');"
-            - npm run build
-            - node infra/scripts/amplify-prune-compute.mjs
-      artifacts:
-        baseDirectory: .next
-        files:
-          - "**/*"
-      cache:
-        paths:
-          - node_modules/**/*
-          - .next/cache/**/*
-  EOT
+  # The repository's amplify.yml is the one build spec; Amplify reads that file at build time anyway.
+  build_spec = file("${path.module}/../../../../amplify.yml")
 
   environment_variables = merge({
     AUTH_MODE                 = var.auth_mode
@@ -455,6 +437,17 @@ resource "aws_amplify_app" "this" {
   # Operator connects GitHub in the Amplify console (GitHub App). Never store a PAT here.
   lifecycle {
     ignore_changes = [repository, access_token, oauth_token]
+  }
+}
+
+# Amplify writes the server logs here. Managing the group sets an expiry; an install that already
+# has it imports it once (infra/README.md, "Server logs").
+resource "aws_cloudwatch_log_group" "ssr" {
+  name              = "/aws/amplify/${aws_amplify_app.this.id}"
+  retention_in_days = var.ssr_log_retention_days
+  tags = {
+    Project = "SecureMind"
+    Env     = var.env_name
   }
 }
 

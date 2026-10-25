@@ -96,11 +96,12 @@ jobs:
         with:
           terraform_version: "1.14.5"
 
-      - name: Configure AWS (OIDC)
-        if: vars.AWS_ROLE_ARN != ''
+      # Pull-request code runs here, so it gets the read-only plan role, never the deploy role.
+      - name: Configure AWS (OIDC, read-only plan role)
+        if: vars.AWS_PLAN_ROLE_ARN != ''
         uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Write backend.hcl
@@ -115,15 +116,15 @@ jobs:
           EOF
 
       - name: Terraform init / plan
-        if: vars.AWS_ROLE_ARN != '' && vars.TF_STATE_BUCKET != ''
+        if: vars.AWS_PLAN_ROLE_ARN != '' && vars.TF_STATE_BUCKET != ''
         working-directory: infra/terraform
         run: |
           terraform init -backend-config=backend.hcl -input=false
-          terraform plan -input=false -no-color
+          terraform plan -input=false -no-color -lock=false
 
       - name: Skip plan (OIDC not configured)
-        if: vars.AWS_ROLE_ARN == '' || vars.TF_STATE_BUCKET == ''
-        run: echo "Set GitHub vars AWS_ROLE_ARN, TF_STATE_BUCKET, and AWS_REGION after bootstrap. Skipping plan."
+        if: vars.AWS_PLAN_ROLE_ARN == '' || vars.TF_STATE_BUCKET == ''
+        run: echo "Set GitHub vars AWS_PLAN_ROLE_ARN (bootstrap output gha_plan_role_arn), TF_STATE_BUCKET, and AWS_REGION after bootstrap. Skipping plan."
 
   # Optional. Off unless the repository variable AWS_DEPLOY_ENABLED is 'true'. To use it for your
   # own AWS account, set that variable, name your GitHub Environment in AWS_ENVIRONMENT (default

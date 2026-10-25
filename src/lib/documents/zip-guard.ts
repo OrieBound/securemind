@@ -1,14 +1,17 @@
 /**
  * Limits on untrusted uploads, applied before a parser sees the file.
  *
- * - Zip containers (docx, xlsx) are checked from their central directory: total unpacked size,
- *   expansion ratio and entry count. A "zip bomb" is refused before mammoth or exceljs runs.
+ * - Zip containers (docx, xlsx) are checked from their central directory (total unpacked size,
+ *   expansion ratio, entry count), then each entry is inflated with a hard cap so a file that lies
+ *   about its sizes is caught too. A "zip bomb" is refused before mammoth or exceljs runs.
  * - Extraction gets a time limit. Parsers that block the event loop cannot be interrupted, so
  *   this stops a request from hanging on slow async work; the size checks are the real bound.
  * - Per-user quotas: uploads in the last 24 hours and total stored bytes.
  *
  * Limits can be raised with environment variables on a larger install.
  */
+
+import { inflateRawSync } from "node:zlib";
 
 export class UploadRejected extends Error {
   status: number;
@@ -89,5 +92,53 @@ export function assertSafeZip(buffer: Buffer, limits = uploadLimits()): void {
   }
   if (buffer.length > 0 && total / buffer.length > limits.maxZipRatio) {
     throw new UploadRejected("This document expands too much to process safely.", 413, "ARCHIVE_TOO_LARGE");
+  }
+
+  assertRealUnpackedSize(buffer, cdOffset, entries, limits.maxUnpackedBytes);
+}
+
+/**
+ * The sizes above are what the archive says about itself, and a crafted file can lie. Inflate each
+ * entry with a hard output cap so the real unpacked total is bounded too, before mammoth or exceljs
+ * inflates it without one. Peak memory is at most the remaining budget for one entry.
+ */
+function assertRealUnpackedSize(buffer: Buffer, cdOffset: number, entries: number, maxUnpackedBytes: number): void {
+  const LOC = 0x04034b50;
+  const bad = () => new UploadRejected("This file is not a valid document archive.", 422, "BAD_ARCHIVE");
+  const tooLarge = () => new UploadRejected("This document unpacks to more than the size limit.", 413, "ARCHIVE_TOO_LARGE");
+
+  let total = 0;
+  let p = cdOffset;
+  for (let n = 0; n < entries; n++) {
+    const method = buffer.readUInt16LE(p + 10);
+    const compressed = buffer.readUInt32LE(p + 20);
+    const declared = buffer.readUInt32LE(p + 24);
+    const local = buffer.readUInt32LE(p + 42);
+    p += 46 + buffer.readUInt16LE(p + 28) + buffer.readUInt16LE(p + 30) + buffer.readUInt16LE(p + 32);
+
+    if (local + 30 > buffer.length || buffer.readUInt32LE(local) !== LOC) throw bad();
+    const start = local + 30 + buffer.readUInt16LE(local + 26) + buffer.readUInt16LE(local + 28);
+    if (start + compressed > buffer.length) throw bad();
+    const data = buffer.subarray(start, start + compressed);
+
+    const budget = maxUnpackedBytes - total;
+    let actual: number;
+    if (method === 0) {
+      actual = data.length;
+    } else if (method === 8) {
+      try {
+        actual = inflateRawSync(data, { maxOutputLength: Math.max(1, budget) }).length;
+      } catch (err) {
+        if (err instanceof RangeError || (err as { code?: string }).code === "ERR_BUFFER_TOO_LARGE") throw tooLarge();
+        throw bad();
+      }
+    } else {
+      // Office documents use stored or deflate only.
+      throw bad();
+    }
+    // An entry that unpacks larger than it claims is a crafted archive, whatever its size.
+    if (actual > declared) throw tooLarge();
+    total += actual;
+    if (total > maxUnpackedBytes) throw tooLarge();
   }
 }

@@ -58,7 +58,7 @@ Copy the `backend_hcl` output to `infra/terraform/backend.hcl` (gitignored).
 
 2. **GitHub** (on your fork or your repo, not this maintainer pipeline)
    - Environment name matching `github_environment` above
-   - Variables (not secrets): `AWS_ROLE_ARN` (bootstrap `gha_role_arn`), `TF_STATE_BUCKET`, `AWS_REGION`
+   - Variables (not secrets): `AWS_ROLE_ARN` (bootstrap `gha_role_arn`, used by the deploy job), `AWS_PLAN_ROLE_ARN` (bootstrap `gha_plan_role_arn`, read-only, used by the pull-request plan job), `TF_STATE_BUCKET`, `AWS_REGION`
    - No `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY`
 3. **Amplify console:** connect the GitHub repo with the GitHub App. Terraform does not store a token. Auto-build stays off. Your workflow calls `StartJob` after apply.
 4. **Bedrock console:** enable Titan embed v2 (1024-d) and the chat models you will use. IAM is not enough without model access.
@@ -92,6 +92,14 @@ Open the site, enter that code plus the email and password **you** choose. The s
 | `modules/api` | API Gateway + streaming `/chat` + `/warm` |
 | `modules/monitoring` | CloudTrail trail and its private bucket, five CloudWatch alarms on an SNS topic, a monthly AWS Budget (`alert_email`, `monthly_budget_usd`, `enable_cloudtrail`) |
 | `modules/amplify` | Amplify app (no GitHub token); the `app-secrets` Parameter Store parameter (instance encryption key and first-run setup code); the `securemind-transcribe-stream-<env>` role that signs short-lived Amazon Transcribe addresses for live voice captions (it can only open a Transcribe stream; on by default, in the app's region; ADR 0009) |
+
+## Server logs
+
+Amplify writes the Next.js server logs to `/aws/amplify/<app id>`, and creates that group with no expiry. Terraform manages it with a 30-day retention (`ssr_log_retention_days`). On an install where Amplify already created the group, import it once before the next apply:
+
+```bash
+terraform -chdir=infra/terraform import module.amplify.aws_cloudwatch_log_group.ssr "/aws/amplify/$(terraform -chdir=infra/terraform output -raw amplify_app_id)"
+```
 
 ## Secrets model
 
