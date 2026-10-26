@@ -129,7 +129,6 @@ export async function prepareChatTurn(
     message: rawMessage,
     mode = DEFAULT_TIER,
     workspaceId,
-    images = [],
     attachmentDocumentIds = [],
     attachmentExtracts = [],
     history = [],
@@ -144,6 +143,9 @@ export async function prepareChatTurn(
 
   const capStatus = await getUserCostCapStatus(userId);
 
+  // Pixels are never sent to a model: an attached image is read into text, scrubbed and added to
+  // Knowledge, and only that text is used. Any client-supplied images are ignored.
+  const images: string[] = [];
   const hasImages = images.length > 0;
 
   const requestedAttachmentIds = [...new Set(

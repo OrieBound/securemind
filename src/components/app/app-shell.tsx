@@ -4670,7 +4670,6 @@ _Preparing the file…_`);
 
     try {
     // Await Knowledge ingest so scrubbed text is available for this chat turn.
-    // Images also stay available for vision.
     let uploadedDocs: { id: string; name: string; content: string }[] = [];
     if (pendingAttachments.length > 0) {
       setKnowledgeIngestNote(
@@ -4696,15 +4695,8 @@ _Preparing the file…_`);
     }));
     const attachmentHistoryBlock = formatAttachmentsForHistory(uploadedDocs);
 
-    const imageFiles = pendingAttachments.filter(f => f.type.startsWith("image/"));
-    const imageDataUrls: string[] = await Promise.all(
-      imageFiles.map(f => new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload  = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(f);
-      }))
-    );
+    // Pixels stay in the browser. The text read from an image is scrubbed and sent instead.
+    const imageDataUrls: string[] = [];
 
     const scrub = scrubPII(raw, { sensitivity: piiSensitivity, safeTerms });
 
@@ -7722,7 +7714,7 @@ _Preparing the file…_`);
                       <div key={f.name + f.size} className="flex items-center gap-1.5 rounded-lg bg-foreground/6 border border-foreground/8 px-2.5 py-1 text-xs text-foreground/60">
                         <span className="truncate max-w-[140px]">{f.name}</span>
                         <span className="text-foreground/25 text-[0.6rem]">
-                          {f.type.startsWith("image/") ? "image + Knowledge" : "adds to Knowledge"}
+                          {f.type.startsWith("image/") ? "text read into Knowledge" : "adds to Knowledge"}
                         </span>
                         <button type="button" onClick={() => removeAttachment(f.name)} className="text-foreground/30 hover:text-foreground/60">✕</button>
                       </div>
