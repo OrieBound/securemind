@@ -10,8 +10,8 @@ import ExcelJS from "exceljs";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 
 export const SYNTH = {
-  email: "jordan.hale@northwind-industries.io",
-  emailRepeat: "jordan.hale@northwind-industries.io",
+  email: "jordan.hale@securemind.chat",
+  emailRepeat: "jordan.hale@securemind.chat",
   docMailbox: "docs@example.com",
   ssn: "123-45-6789",
   card: "4242424242424242",

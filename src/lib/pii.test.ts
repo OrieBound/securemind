@@ -340,7 +340,7 @@ describe("safe terms", () => {
   });
 
   it("still flags a real-looking mailbox that is not a documentation name", () => {
-    expect(categories("jordan.hale@northwind-industries.io", { safeTerms: DEFAULT_SAFE_TERMS }))
+    expect(categories("jordan.hale@securemind.chat", { safeTerms: DEFAULT_SAFE_TERMS }))
       .toContain("email");
   });
 });
