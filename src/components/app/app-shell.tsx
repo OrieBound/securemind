@@ -4273,7 +4273,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
           message:           baseText || DEFAULT_ATTACHMENT_ASK,
           mode,
           workspaceId:       activeWorkspaceId ?? "",
-          images:            imageDataUrls,
+          images:            [],
           attachmentDocumentIds,
           attachmentExtracts,
           sessionId:         sessionIdRef.current ?? "local",
@@ -4695,8 +4695,17 @@ _Preparing the file…_`);
     }));
     const attachmentHistoryBlock = formatAttachmentsForHistory(uploadedDocs);
 
-    // Pixels stay in the browser. The text read from an image is scrubbed and sent instead.
-    const imageDataUrls: string[] = [];
+    // Pixels stay in the browser for the thumbnail in the message. They are never posted;
+    // the text read from the image is scrubbed and sent instead.
+    const imageFiles = pendingAttachments.filter(f => f.type.startsWith("image/"));
+    const imageDataUrls: string[] = await Promise.all(
+      imageFiles.map(f => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload  = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(f);
+      }))
+    );
 
     const scrub = scrubPII(raw, { sensitivity: piiSensitivity, safeTerms });
 
