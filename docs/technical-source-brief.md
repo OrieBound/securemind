@@ -32,7 +32,7 @@ Each workspace can store:
 
 - A short description and an operational `context` string. That context is added to the prompt only when the turn actually needs operational grounding. Social and general turns do not receive the workspace name or mission.
 - An optional fixed model (`modelOverride`). Null means complexity-tier routing.
-- Sessions (one continuous thread), messages, a rolling session summary, user-authored facts, documents, and saved items.
+- Sessions (one continuous thread), messages, a rolling session summary, user-authored facts, documents, and bookmarks.
 
 Why it is set up this way: one shared chat would mix runbooks, personal notes, and facts from unrelated work. Scoping retrieval and facts to the workspace the user has open is the isolation mechanism. It is not a second user account. One signed-in user can own many workspaces.
 
@@ -119,7 +119,7 @@ Do not collapse these into one feature.
 
 1. **Workspace mark.** Each workspace has an emoji (and a color) so the sidebar can tell workspaces apart. It is not sent to the model as a personality.
 2. **Composer insert.** The smiley opens `emoji-picker-react` and inserts the chosen character into the draft. It is ordinary message text. It is not a reaction, a command, or a tier signal.
-3. **Saved items.** A bookmark can show emoji that were extracted from the saved preview, so a saved line is recognizable in the list.
+3. **Bookmarks.** A bookmark can show emoji that were extracted from its preview, so a bookmarked line is recognizable in the list.
 
 Profile avatars are a fourth, unrelated set: preset glyphs, or a cropped JPEG/PNG stored on local disk or in the private avatar bucket and served only through `/api/me/avatar`.
 

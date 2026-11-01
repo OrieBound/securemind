@@ -167,7 +167,7 @@ model MemoryFragment {
   @@index([userId, category])
 }
 
-// ─── Saved items (bookmarks) ─────────────────────────────────────────────────
+// ─── Bookmarks (table name SavedItem kept so existing rows stay) ─────────────────────────────────────────────────────────────
 // Server-persisted bookmarks. localStorage is only a one-time migration source.
 
 model SavedItem {

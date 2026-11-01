@@ -139,7 +139,7 @@ describe("hosted app store", () => {
       userId: "user-a",
       workspaceId: "ws-1",
       messageId: "msg-1",
-      label: "Saved",
+      label: "Bookmark",
       preview: "hello",
       role: "assistant",
       heavy: false,

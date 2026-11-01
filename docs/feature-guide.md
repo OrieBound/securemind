@@ -20,7 +20,7 @@ SecureMind is intended for small to mid-sized teams. One install serves one orga
 
 ## Workspaces
 
-A workspace is the boundary for one body of work. Chat, Knowledge, memory, and saved items belong to the workspace that is open. A search in one workspace does not read another.
+A workspace is the boundary for one body of work. Chat, Knowledge, memory, and bookmarks belong to the workspace that is open. A search in one workspace does not read another.
 
 The name you give the workspace is the name you see in chat. The emoji and color are how you tell workspaces apart in the sidebar. They are not a personality and they do not choose a model.
 
@@ -111,11 +111,11 @@ Memory is what the workspace keeps from what you have said: facts you can correc
 
 Why it is there: a workspace should remember the statements you meant to keep, and you should be able to take one back, without treating the model’s wording as a record.
 
-## Saved
+## Bookmarks
 
-Saved items are lines you mark from a conversation so you can find them again. An emoji in the text can show on the saved row so the line is recognizable.
+Bookmarks are lines you mark from a conversation so you can find them again. An emoji in the text can show on the bookmark row so the line is recognizable.
 
-Why it is there: not every useful sentence needs to become a fact or a document. Saved is a list you curate.
+Why it is there: not every useful sentence needs to become a fact or a document. Bookmarks is a list you curate.
 
 ## Insights
 

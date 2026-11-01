@@ -39,7 +39,7 @@ A privacy-aware AI workspace for managing models, knowledge, memory, cost, and s
 | **Chat** | Streaming conversation. Client-side detection + pre-send review before anything leaves the browser. Complexity-tier routing (Max → Micro), not “topic modes.” |
 | **Knowledge** | Document library (text, PDF, code, images). Server-side scrub at ingest. Retrieval + citations when the turn policy says so. |
 | **Memory** | Long-term facts from **user-authored** statements only — never from assistant replies. Conversation history is continuity, not a Sources entry. |
-| **Saved** | Bookmarks / saved items. |
+| **Bookmarks** | Lines bookmarked from chat. |
 | **Insights** | Security, Usage, and Cost (sanitized telemetry). |
 | **Settings** | Profile, appearance, sensitivity / safe terms (Admin-owned instance policy). |
 | **Admin console** | Directory, roles, monthly cost caps, add user, set password, delete (disables sign-in; data retained until a future purge). |

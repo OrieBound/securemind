@@ -325,7 +325,7 @@ def build() -> None:
     h1(doc, "2  How to use this guide")
     body(
         doc,
-        "Each section explains what a feature does and why it exists. Start with Workspaces and Chat for everyday use, then explore Knowledge, Memory, Saved, and Insights. Settings and the Admin console explain how the installation is configured and managed.",
+        "Each section explains what a feature does and why it exists. Start with Workspaces and Chat for everyday use, then explore Knowledge, Memory, Bookmarks, and Insights. Settings and the Admin console explain how the installation is configured and managed.",
     )
     body(
         doc,
@@ -334,7 +334,7 @@ def build() -> None:
     body(doc, "Guide sections")
     body(
         doc,
-        "3 Terms and controls  ·  4 Connections and credentials  ·  5 Installation options  ·  6 Workspaces  ·  7 Chat  ·  8 Knowledge  ·  9 Memory  ·  10 Saved  ·  11 Insights  ·  12 Model settings  ·  13 Detection policy  ·  14 Profile and account security  ·  15 Appearance  ·  16 Admin console  ·  17 Getting started  ·  18 How the parts fit  ·  19 Scope and limitations",
+        "3 Terms and controls  ·  4 Connections and credentials  ·  5 Installation options  ·  6 Workspaces  ·  7 Chat  ·  8 Knowledge  ·  9 Memory  ·  10 Bookmarks  ·  11 Insights  ·  12 Model settings  ·  13 Detection policy  ·  14 Profile and account security  ·  15 Appearance  ·  16 Admin console  ·  17 Getting started  ·  18 How the parts fit  ·  19 Scope and limitations",
     )
 
     h1(doc, "3  Terms and controls")
@@ -522,11 +522,11 @@ def build() -> None:
         "The vector index used for citations holds document text. It does not hold these fact rows.",
     )
 
-    h1(doc, "10  Saved")
+    h1(doc, "10  Bookmarks")
     purpose(doc, "Bookmark useful places in a long conversation and return to them easily.")
     body(
         doc,
-        "Save a message when you want to revisit it. Saved lists those bookmarks. Choosing one returns you to that message in the conversation and highlights it. You can also remove a bookmark.",
+        "Bookmark a message when you want to revisit it. Bookmarks lists them. Choosing one returns you to that message in the conversation and highlights it. You can also remove a bookmark.",
     )
     body(
         doc,
@@ -717,7 +717,7 @@ def build() -> None:
     )
     body(
         doc,
-        "Chat reviews typed text before processing. Knowledge supplies uploaded content. Memory retains what you wrote. Saved returns you to a message. A complexity tier or a fixed model determines which model answers. Insights shows the activity, the estimated cost, and the findings.",
+        "Chat reviews typed text before processing. Knowledge supplies uploaded content. Memory retains what you wrote. Bookmarks return you to a message. A complexity tier or a fixed model determines which model answers. Insights shows the activity, the estimated cost, and the findings.",
     )
     h2(doc, "Installation instructions")
     body(

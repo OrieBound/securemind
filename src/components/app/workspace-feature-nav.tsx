@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Per-workspace feature list (Chat, Knowledge, Memory, Saved, Workspace).
+ * Per-workspace feature list (Chat, Knowledge, Memory, Bookmarks, Workspace).
  * Order is per-browser. Drag with insert-line feedback (same pattern as Insights).
  */
 
@@ -75,7 +75,7 @@ export const WORKSPACE_FEATURES: Record<WorkspaceFeatureId, WorkspaceFeatureDef>
   },
   bookmarks: {
     id: "bookmarks",
-    label: "Saved",
+    label: "Bookmarks",
     icon: Bookmark,
     iconWrap: "bg-amber-500/20 border-amber-500/25",
     iconColor: "text-amber-300",
@@ -197,7 +197,7 @@ export function WorkspaceFeatureNav({
   onReorder: (next: WorkspaceFeatureId[]) => void;
   activeId: string | null;
   onSelect: (id: WorkspaceFeatureId) => void;
-  /** Optional badge count per feature (e.g. unseen Saved). */
+  /** Optional badge count per feature (e.g. unseen Bookmarks). */
   badgeFor?: (id: WorkspaceFeatureId) => number;
 }) {
   const [dragId, setDragId] = useState<WorkspaceFeatureId | null>(null);

@@ -1051,7 +1051,7 @@ const SUB_NAV_ITEMS = [
   },
   {
     id: "bookmarks" as const,
-    label: "Saved",
+    label: "Bookmarks",
     icon: Bookmark,
     iconWrap: "bg-amber-500/20 border-amber-500/25",
     iconColor: "text-amber-300",
@@ -1552,7 +1552,7 @@ const MessageBubble = memo(function MessageBubble({
           {/* Bookmark button */}
           <button
             onClick={() => onBookmark(message.id)}
-            aria-label={message.bookmarked ? "Remove from saved" : "Save conclusion"}
+            aria-label={message.bookmarked ? "Remove bookmark" : "Bookmark this answer"}
             className={cn(
               "absolute -top-2 -left-7 rounded-full p-1 pointer-coarse:p-2.5 transition-all duration-150",
               "bg-foreground/5 border border-foreground/8 hover:bg-foreground/10",
@@ -1628,7 +1628,7 @@ const MessageBubble = memo(function MessageBubble({
         {/* Bookmark */}
         <button
           onClick={() => onBookmark(message.id)}
-          aria-label={message.bookmarked ? "Remove from saved" : "Save conclusion"}
+          aria-label={message.bookmarked ? "Remove bookmark" : "Bookmark this answer"}
           className={cn(
             "absolute -top-3 right-0 rounded-full p-1 pointer-coarse:p-2.5 transition-all duration-150",
             "bg-foreground/5 border border-foreground/8 hover:bg-foreground/10",
@@ -1771,7 +1771,7 @@ function WorkspaceSectionHeader({
   );
 }
 
-/** Saved cards show a short plain-text excerpt, so drop the markdown markers it was written with. */
+/** Bookmark cards show a short plain-text excerpt, so drop the markdown markers it was written with. */
 function previewPlainText(text: string): string {
   return text
     // A file the assistant wrote shows as its name rather than vanishing from the preview.
@@ -1882,8 +1882,8 @@ function BookmarkCard({
             <span
               role="button"
               tabIndex={0}
-              title="Remove from saved"
-              aria-label="Remove from saved"
+              title="Remove bookmark"
+              aria-label="Remove bookmark"
               onClick={e => { e.stopPropagation(); onRemove(); }}
               onKeyDown={e => {
                 if (e.key === "Enter" || e.key === " ") {
@@ -3251,7 +3251,7 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     workspaceId: string;
     docs: number | null;
     facts: number | null;
-    saved: number | null;
+    bookmarks: number | null;
   } | null>(null);
   const [docLoading,         setDocLoading]         = useState(false);
   const [docUploading,       setDocUploading]       = useState(false);
@@ -4909,7 +4909,7 @@ _Preparing the file…_`);
       version:    1,
       agent,
       bookmarks,
-      note: "Workspace profile and saved conclusions export. Investigation history and knowledge remain in your database until the workspace is deleted.",
+      note: "Workspace profile and bookmarks export. Investigation history and knowledge remain in your database until the workspace is deleted.",
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -4982,7 +4982,7 @@ _Preparing the file…_`);
     if (activeNav !== "home" || !viewWorkspaceId) return;
     const id = viewWorkspaceId;
     const ac = new AbortController();
-    setHomeStatus({ workspaceId: id, docs: null, facts: null, saved: null });
+    setHomeStatus({ workspaceId: id, docs: null, facts: null, bookmarks: null });
     void (async () => {
       try {
         const [docsRes, memRes, savedRes] = await Promise.all([
@@ -5009,11 +5009,11 @@ _Preparing the file…_`);
         setAllSessionSummaries(memory.sessionSummaries ?? []);
         setMemoryStats(memory.stats ?? null);
         setViewBookmarks(items);
-        setHomeStatus({ workspaceId: id, docs: docs.length, facts: facts.length, saved: items.length });
+        setHomeStatus({ workspaceId: id, docs: docs.length, facts: facts.length, bookmarks: items.length });
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         if (!ac.signal.aborted) {
-          setHomeStatus({ workspaceId: id, docs: 0, facts: 0, saved: 0 });
+          setHomeStatus({ workspaceId: id, docs: 0, facts: 0, bookmarks: 0 });
         }
       }
     })();
@@ -6246,7 +6246,7 @@ _Preparing the file…_`);
               <div>
                 <h2 className="text-section">Remove {deleteConfirmWorkspace.name}?</h2>
                 <p className="text-ui text-[var(--text-muted)] mt-1.5 leading-[var(--leading-body)]">
-                  All contents for this workspace will be permanently deleted — investigations, memory, knowledge, and saved conclusions.
+                  All contents for this workspace will be permanently deleted — investigations, memory, knowledge, and bookmarks.
                 </p>
               </div>
             </div>
@@ -6258,7 +6258,7 @@ _Preparing the file…_`);
                 className="mt-0.5 accent-indigo-500"
               />
               <span className="text-xs text-foreground/50 leading-relaxed">
-                Download a backup file first (profile + saved conclusions). Investigation history in the database is not included in this export yet.
+                Download a backup file first (profile + bookmarks). Investigation history in the database is not included in this export yet.
               </span>
             </label>
             <div className="flex gap-2 justify-end pt-1">
@@ -7061,7 +7061,7 @@ _Preparing the file…_`);
               <WorkspaceSectionHeader
                 workspaces={workspaces}
                 viewWorkspaceId={viewWorkspaceId}
-                sectionLabel="Saved"
+                sectionLabel="Bookmarks"
                 pickerId="bookmarks"
                 open={openWorkspacePickerId === "bookmarks"}
                 onToggle={() => toggleWorkspacePicker("bookmarks")}
@@ -7096,7 +7096,7 @@ _Preparing the file…_`);
 
               <div className="rounded-xl border border-foreground/[0.06] bg-foreground/[0.02] px-4 py-3">
                 <p className="text-sm text-foreground/50 leading-relaxed">
-                  Saved conclusions and pinned answers from investigations in{" "}
+                  Bookmarked conclusions and pinned answers from investigations in{" "}
                   <span className="text-foreground/70 font-medium">{viewWorkspace?.name ?? "this workspace"}</span>.
                   {" "}Open one to jump back to that moment in the thread.
                 </p>
@@ -7105,9 +7105,9 @@ _Preparing the file…_`);
               {viewBookmarks.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-foreground/10 px-5 py-10 text-center space-y-3">
                   <Bookmark className="size-8 text-amber-400/25 mx-auto" aria-hidden />
-                  <p className="text-sm font-medium text-foreground/50">No saved conclusions yet</p>
+                  <p className="text-sm font-medium text-foreground/50">No bookmarks yet</p>
                   <p className="text-xs text-foreground/30 leading-relaxed max-w-sm mx-auto">
-                    Open Chat, hover any answer, and tap the bookmark icon to save it here.
+                    Open Chat, hover any answer, and tap the bookmark icon to add it here.
                   </p>
                 </div>
               ) : (
@@ -7116,7 +7116,7 @@ _Preparing the file…_`);
                     <h3 className="sticky top-0 z-[1] -mx-1 mb-2.5 px-1 py-1.5 text-[0.65rem] uppercase tracking-[0.22em] text-foreground/30 font-semibold backdrop-blur-sm bg-card/80">
                       {group.label}
                       <span className="ml-2 normal-case tracking-normal text-foreground/20 font-normal">
-                        · {group.items.length} saved
+                        · {group.items.length} {group.items.length === 1 ? "bookmark" : "bookmarks"}
                       </span>
                     </h3>
                     <div className="flex flex-col gap-2.5">
@@ -7472,8 +7472,8 @@ _Preparing the file…_`);
                   },
                   {
                     id: "bookmarks" as const,
-                    label: "Saved",
-                    hint: "Lines you pinned from chat.",
+                    label: "Bookmarks",
+                    hint: "Lines you bookmarked from chat.",
                     icon: Bookmark,
                   },
                 ]).map(item => {
@@ -7494,7 +7494,7 @@ _Preparing the file…_`);
                       ? homeCountLine(counts?.docs ?? null, "document", "documents", "No documents yet.")
                       : item.id === "memory"
                         ? homeCountLine(counts?.facts ?? null, "fact", "facts", "No facts yet.")
-                        : homeCountLine(counts?.saved ?? null, "saved line", "saved lines", "Nothing saved yet.");
+                        : homeCountLine(counts?.bookmarks ?? null, "bookmark", "bookmarks", "No bookmarks yet.");
                   return (
                     <button
                       key={item.id}
