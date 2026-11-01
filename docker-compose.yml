@@ -80,10 +80,10 @@ services:
         condition: service_healthy
     environment:
       OLLAMA_HOST: http://ollama:11434
+    # One list item, so sh -c gets the whole line. A plain string is split into words,
+    # and sh -c would then run a bare `ollama`, which fails looking for a terminal.
     entrypoint: ["/bin/sh", "-c"]
-    command: >
-      ollama pull nomic-embed-text &&
-      ollama pull llama3.2:3b
+    command: ["ollama pull nomic-embed-text && ollama pull llama3.2:3b"]
     restart: "no"
 
   init:
