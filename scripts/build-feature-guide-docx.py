@@ -423,7 +423,7 @@ def build() -> None:
     purpose(doc, "Keep the conversations and context for one project or body of work together.")
     body(
         doc,
-        "Each workspace contains its own chat, Knowledge, memory, and saved bookmarks. Retrieval stays within the selected workspace. Its name, emoji, and color help you recognize it. They do not select a model or define an AI personality.",
+        "Each workspace contains its own chat, Knowledge, memory, and bookmarks. Retrieval stays within the selected workspace. Its name, emoji, and color help you recognize it. They do not select a model or define an AI personality.",
     )
     figure(doc, "1", "The workspace list. Name, emoji, and color identify it. They do not choose a model.")
     body(
