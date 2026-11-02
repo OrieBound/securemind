@@ -59,7 +59,7 @@ services:
     restart: unless-stopped
 
   ollama:
-    image: ollama/ollama:latest@sha256:265409e1d931028a8f7d5a32bcbafddd7bffbc6cc629d77efe9560adf692a5e7
+    image: ollama/ollama:latest@sha256:b2f0122c476bc9fe7ce679d8bb4bd555351e25e2554eefb156f61cb0a89cf429
     <<: *hardened
     mem_limit: 8g
     volumes:
@@ -73,7 +73,7 @@ services:
     restart: unless-stopped
 
   ollama-init:
-    image: ollama/ollama:latest@sha256:265409e1d931028a8f7d5a32bcbafddd7bffbc6cc629d77efe9560adf692a5e7
+    image: ollama/ollama:latest@sha256:b2f0122c476bc9fe7ce679d8bb4bd555351e25e2554eefb156f61cb0a89cf429
     <<: *hardened
     depends_on:
       ollama:
