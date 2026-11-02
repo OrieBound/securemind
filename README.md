@@ -56,7 +56,7 @@ No AWS account is needed. A model API key is not required, but it is strongly re
 
 ### Who it is for
 
-SecureMind is intended for small to mid-sized teams. One install serves one organization: **1 to 25 people is the recommended range**, and it can serve **up to about 100 people** with a few adjustments (an AWS concurrency limit, a realistic budget, and two-step verification for admins). Separate organizations should each run their own install. See [Operating an installation](docs/SecureMind-Technical-Guide.docx) in the technical guide and the [security assessment](docs/security-audit/).
+SecureMind is intended for small to mid-sized teams. One install serves one organization: **1 to 25 people is the recommended range**, and it can serve **up to about 100 people** with a few adjustments (an AWS concurrency limit, a realistic budget, and two-step verification for admins). Separate organizations should each run their own install. See [Operating an installation](docs/SecureMind-Technical-Guide.docx) in the technical guide.
 
 ### Run
 

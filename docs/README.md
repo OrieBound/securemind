@@ -29,6 +29,5 @@ SecureMind is a privacy-aware AI workspace for managing models, knowledge, memor
 - [ADR 0009: Direct live captions](./adr/0009-direct-live-captions.md)
 
 ## Security, testing, history
-- [Security assessment](./security-audit/)
 - [Test files (synthetic Knowledge corpus)](./test-files/README.md)
 - [Archive](./archive/) — historical documents, not current (older education guide, Floci lab notes, early Word drafts)

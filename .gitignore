@@ -131,8 +131,8 @@ scripts/.floci-*.env
 .windsurf/
 skills-lock.json
 
-# Private, local-only security report
-docs/security-audit/05-final-release-assessment.md
+# Private, local-only security assessment (kept out of the public repository)
+docs/security-audit/
 
 # Walkthrough video notes and recordings (local only)
 walkthrough/

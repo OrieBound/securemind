@@ -210,7 +210,7 @@ The hosted edition can be served from a custom domain: the app on a subdomain, t
 
 ## Security posture and team size
 
-See `docs/security-audit/` (five rounds, October 2026). Auth fails closed; tokens must be Cognito access tokens for the app client; sessions are revoked on sign-out and suspension; sign-in is rate limited; the first-run claim needs a setup code on Docker and AWS and is atomic; uploads are zip-bomb, quota and time limited; Admin changes are audited and Admins cannot change other Admins. Docker publishes only the app on loopback, with an optional HTTPS front end and hardened containers. AWS adds a Cognito authorizer on `POST /chat`, a separate Amplify compute role, DynamoDB PITR and deletion protection, CloudTrail, alarms and a budget. WAF is not included. Intended size: one organization per install, 1 to 25 people recommended, up to about 100 with a raised Lambda concurrency quota.
+An October 2026 security review led to these protections. Auth fails closed; tokens must be Cognito access tokens for the app client; sessions are revoked on sign-out and suspension; sign-in is rate limited; the first-run claim needs a setup code on Docker and AWS and is atomic; uploads are zip-bomb, quota and time limited; Admin changes are audited and Admins cannot change other Admins. Docker publishes only the app on loopback, with an optional HTTPS front end and hardened containers. AWS adds a Cognito authorizer on `POST /chat`, a separate Amplify compute role, DynamoDB PITR and deletion protection, CloudTrail, alarms and a budget. WAF is not included. Intended size: one organization per install, 1 to 25 people recommended, up to about 100 with a raised Lambda concurrency quota.
 
 ## Explicitly absent
 
