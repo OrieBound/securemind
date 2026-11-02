@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  ArrowDown,
   FileText,
   GripVertical,
   Loader2,
@@ -3304,6 +3305,8 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   >(async () => []);
   const threadRef    = useRef<HTMLDivElement>(null);
   const [floatingDate, setFloatingDate] = useState<string | null>(null);
+  /** Shown once the reader has scrolled well above the newest message. */
+  const [showJumpToNewest, setShowJumpToNewest] = useState(false);
   const abortRef     = useRef<AbortController | null>(null);
   const streamReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
   const docsAbortRef = useRef<AbortController | null>(null);
@@ -3491,6 +3494,38 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     }
   }, []);
 
+  // The thread is rebuilt each time Chat is opened again, so it would start at the top.
+  // Coming back means the newest messages, unless a bookmark asked for a specific one
+  // (the bookmark jump below handles that case). This effect runs before it, so the
+  // pending id is still set here.
+  useEffect(() => {
+    if (activeNav !== "thread" || sessionLoading) return;
+    if (pendingScrollIdRef.current) return;
+    stickToBottomRef.current = true;
+    setShowJumpToNewest(false);
+    requestAnimationFrame(() => pinThreadToBottom("auto"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only on returning to Chat
+  }, [activeNav]);
+
+  const jumpToNewest = useCallback(() => {
+    stickToBottomRef.current = true;
+    setShowJumpToNewest(false);
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    pinThreadToBottom(reduce ? "auto" : "smooth");
+    // The thread can grow a little while it glides; land on the true bottom when it stops.
+    const el = threadRef.current;
+    if (!el || reduce) return;
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      el.removeEventListener("scrollend", settle);
+      if (stickToBottomRef.current) pinThreadToBottom("auto");
+    };
+    el.addEventListener("scrollend", settle);
+    window.setTimeout(settle, 1200);
+  }, [pinThreadToBottom]);
+
   // Floating date pill + stick-to-bottom detection
   useEffect(() => {
     const container = threadRef.current;
@@ -3499,6 +3534,8 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
     const update = () => {
       const distance =
         container.scrollHeight - container.scrollTop - container.clientHeight;
+      // About a screen up before offering the way back, so a small nudge shows nothing.
+      setShowJumpToNewest(distance > Math.max(400, container.clientHeight * 0.9));
       // A scroll we made ourselves while gliding says nothing about the reader's intent.
       const ours = glideTopRef.current;
       if (ours === null || Math.abs(container.scrollTop - ours) >= 2) {
@@ -7610,6 +7647,32 @@ _Preparing the file…_`);
                 )}
                 <div ref={bottomRef} />
               </div>
+            </div>
+
+            {/* Back to newest — floats above the composer while reading older messages.
+                See-through, in the SecureMind violet, so it reads over any message. */}
+            <div className="relative h-0">
+              <button
+                type="button"
+                onClick={jumpToNewest}
+                aria-hidden={!showJumpToNewest}
+                tabIndex={showJumpToNewest ? 0 : -1}
+                className={cn(
+                  "absolute bottom-4 left-1/2 z-20 -translate-x-1/2 inline-flex items-center gap-2 whitespace-nowrap",
+                  "rounded-full border px-4 py-1.5 text-sm font-medium backdrop-blur-md",
+                  // Dark-theme shades; globals.css remaps each for the light theme.
+                  "border-violet-500/50 bg-violet-500/15 text-violet-300 hover:brightness-125",
+                  "shadow-[0_6px_20px_-6px_rgb(139_92_246_/_0.55)]",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "transition-[opacity,transform,background-color] duration-200 motion-reduce:transition-none",
+                  showJumpToNewest
+                    ? "opacity-100 translate-y-0"
+                    : "pointer-events-none opacity-0 translate-y-2",
+                )}
+              >
+                <ArrowDown className="size-4" aria-hidden />
+                Back to newest
+              </button>
             </div>
 
             {/* Composer — sticky at bottom, centered */}
