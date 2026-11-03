@@ -2,7 +2,7 @@
 
 > **Historical log.** Entries that store keys in Secrets Manager were superseded on 2026-10-18: the hosted edition keeps them in Parameter Store (see infra/README.md, Secrets model).
 
-**Last stamped: 2026-10-04.** Lab notes from the first hosted apply. The maintainer `main` pipeline stays on its own sandbox stack. Another account is a second bootstrap, not a retarget of that stack.
+**Last stamped: 2026-11-02.** Lab notes from the first hosted apply. The maintainer `main` pipeline stays on its own sandbox stack. Another account is a second bootstrap, not a retarget of that stack.
 
 Use this as an operator log and as interview notes: each item is **symptom → cause → what we did**. Dated chronology is in [Timeline](#timeline) below; README carries a short copy of the same stamp.
 
@@ -12,7 +12,7 @@ IaC and IAM layers: [infra/README.md](../../infra/README.md). Hosting decision: 
 
 ## Timeline
 
-Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first returned the error. Items 1–7 were the August 2026 apply campaign (jobs 1–7 failed). Items 8–10 are 2026-08-29. Items 11–13 are 2026-08-30 (hosted Dynamo mapping). Item 14 is secrets vs Dynamo. Item 15 is Terraform `count` on a new Secrets Manager ARN. Items 16–18 are 2026-08-31 (Knowledge cookie vs chat Bearer, and retrieval never running). Item 19 is 2026-09-21 (Groq key saved, chat still on Ollama, Whisper still working). Items 20–24 are 2026-10-04 (found during the first prod-account bootstrap, applied from a Windows laptop instead of the Linux Actions runner sandbox always used; #23 and #24 are independent of OS). The 2026-09-21 fix is in the working tree and the local Docker image. It is **not** on the live Amplify site until that build is deployed.
+Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first returned the error. Items 1–7 were the August 2026 apply campaign (jobs 1–7 failed). Items 8–10 are 2026-08-29. Items 11–13 are 2026-08-30 (hosted Dynamo mapping). Item 14 is secrets vs Dynamo. Item 15 is Terraform `count` on a new Secrets Manager ARN. Items 16–18 are 2026-08-31 (Knowledge cookie vs chat Bearer, and retrieval never running). Item 19 is 2026-09-21 (Groq key saved, chat still on Ollama, Whisper still working). Items 20–24 are 2026-10-04 (found during the first prod-account bootstrap, applied from a Windows laptop instead of the Linux Actions runner sandbox always used; #23 and #24 are independent of OS). The 2026-09-21 fix is in the working tree and the local Docker image. It is **not** on the live Amplify site until that build is deployed. Items 25–34 are 2026-10-24 to 2026-11-01, the launch stretch: live voice captions, chat images and the emoji picker, test data, a deploy that looked done but was not, and the public walkthrough video and website.
 
 | Date | # | Hurdle | Outcome |
 |------|---|--------|---------|
@@ -40,6 +40,16 @@ Dates are when we **diagnosed or shipped the fix in-repo**, not when AWS first r
 | 2026-10-04 | 22 | `npm run infra:wire` from a Windows laptop: `aws: Unknown options` on `apigateway create-deployment` | `--description "CORS origin <url>"` has a space. `shell:true` on Windows word-splits it back into separate args before `aws.exe` sees them. Fixed centrally in `run()`, not per call site. |
 | 2026-10-04 | 23 | First-run claim screen showed plain Sign in, not "Create the first owner" — `/api/setup/status` returned `authMode:""`, `cognitoConfigured:false` | Two stacked causes: (a) `wire.mjs` only pushes env vars to the Amplify **branch** if that branch already exists, and the branch didn't exist on the first `infra:wire` run; (b) once the branch existed, Amplify's own console had added an app-level `_LIVE_UPDATES` var with a JSON-array value, and the flat `KEY=VAL,KEY=VAL` CSV format `update-app --environment-variables` used couldn't represent commas/quotes inside it — so re-running `wire` after connecting GitHub still failed, silently, before any real value was set. |
 | 2026-10-04 | 24 | After fixing #23, claim screen worked (`claimAvailable:true`), but `codeConfigured:false` — `SETUP_CLAIM_SECRET` missing from both Amplify app and branch env | The "Add branch" console wizard doesn't just fail to merge new vars (#23) — on save it can **replace** the app's entire `environmentVariables` map with just its own `_LIVE_UPDATES` bookkeeping var, deleting everything Terraform had set, including three values `wire.mjs` never re-asserts itself (`SETUP_CLAIM_SECRET`, `VENDOR_KEYS_SECRET_ARN`, `DYNAMODB_FRAGMENTS_TABLE` — it only preserves them via a `...current` spread, which was already empty). `terraform apply` self-heals this (that attribute isn't in `aws_amplify_app.this`'s `ignore_changes`), but doing so also *reverts* the broadened CORS/callback/`ALLOWED_ORIGIN` values `wire.mjs` had set, back to localhost-only — so the real fix is `terraform apply` immediately followed by another `npm run infra:wire`, every time, not either one alone. |
+| 2026-10-24 | 25 | Hosted voice: words appeared only after Done, never while speaking | Amplify's server receives an upload in one piece, and API Gateway and Lambda do not stream request bodies either, so partial results had nothing to come back on. The browser now opens its own WebSocket to Amazon Transcribe with a short-lived signed address from a role that can do nothing else ([ADR 0009](../adr/0009-direct-live-captions.md)). Audio is also sent in small frames, which Transcribe requires. |
+| 2026-10-25 | 26 | Attaching a picture in chat failed with a model error | The Groq vision model the app called was retired by the provider. Chat no longer sends pictures to a model at all: the text read from the image is scrubbed and sent instead, and the picture stays as a thumbnail in the message. |
+| 2026-10-25 | 27 | Emoji picker showed broken image squares | The picker loaded its emoji pictures from a third-party CDN, which the page's Content-Security-Policy correctly blocks. Switched the picker to the device's own emoji instead of loosening the policy. |
+| 2026-10-25 | 28 | Changing the made-up demo email domain broke the document regression tests | The PDF in the synthetic test corpus is generated, so it still held the old address after the text was changed. Regenerated the corpus with `npm run corpus:write`; all demo addresses now use `securemind.chat`, so no real company's domain appears. |
+| 2026-11-01 | 29 | Renamed Saved to Bookmarks, merged to `main`, but the live app still said Saved | Amplify auto-build is off, so a merge is not a deploy, and the deploy command first failed on an expired AWS SSO session. `aws sso login`, then start the Amplify job and wait for it to succeed before calling it live. |
+| 2026-11-01 | 30 | First walkthrough upload: YouTube "Processing abandoned: video is too long" | New YouTube channels are limited to 15 minutes, and custom thumbnails are blocked, until the account's phone number is verified. Verified, then uploaded again. |
+| 2026-11-01 | 31 | Copyright claim on the walkthrough's music, a free Pixabay track | A music distributor had registered the same artist's track under another title with YouTube's matching system. The claim only affects earnings, not viewing, so it was left in place; the licence page and track details are kept on record in case it changes. |
+| 2026-11-01 | 32 | Walkthrough stuck at 240p on desktop browsers while phones got 720p | The screen recordings were 1280x720 at about 0.2 Mbps (mostly still screens), YouTube showed only the SD version for hours, and the desktop player estimated the connection at under 1 Mbps. Re-exported at 2560x1440 with a high-quality scaler and about five times the bitrate, uploaded as a new video, and pointed the website at the new link. |
+| 2026-11-01 | 33 | Assembled walkthrough reported 1 h 31 min instead of 23 min | ffmpeg's `loudnorm` filter outputs 192 kHz audio. Mixed with 48 kHz audio in one join, the result played about four times too long. Resample to 48 kHz straight after every `loudnorm`. |
+| 2026-11-01 | 34 | Website Docs page: "View on GitHub" for the Word guides opened an empty page | GitHub cannot preview `.docx` files. The guides and diagram sources are now copied onto the website (`npm run sync:docs`) and each guide card downloads its file directly. |
 
 **As of 2026-08-31:** `b68400f` is on `main` (silent Knowledge search + Knowledge Bearer). Live UI is the previous Amplify job until this is pushed and that workflow is green.
 
@@ -314,6 +324,86 @@ The Amplify console's "Add branch" wizard call (`UpdateApp`, to add its own `_LI
 **Fix:** `environment_variables` on `aws_amplify_app.this` is a plain tracked attribute, not in that resource's `lifecycle { ignore_changes }` list — so Terraform already knows the correct values and will self-heal this on the next `terraform apply` (confirmed: `terraform plan` after the console wizard showed exactly the three missing keys being re-added, plus a dropped SPA `custom_rule` the wizard also removed). The complication: re-running `terraform apply` *also* reverts `ALLOWED_ORIGIN`, Cognito `callback_urls`/`logout_urls`, and the API Gateway CORS header back to `http://localhost:3000` only — because those are things `wire.mjs`, not Terraform, extends to the live Amplify domain, and Terraform has no idea that extension happened.
 
 **The actual rule going forward: `terraform apply` and `npm run infra:wire` are not independent — run them as a pair, always in that order, every time either one runs.** Never apply without re-wiring after, and never assume a wire-only fix survives a later apply. `docs/deploy/aws-from-zero.md` now states this as a standing rule in Phase 4, not a one-time step.
+
+### 25. Live voice captions only appeared after Done (2026-10-24)
+
+**Symptom:** On the hosted install, with Amazon Transcribe chosen, nothing showed while speaking. All the words arrived at once after pressing Done.
+
+**Cause:** The browser streamed audio to an Amplify route, but Amplify's server receives a request body in one piece, so there was nothing to send partial results back on until the upload ended. Moving the route behind API Gateway and Lambda would not help, because they do not stream request bodies either. Re-sending the growing recording every few seconds would bill the same audio many times.
+
+**Fix:** The browser opens its own WebSocket to Amazon Transcribe. A signed-in route returns a five-minute signed address made with temporary credentials from a role whose only permission is starting a Transcribe stream, so the server's own credentials never reach the browser. The route keeps the usual checks (identity, Admin choice, audio notice, rate limit, monthly cost cap), and the page's security policy allows only that one Transcribe address. Audio is sent in small frames, which Transcribe requires. Details in [ADR 0009](../adr/0009-direct-live-captions.md).
+
+### 26. Chat pictures failed when the vision model was retired (2026-10-25)
+
+**Symptom:** Attaching a picture to a chat message returned a model error.
+
+**Cause:** The Groq vision model the app called by name had been retired by the provider.
+
+**Fix:** Pictures are no longer sent to a chat model. The text read from the image is scrubbed like any other text and sent instead; the picture itself stays in the browser as a thumbnail. That also closes a gap: a picture can contain details the text scanner never sees.
+
+### 27. Emoji picker images blocked by our own security policy (2026-10-25)
+
+**Symptom:** The emoji picker showed empty squares.
+
+**Cause:** The picker library loads its emoji pictures from a third-party CDN, and the Content-Security-Policy only allows the app's own origin and the chat API.
+
+**Fix:** Use the device's own emoji (native style). The policy stays strict; adding a CDN just for emoji pictures was not worth it.
+
+### 28. Demo email change broke the regression tests (2026-10-25)
+
+**Symptom:** After replacing the made-up email domain in the demo data, `tests/document-regression.test.ts` failed.
+
+**Cause:** The synthetic corpus includes a generated PDF. Editing the source text does not change the PDF, so the test still found the old address in it.
+
+**Fix:** Regenerate the corpus with `npm run corpus:write` whenever its text changes. All made-up addresses now use the project's own domain, so the walkthrough never shows a real company's domain.
+
+### 29. Merged is not deployed, again (2026-11-01)
+
+**Symptom:** The Saved to Bookmarks rename was on `main`, but the live app still said Saved.
+
+**Cause:** Amplify auto-build is off (see Two pipelines), and the deploy command failed on an expired AWS SSO session.
+
+**Fix:** `aws sso login --profile <deploy profile>`, start the Amplify job, wait for it to report success, then hard-refresh. Treat "merged" and "live" as two separate checks.
+
+### 30. YouTube rejected the first upload as too long (2026-11-01)
+
+**Symptom:** Studio showed "Processing abandoned. Video is too long." for the 23-minute walkthrough.
+
+**Cause:** A brand-new channel can upload at most 15 minutes, and cannot set a custom thumbnail, until its phone number is verified.
+
+**Fix:** Verify the phone number (Studio, Settings, Channel, Feature eligibility), delete the failed upload and upload again.
+
+### 31. Copyright claim on free music (2026-11-01)
+
+**Symptom:** YouTube's checks reported "Claimed content found" on the walkthrough.
+
+**Cause:** The background track is free under the Pixabay Content License, but a music distributor had registered the same artist's track, under another title, with YouTube's matching system.
+
+**Fix:** The claim only limits earnings; the video plays everywhere, so it was left in place rather than disputed. The track page, licence and download are kept on record. If the claim ever mutes or blocks the video, swap the music in the edit and upload again.
+
+### 32. Walkthrough stuck at 240p on desktop (2026-11-01)
+
+**Symptom:** Hours after upload, desktop browsers (three tried) started the video at 240p; phones got 720p. YouTube's "Stats for nerds" showed an optimal resolution of 360p and a connection estimate under 1 Mbps.
+
+**Cause:** The source was 1280x720 at about 0.2 Mbps, because screen recordings are mostly still images. Studio showed only the SD version for hours, and the player's speed estimate was low on that machine.
+
+**Fix:** Re-export the finished video at 2560x1440 with a Lanczos scaler and light sharpening, at about 1 Mbps. Upscaling adds no detail, but YouTube gives high-resolution uploads better processing and more quality steps. YouTube cannot replace a video's file, so it was uploaded as a new video and the website's video id was updated. For future recordings: record at 1920x1080 and keep the original files until the video is published.
+
+### 33. `loudnorm` made the audio four times too long (2026-11-01)
+
+**Symptom:** The first full draft reported 1 hour 31 minutes for 23 minutes of video.
+
+**Cause:** ffmpeg's `loudnorm` filter outputs 192 kHz. Each clip came out at 192 kHz while the logo intro was 48 kHz, and joining them with stream copy read all of it as 48 kHz.
+
+**Fix:** Put `aresample=48000` directly after every `loudnorm`, and check each joined file's duration before mixing.
+
+### 34. Word guides opened an empty GitHub page (2026-11-01)
+
+**Symptom:** On the website's Docs page, "View on GitHub" for the Feature and Technical guides showed an empty viewer.
+
+**Cause:** GitHub does not preview `.docx` files, and a cross-origin "download" link opens instead of saving.
+
+**Fix:** `npm run sync:docs` copies the guides and the diagram sources into the website, and each guide card is now one link that downloads its file from the site. The GitHub links stay only for Markdown pages, which GitHub displays well.
 
 ---
 
