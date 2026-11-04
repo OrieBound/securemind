@@ -160,7 +160,7 @@ async function main() {
   log(`Wrote ${runtimeEnvFile}`);
   log("==================================================================");
   log(`First-run setup code (needed once, to create the Owner): ${setupCode}`);
-  log("Show it again with: docker compose logs init | grep \"setup code\"");
+  log("Show it again with: docker compose logs init   (look for the \"First-run setup code\" line)");
   log("==================================================================");
 
   await ensureOllamaModel(EMBED_MODEL);
