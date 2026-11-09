@@ -423,7 +423,9 @@ export function AuthGate({ children }: Props) {
               ? "We will never confirm whether an email is registered."
               : mode === "claim"
                 ? setup?.claimRequiresCode
-                  ? "Enter the setup code printed once when the stack was applied (terraform output -raw setup_claim_secret). Choose the email and password you will use. The setup code is not your password."
+                  ? setup.edition === "local"
+                    ? "Enter the setup code from your install. Find it by running docker compose logs init in the folder you started SecureMind from, and look for the line that says First-run setup code. Then choose the email and password you will use. The setup code is not your password."
+                    : "Enter the setup code printed once when the stack was applied (terraform output -raw setup_claim_secret). Choose the email and password you will use. The setup code is not your password."
                   : "Choose the email and password you will use as Owner. There is no demo account."
                 : PRODUCT_POSITIONING}
           </p>

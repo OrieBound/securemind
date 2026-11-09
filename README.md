@@ -68,7 +68,17 @@ docker compose up --build
 
 ### Confirm
 
-Open http://localhost:3000 and create the first owner with an email and password you choose. The first owner also needs the one-time setup code the install printed when it started; show it again with `docker compose logs init`. There is no demo account. The first start can sit on the model download for a while. Later starts reuse those models.
+Open http://localhost:3000 and create the first owner with an email and password you choose. There is no demo account. The first start can sit on the model download for a while. Later starts reuse those models.
+
+The first owner also needs a one-time **setup code**. The install prints it in the terminal where you ran `docker compose up`, in a line that starts with `init-1` and says `First-run setup code`. If you cannot find it, open a second terminal in the same folder and run:
+
+```bash
+docker compose logs init
+```
+
+The code is the text after `First-run setup code (needed once, to create the Owner):`. The code is not a password. You only need it once, to create the first owner.
+
+If you have run SecureMind before from another folder called `securemind`, Docker reuses that install's data and shows the sign-in page without a first-owner option. To start fresh, add a different name: `docker compose -p securemind-new up --build`, and use the same `-p securemind-new` in later commands such as `docker compose -p securemind-new logs init`.
 
 Docker builds the app from this repository on your computer; there is no image to download from the author.
 

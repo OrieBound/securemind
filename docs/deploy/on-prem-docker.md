@@ -34,7 +34,7 @@ First boot takes longer while Compose downloads default Ollama weights and `init
 2. Postgres schema (`prisma db push` + pgvector column)  
 3. Floci Cognito pool (empty) and a one-time setup code for the first Owner  
 
-Open **http://localhost:3000** and create the first Owner (your email, a password you choose, and the setup code). Show the setup code with `docker compose logs init | grep "setup code"`. There is no demo account. If you already ran an older Compose stack that seeded `admin@example.test`, `docker compose down -v` and bring it up again for an empty directory.
+Open **http://localhost:3000** and create the first Owner (your email, a password you choose, and the setup code). The setup code is printed in the terminal where you ran `docker compose up`, on a line that says `First-run setup code`. To show it again, open a second terminal in the same folder and run `docker compose logs init` (on macOS or Linux you can add `| grep "setup code"`; that filter does not work in Windows PowerShell, where `| Select-String "setup code"` does). It is not a password, and you only need it once. There is no demo account. If you already ran an older Compose stack that seeded `admin@example.test`, `docker compose down -v` and bring it up again for an empty directory.
 
 Optional Groq (faster chat / vision):
 
