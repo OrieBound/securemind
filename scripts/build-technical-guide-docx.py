@@ -176,7 +176,7 @@ def header_footer(section) -> None:
     add_text(hp, "SECUREMIND", size=9, color=VIOLET, bold=True)
     add_text(hp, "   ·   Technical guide", size=9, color=MUTED)
     hp.add_run("\t")
-    add_text(hp, "Version  1.2", size=9, color=MUTED)
+    add_text(hp, "Version  1.3", size=9, color=MUTED)
 
     footer = section.footer
     footer.is_linked_to_previous = False
