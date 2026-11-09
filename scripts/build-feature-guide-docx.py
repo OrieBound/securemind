@@ -212,22 +212,12 @@ def header_footer(section) -> None:
     top_el.set(qn("w:color"), RULE)
     top.append(top_el)
     p_pr.append(top)
-    add_text(fp, "Version 1.2", size=9, color=MUTED)
+    add_text(fp, "Version 1.3", size=9, color=MUTED)
     fp.add_run("\t")
     add_text(fp, "Page ", size=9, color=MUTED)
     add_field(fp, " PAGE ")
     add_text(fp, " of ", size=9, color=MUTED)
     add_field(fp, " NUMPAGES ")
-
-
-def figure(doc: Document, number: str, caption: str) -> None:
-    """A caption in the text. Paste the picture on this line; it is not boxed."""
-    p = doc.add_paragraph()
-    p.paragraph_format.space_before = Pt(2)
-    p.paragraph_format.space_after = Pt(8)
-    p.paragraph_format.line_spacing = 1.08
-    add_text(p, f"Figure {number}. ", size=10, color=VIOLET, bold=True)
-    add_text(p, caption, size=10, color=MUTED)
 
 
 def swatch_row(table, row_index: int, fill: str, name: str, meaning: str) -> None:
@@ -284,8 +274,8 @@ def build() -> None:
     meta = doc.add_paragraph()
     meta.paragraph_format.space_before = Pt(10)
     meta.paragraph_format.space_after = Pt(8)
-    add_text(meta, "Version 1.2", size=11, color=VIOLET, bold=True)
-    add_text(meta, "   ·   25 October 2026", size=11, color=MUTED)
+    add_text(meta, "Version 1.3", size=11, color=VIOLET, bold=True)
+    add_text(meta, "   ·   9 November 2026", size=11, color=MUTED)
 
     body(
         doc,
@@ -425,7 +415,6 @@ def build() -> None:
         doc,
         "Each workspace contains its own chat, Knowledge, memory, and bookmarks. Retrieval stays within the selected workspace. Its name, emoji, and color help you recognize it. They do not select a model or define an AI personality.",
     )
-    figure(doc, "1", "The workspace list. Name, emoji, and color identify it. They do not choose a model.")
     body(
         doc,
         "Switching workspaces opens that workspace’s conversation and context. An unsent queued message is discarded, and the composer is cleared, so the message cannot be delivered into the wrong workspace.",
@@ -462,7 +451,7 @@ def build() -> None:
     h2(doc, "Continuing a conversation")
     body(
         doc,
-        "You can type another message while a reply is generating and queue it to send afterward. Stop ends the current response. Attachments remain associated with their queued message.",
+        "You can type another message while a reply is generating and queue it to send afterward. Stop ends the current response. Attachments remain associated with their queued message. Opening Chat again takes you to the newest messages. If you scroll up about a screen, a Back to newest button appears and glides you back down.",
     )
     body(
         doc,
@@ -472,7 +461,6 @@ def build() -> None:
         doc,
         "Voice transcription supplies text to the composer using the configured service. Review the transcript, and any detected sensitive information, before sending it.",
     )
-    figure(doc, "2", "Chat. Status labels sit above the composer. The chevron hides them.")
     h2(doc, "Files from chat")
     body(
         doc,
@@ -492,7 +480,7 @@ def build() -> None:
     purpose(doc, "Let conversations draw on documents and images you provide, with relevant sources available to support answers.")
     body(
         doc,
-        "Files uploaded through Knowledge or attached in chat belong to the current workspace. The application extracts usable content, applies sensitive-data detection and redaction to that text, and prepares the redacted text for retrieval.",
+        "Files uploaded through Knowledge or attached in chat belong to the current workspace. The application extracts usable content, applies sensitive-data detection and redaction to that text, and prepares the redacted text for retrieval. A picture is read into text by a connected model that can see images. That text is redacted like any other, and the chat model receives the text, never the picture. If no such model is connected, or it cannot read the picture, the picture is not added to Knowledge.",
     )
     body(
         doc,
@@ -548,7 +536,6 @@ def build() -> None:
         doc,
         "Assign a model to each complexity tier, or choose one Fixed model. Provider chips show how many models of that provider can be assigned. The small blue number is the count of replies routed to that tier for the selected workspace and date range.",
     )
-    figure(doc, "3", "Insights, Models. Each tier shows its model and the blue reply count.")
     body(
         doc,
         "Open the full Usage view for charts and details about input tokens, output tokens, requests by model, routing tiers, citation outcomes, and response times.",
@@ -592,7 +579,6 @@ def build() -> None:
         doc,
         "The available-model list shows the models offered through configured connections. Enable, Test, and Check access are three controls, as defined in section 3. Hide and Show manage the chat list. A hidden model can still be the model a tier runs. Check failed means the last check did not succeed.",
     )
-    figure(doc, "4", "Settings, Models. Enable, Test, and Check access.")
     body(
         doc,
         "A model a provider has retired is taken off the chat menus automatically the first time a reply fails because of it, and it stays under the not-working group until a Test passes.",
@@ -655,7 +641,6 @@ def build() -> None:
         doc,
         "A safe term is an exact phrase, an IPv4 range, a domain, or a prefix. Exact ignores case. A range uses CIDR, such as 10.0.0.0/8. A domain matches that domain or a real boundary, such as .acme.com or @acme.com, and notacme.com does not match acme.com. A prefix matches the start of the text. The install already lists documentation mailboxes (example.com and the reserved endings test, invalid, localhost, and example) and non-routable addresses (private ranges, loopback, link-local, and the documentation ranges). They are visible, and an administrator can remove them. A proposed safe term that itself looks like a Social Security number, a social insurance number, a card, or a secret is refused.",
     )
-    figure(doc, "5", "Settings, Detection. Sensitivity and safe terms.")
 
     h1(doc, "14  Profile and account security")
     purpose(doc, "Manage how you are identified in the application and maintain your account details.")
@@ -701,7 +686,6 @@ def build() -> None:
         doc,
         "The Portal card sets the logo, name, and short phrase shown in the top-left of the workspace. The sign-in page, the browser title, and email stay SecureMind.",
     )
-    figure(doc, "6", "Admin. Directory, roles, and estimated caps.")
 
     h1(doc, "17  Getting started")
     purpose(doc, "Help a new user reach a working model and understand how to begin.")

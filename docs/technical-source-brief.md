@@ -65,7 +65,7 @@ Turn kinds (deterministic, before retrieval):
 - The fused score is vector similarity plus up to 0.12 for the share of the question's key words found in the chunk (`src/lib/retrieval-rank.ts`). A candidate set three times the size of the result is fetched first, so a literal keyword match outside the vector top results still surfaces. On a local install the embedding model gets its task prefixes (`search_document:` when storing, raw and `search_query:` forms when searching), and `npm run knowledge:reindex` re-embeds older chunks.
 - Attachments are read in the turn. Comparing an attachment to workspace Knowledge is the case that also retrieves.
 - Short unclear turns ask for clarification. They are scored like any other turn; real conversation is never routed to Micro.
-- Vision attachments route to `meta-llama/llama-4-scout-17b-16e-instruct` on Groq when that path is available.
+- Pictures are never sent to a chat model. An attached image is read into text, scrubbed, and only that text is used.
 
 Citations are documentary. Conversation history is continuity, not a Source. The assistant’s own earlier replies are not stored as memory facts. Long-term facts come only from user-authored statements (`/api/summarize`). Semantic retrieval for citations is the document category only.
 
