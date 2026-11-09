@@ -5,19 +5,19 @@
  * everything through the same expensive model.
  *
  * COMPLEXITY TIERS (most → least capable):
- *   Max       llama-3.3-70b-versatile               $0.59/$0.79  — hardest problems, deep technical work
- *   Plus      qwen/qwen3-32b                         $0.29/$0.59  — planning, analysis, hybrid thinking
+ *   Max       openai/gpt-oss-120b                   $0.15/$0.60  — hardest problems, deep technical work
+ *   Plus      openai/gpt-oss-120b                   $0.15/$0.60  — planning, analysis
  *   Standard  openai/gpt-oss-120b                   $0.15/$0.60  — default everyday work
- *   Light     llama-4-scout-17b-16e                 $0.11/$0.34  — how-to, facts, short instruction-following
- *   Micro     llama-3.1-8b-instant                  $0.05/$0.08  — acks and one-line replies
+ *   Light     openai/gpt-oss-20b                    $0.075/$0.30 — how-to, facts, short instruction-following
+ *   Micro     openai/gpt-oss-20b                    $0.075/$0.30 — acks and one-line replies
  *
  * Legacy stored events: High → Max, Fast → Light (see normalizeStoredTier).
  *
  * NOTE: llama-4-maverick was deprecated by Groq on 2026-03-09, replaced by gpt-oss-120b.
  *
  * BACKGROUND TASKS (never user-facing — always cheapest capable model):
- *   summarize  → llama-3.1-8b-instant
- *   extract    → llama-3.1-8b-instant
+ *   summarize  → openai/gpt-oss-20b
+ *   extract    → openai/gpt-oss-20b
  *   embed      → nomic-embed-text (Ollama, free)
  *
  * To add AWS Bedrock: set MODEL_PROVIDER=bedrock and add a bedrock.ts provider.
@@ -33,11 +33,11 @@ const TASK_ROUTES: Record<ModelTask, ModelConfig> = {
   },
   summarize: {
     provider: "groq",
-    model: process.env.GROQ_FAST_MODEL ?? "llama-3.1-8b-instant",
+    model: process.env.GROQ_FAST_MODEL ?? "openai/gpt-oss-20b",
   },
   extract: {
     provider: "groq",
-    model: process.env.GROQ_FAST_MODEL ?? "llama-3.1-8b-instant",
+    model: process.env.GROQ_FAST_MODEL ?? "openai/gpt-oss-20b",
   },
   embed: {
     provider: "ollama",
@@ -50,11 +50,11 @@ const TASK_ROUTES: Record<ModelTask, ModelConfig> = {
 // Tier only controls which MODEL handles the request; behaviour is identical
 // across tiers and comes from buildSystemPrompt.
 const COMPLEXITY_TIERS: Record<string, { provider: "groq" | "ollama"; model: string }> = {
-  Max:      { provider: "groq", model: "llama-3.3-70b-versatile"                   },
-  Plus:     { provider: "groq", model: "qwen/qwen3-32b"                            },
+  Max:      { provider: "groq", model: "openai/gpt-oss-120b"                       },
+  Plus:     { provider: "groq", model: "openai/gpt-oss-120b"                       },
   Standard: { provider: "groq", model: "openai/gpt-oss-120b"                       },
-  Light:    { provider: "groq", model: "meta-llama/llama-4-scout-17b-16e-instruct" },
-  Micro:    { provider: "groq", model: "llama-3.1-8b-instant"                      },
+  Light:    { provider: "groq", model: "openai/gpt-oss-20b"                        },
+  Micro:    { provider: "groq", model: "openai/gpt-oss-20b"                        },
 };
 
 export const TIER_NAMES = Object.keys(COMPLEXITY_TIERS) as string[];

@@ -76,7 +76,7 @@ import {
   isBillableInferenceProvider,
 } from "@/lib/cost-cap";
 
-const VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct";
+const VISION_MODEL = "qwen/qwen3.8-27b";
 
 export type ChatPrepareFailure = {
   ok: false;

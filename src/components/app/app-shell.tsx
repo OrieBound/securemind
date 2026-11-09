@@ -447,23 +447,21 @@ type Workspace = {
 // ─── model selection ──────────────────────────────────────────────────────────
 
 const SELECTABLE_MODELS = [
-  { id: "llama-3.3-70b-versatile",                    label: "Llama 3.3 70B",         speed: "280 T/s",  tier: "$$"  as const },
-  { id: "qwen/qwen3-32b",                             label: "Qwen3 32B",             speed: "400 T/s",  tier: "$$"  as const },
-  { id: "openai/gpt-oss-120b",                        label: "GPT OSS 120B",          speed: "600 T/s",  tier: "$$"  as const },
-  { id: "meta-llama/llama-4-scout-17b-16e-instruct",  label: "Llama 4 Scout 17B",    speed: "750 T/s",  tier: "$"   as const },
+  { id: "qwen/qwen3.8-27b",                           label: "Qwen3.8 27B",           speed: "450 T/s",  tier: "$$"  as const },
+  { id: "openai/gpt-oss-120b",                        label: "GPT OSS 120B",          speed: "500 T/s",  tier: "$$"  as const },
   { id: "openai/gpt-oss-20b",                         label: "GPT OSS 20B",           speed: "1000 T/s", tier: "$"   as const },
-  { id: "llama-3.1-8b-instant",                       label: "Llama 3.1 8B",         speed: "560 T/s",  tier: "$"   as const },
 ];
 
 
 function shortModelName(id: string): string {
   const map: Record<string, string> = {
-    "llama-3.3-70b-versatile":                       "70b-versatile",
-    "qwen/qwen3-32b":                                "qwen3-32b",
+    // Retired ids still appear in stored history and the savings comparison.
+    "llama-3.3-70b-versatile":                       "Llama 3.3 70B",
+    "qwen/qwen3-32b":                                "Qwen3 32B",
     "openai/gpt-oss-120b":                           "gpt-oss-120b",
-    "meta-llama/llama-4-scout-17b-16e-instruct":     "4-scout-17b",
+    "meta-llama/llama-4-scout-17b-16e-instruct":     "Llama 4 Scout 17B",
     "openai/gpt-oss-20b":                            "gpt-oss-20b",
-    "llama-3.1-8b-instant":                          "8b-instant",
+    "llama-3.1-8b-instant":                          "Llama 3.1 8B",
   };
   return map[id] ?? (id.split("/").pop() ?? id);
 }

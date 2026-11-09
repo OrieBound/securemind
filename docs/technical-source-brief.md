@@ -69,7 +69,7 @@ Turn kinds (deterministic, before retrieval):
 
 Citations are documentary. Conversation history is continuity, not a Source. The assistant’s own earlier replies are not stored as memory facts. Long-term facts come only from user-authored statements (`/api/summarize`). Semantic retrieval for citations is the document category only.
 
-Background summarize and extract use the cheapest model (`llama-3.1-8b-instant` when Groq is configured). Embeddings on-prem use `nomic-embed-text` via Ollama (768 dimensions). Hosted embeddings target Bedrock Titan v2 (1024 dimensions), locked when the DynamoDB vector index is created.
+Background summarize and extract use the cheapest model (`openai/gpt-oss-20b` when Groq is configured). Embeddings on-prem use `nomic-embed-text` via Ollama (768 dimensions). Hosted embeddings target Bedrock Titan v2 (1024 dimensions), locked when the DynamoDB vector index is created.
 
 ## Complexity tiers
 
@@ -77,11 +77,11 @@ Tier chooses **which model** runs the turn. It does not change the prompt person
 
 | Tier | Default model (Groq list) | Role |
 |---|---|---|
-| Max | `llama-3.3-70b-versatile` | Hardest / deep technical |
-| Plus | `qwen/qwen3-32b` | Planning and analysis |
+| Max | `openai/gpt-oss-120b` | Hardest / deep technical |
+| Plus | `openai/gpt-oss-120b` | Planning and analysis |
 | Standard | `openai/gpt-oss-120b` | Default |
-| Light | `meta-llama/llama-4-scout-17b-16e-instruct` | Short factual / how-to |
-| Micro | `llama-3.1-8b-instant` | Acknowledgements and one-line replies |
+| Light | `openai/gpt-oss-20b` | Short factual / how-to |
+| Micro | `openai/gpt-oss-20b` | Acknowledgements and one-line replies |
 
 Legacy stored names map High → Max and Fast → Light. The operator can assign a different model to a tier in Settings. The assignment is kept only if that model is allowed to run (it has passed Enable, or it is an installed Ollama chat model). A fixed model on the workspace bypasses tier selection for that workspace.
 

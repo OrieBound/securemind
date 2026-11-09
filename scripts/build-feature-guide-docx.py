@@ -543,7 +543,7 @@ def build() -> None:
     h2(doc, "Cost")
     body(
         doc,
-        "Cost provides an approximate breakdown of model API, Bedrock, and voice-transcription usage, using recorded activity and provider rates. Each estimate is raised by 10 percent and rounded up, so it tends high rather than low. It is useful for comparing models, observing spending trends, and judging an approximate spending range. The page also compares what you spent with what the same replies would have cost if every one had used the most expensive default tier. That gap is the routing saving. It is not money returned.",
+        "Cost provides an approximate breakdown of model API, Bedrock, and voice-transcription usage, using recorded activity and provider rates. Each estimate is raised by 10 percent and rounded up, so it tends high rather than low. It is useful for comparing models, observing spending trends, and judging an approximate spending range. The page also compares what you spent with what the same replies would have cost at the list price of one fixed premium model, Llama 3.3 70B. That gap is the routing saving. It is not money returned.",
     )
     body(
         doc,

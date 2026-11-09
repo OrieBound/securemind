@@ -2,16 +2,13 @@
  * Groq provider — cloud inference at very high speed.
  * Used for all complexity tiers; model selection is driven by router.ts.
  *
- * Key models (June 2026):
- *   moonshotai/kimi-k2-instruct-0905      — Max tier, most capable ($1.00/$3.00)
- *   llama-3.3-70b-versatile               — High tier, deep reasoning ($0.59/$0.79)
- *   qwen/qwen3-32b                         — Plus tier, hybrid thinking ($0.29/$0.59)
- *   openai/gpt-oss-120b                   — Standard tier, solid default ($0.15/$0.60)
- *   llama-4-scout-17b-16e-instruct        — Light tier, fast + multimodal ($0.11/$0.34)
- *   openai/gpt-oss-20b                    — Fast tier ($0.075/$0.30)
- *   llama-3.1-8b-instant                  — Micro tier, cheapest ($0.05/$0.08)
+ * Key models (November 2026):
+ *   openai/gpt-oss-120b                   — Max, Plus, Standard ($0.15/$0.60)
+ *   openai/gpt-oss-20b                    — Light, Micro, background tasks ($0.075/$0.30)
+ *   qwen/qwen3.8-27b                      — preview, reads images ($0.80/$4.00)
  *
- * NOTE: llama-4-maverick deprecated by Groq 2026-03-09, replaced by gpt-oss-120b.
+ * NOTE: Groq shut down Qwen3 32B and Llama 4 Scout on 2026-07-17, and Llama 3.3 70B and
+ * Llama 3.1 8B on 2026-08-16.
  */
 
 import Groq from "groq-sdk";
@@ -198,7 +195,8 @@ export const GROQ_NOT_CONFIGURED_MESSAGE =
 /**
  * Small-model tie-break for a score the rules cannot place (route-message.ts decides when).
  *
- * Uses llama-3.1-8b-instant at temperature 0 and at most 10 output tokens. The prompt's
+ * Uses a small model at temperature 0 and a short output limit. It is a reasoning model, and
+ * reasoning counts toward that limit: at 10 tokens it returned nothing. The prompt's
  * tier guide is generated from tier-definitions.ts, so it matches what the user is shown.
  * Reports the token usage so the caller can price the call: it is not free, and it counts
  * toward the monthly cost cap through the turn it belongs to.
@@ -207,7 +205,7 @@ export const GROQ_NOT_CONFIGURED_MESSAGE =
  * returns the fallback with no usage; if the call ran but the answer was unusable it
  * returns the fallback with the usage that was spent.
  */
-export const CLASSIFIER_MODEL = "llama-3.1-8b-instant";
+export const CLASSIFIER_MODEL = "openai/gpt-oss-20b";
 
 export async function classifyComplexityLlm(
   message: string,
@@ -250,7 +248,8 @@ RULES:
         },
         { role: "user", content: message.slice(0, 600) },
       ],
-      max_tokens: 10,
+      max_tokens: 64,
+      reasoning_effort: "low",
       temperature: 0,
     });
     const usage = res.usage

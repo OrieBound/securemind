@@ -7,7 +7,7 @@
  */
 
 import Groq from "groq-sdk";
-import { hasGroqRuntime, selectGroqApiKey } from "@/lib/models/groq";
+import { fitReplyToLimit, hasGroqRuntime, parseGroqOutputLimit, selectGroqApiKey } from "@/lib/models/groq";
 import { withRealAwsEndpoints } from "@/lib/aws-credentials";
 import {
   getInstanceAwsStatus,
@@ -17,7 +17,7 @@ import {
 import { runtimeEdition } from "@/lib/runtime-env";
 
 const GROQ_VISION_MODEL =
-  process.env.GROQ_VISION_MODEL ?? "meta-llama/llama-4-scout-17b-16e-instruct";
+  process.env.GROQ_VISION_MODEL ?? "qwen/qwen3.8-27b";
 
 /** Default: Nova Lite (TEXT + IMAGE). Override with BEDROCK_VISION_MODEL. */
 const BEDROCK_VISION_MODEL =
@@ -100,10 +100,10 @@ async function extractViaGroq(
   }
   const client = new Groq({ apiKey });
   const dataUrl = `data:${mimeType};base64,${buffer.toString("base64")}`;
-  const completion = await client.chat.completions.create({
+  const read = (maxTokens: number) => client.chat.completions.create({
     model: GROQ_VISION_MODEL,
     temperature: 0.1,
-    max_tokens: 2048,
+    max_tokens: maxTokens,
     messages: [
       {
         role: "user",
@@ -114,7 +114,18 @@ async function extractViaGroq(
       },
     ],
   });
-  return completion.choices[0]?.message?.content?.trim() ?? "";
+  let completion: Awaited<ReturnType<typeof read>>;
+  try {
+    completion = await read(2048);
+  } catch (err) {
+    // Free Groq plans can cap this model's output per minute below 2048 tokens.
+    const limit = parseGroqOutputLimit(err);
+    if (limit === null) throw err;
+    completion = await read(fitReplyToLimit(limit));
+  }
+  const text = completion.choices[0]?.message?.content ?? "";
+  // Reasoning models can put a think block before the answer; only the answer is Knowledge.
+  return text.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
 }
 
 async function extractViaBedrock(

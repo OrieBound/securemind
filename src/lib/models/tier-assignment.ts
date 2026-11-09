@@ -9,11 +9,11 @@ export const COMPLEXITY_TIER_NAMES = ["Max", "Plus", "Standard", "Light", "Micro
 export type ComplexityTierName = (typeof COMPLEXITY_TIER_NAMES)[number];
 
 export const DEFAULT_TIER_MODELS: Record<ComplexityTierName, string> = {
-  Max: "llama-3.3-70b-versatile",
-  Plus: "qwen/qwen3-32b",
+  Max: "openai/gpt-oss-120b",
+  Plus: "openai/gpt-oss-120b",
   Standard: "openai/gpt-oss-120b",
-  Light: "meta-llama/llama-4-scout-17b-16e-instruct",
-  Micro: "llama-3.1-8b-instant",
+  Light: "openai/gpt-oss-20b",
+  Micro: "openai/gpt-oss-20b",
 };
 
 export function isComplexityTierName(value: string): value is ComplexityTierName {

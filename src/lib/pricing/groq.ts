@@ -15,6 +15,8 @@ export const GROQ_PRICING_EFFECTIVE = "2026-09-22";
  * rates when those ids are preview/rotated (re-check with `npm run pricing:check`).
  */
 export const GROQ_MODEL_PRICING: Record<string, TokenRate> = {
+  // Retired by Groq in 2026, like the other Llama and Qwen3 32B rows. Kept so stored events
+  // still price, and as the fixed savings baseline.
   "llama-3.3-70b-versatile":                   { inputPerM: 0.59,  outputPerM: 0.79 },
   "qwen/qwen3-32b":                            { inputPerM: 0.29,  outputPerM: 0.59 },
   "openai/gpt-oss-120b":                       { inputPerM: 0.15,  outputPerM: 0.60 },

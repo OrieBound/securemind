@@ -79,7 +79,7 @@ describe("effectiveTierOverrides", () => {
   });
 
   it("posts Groq assignments once those models can run", () => {
-    const canRun = (id: string) => id === "llama-3.3-70b-versatile" || id === "llama-3.1-8b-instant";
+    const canRun = (id: string) => id === "llama-3.3-70b-versatile" || id === "openai/gpt-oss-20b";
     expect(effectiveTierOverrides({
       selectionMode: "auto",
       fixedModelId: "",
@@ -93,7 +93,7 @@ describe("effectiveTierOverrides", () => {
       overrides: {},
       cloudDefaultsWillRun: true,
       canRun,
-    }).Micro).toBe("llama-3.1-8b-instant");
+    }).Micro).toBe("openai/gpt-oss-20b");
   });
 
   it("does not post Groq defaults when chat will use local Ollama instead", () => {
@@ -151,7 +151,7 @@ describe("displayModelForTier", () => {
       overrides: {},
       cloudDefaultsWillRun: true,
       localFallbackModel: "llama3.2:latest",
-    })).toBe("llama-3.1-8b-instant");
+    })).toBe("openai/gpt-oss-20b");
   });
 
   it("leaves a row unassigned when neither cloud defaults nor a local model apply", () => {

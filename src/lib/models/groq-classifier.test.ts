@@ -84,7 +84,7 @@ describe("classifyComplexityLlm", () => {
       messages: { role: string; content: string }[];
     };
     expect(args.model).toBe(CLASSIFIER_MODEL);
-    expect(args.max_tokens).toBeLessThanOrEqual(10);
+    expect(args.max_tokens).toBeLessThanOrEqual(64);
     expect(args.temperature).toBe(0);
     const system = args.messages[0].content;
     for (const tier of TIER_ORDER) {
