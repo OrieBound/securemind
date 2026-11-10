@@ -140,7 +140,7 @@ import {
   useResizableHeight,
   useSidebarWidth,
 } from "@/components/app/sidebar-resize";
-import { INTEL_HEIGHT, IntelPanelStack } from "@/components/app/intel-panels";
+import { INTEL_HEIGHT, IntelPanelStack, IntelPhoneLayout } from "@/components/app/intel-panels";
 import {
   InsightsTabsList,
   useInsightsTabOrder,
@@ -6995,8 +6995,9 @@ _Preparing the file…_`);
               <SheetHeader className="px-5 pt-5 pb-4 border-b border-foreground/6 shrink-0">
                 <SheetTitle className="text-section tracking-tight">Insights</SheetTitle>
               </SheetHeader>
-              <div className="flex-1 min-h-0 overflow-hidden px-4 py-4">
-                {IntelligencePanel}
+              {/* One scroll for the whole sheet: sections show at full height here. */}
+              <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 py-4">
+                <IntelPhoneLayout>{IntelligencePanel}</IntelPhoneLayout>
               </div>
             </SheetContent>
           </Sheet>

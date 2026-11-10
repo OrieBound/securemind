@@ -10,7 +10,9 @@
 
 import { ChevronRight, GripVertical } from "lucide-react";
 import {
+  createContext,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -18,6 +20,18 @@ import {
   type DragEvent,
 } from "react";
 import { cn } from "@/lib/utils";
+
+/**
+ * Inside the phone Insights sheet. A stack of fixed-height sections that each scroll on
+ * their own works with a mouse, but on a touch screen a swipe inside a section stops at
+ * its edge and never reaches the sheet. There every section takes its full height, the
+ * sheet is the one scroll, and resizing and drag-to-reorder are left out.
+ */
+const PhoneLayoutContext = createContext(false);
+
+export function IntelPhoneLayout({ children }: { children: React.ReactNode }) {
+  return <PhoneLayoutContext.Provider value>{children}</PhoneLayoutContext.Provider>;
+}
 
 export type IntelPanelDef = {
   id: string;
@@ -209,6 +223,7 @@ function IntelPanelStackInner({
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const dropIndexRef = useRef<number | null>(null);
   const suppressToggleClick = useRef(false);
+  const phone = useContext(PhoneLayoutContext);
   const rootRef = useRef<HTMLDivElement>(null);
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
   const ready = useRef(false);
@@ -441,8 +456,8 @@ function IntelPanelStackInner({
   return (
     <div
       ref={rootRef}
-      className="flex flex-col h-full min-h-0 gap-0 overflow-y-auto overflow-x-hidden"
-      aria-label="Insights sections. Drag a section header to reorder."
+      className={phone ? "flex flex-col gap-0" : "flex flex-col h-full min-h-0 gap-0 overflow-y-auto overflow-x-hidden"}
+      aria-label={phone ? "Insights sections" : "Insights sections. Drag a section header to reorder."}
     >
       {orderedPanels.map((panel, index) => {
         const isOpen = layout.open[panel.id] !== false;
@@ -482,10 +497,13 @@ function IntelPanelStackInner({
               onDrop={commitDrop}
               className={cn(
                 "relative flex flex-col min-h-0 rounded-xl border border-[var(--border-strong)] bg-card overflow-hidden shrink-0 shadow-[var(--shadow-sm)]",
+                phone && "mb-3",
                 dragging && "opacity-40",
               )}
               style={
-                isOpen
+                phone
+                  ? undefined
+                  : isOpen
                   ? {
                       height: HEADER_H + bodyH,
                       flexGrow: 0,
@@ -501,8 +519,8 @@ function IntelPanelStackInner({
               <div className="relative shrink-0">
                 <button
                   type="button"
-                  draggable
-                  title="Drag to reorder · click to expand or collapse"
+                  draggable={!phone}
+                  title={phone ? "Tap to expand or collapse" : "Drag to reorder · click to expand or collapse"}
                   onDragStart={e => onPanelDragStart(panel.id, e)}
                   onDragEnd={onPanelDragEnd}
                   onClick={() => {
@@ -543,13 +561,19 @@ function IntelPanelStackInner({
               </div>
 
               {isOpen && (
-                <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-2.5 pr-1.5 text-sm text-foreground [scrollbar-gutter:stable]">
+                <div
+                  className={
+                    phone
+                      ? "px-3 py-2.5 text-sm text-foreground"
+                      : "flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-2.5 pr-1.5 text-sm text-foreground [scrollbar-gutter:stable]"
+                  }
+                >
                   {panel.children}
                 </div>
               )}
             </section>
 
-            {showSash && next && !reordering && (
+            {showSash && next && !reordering && !phone && (
               <PanelResizeHandle
                 label={
                   nextOpen
@@ -567,7 +591,7 @@ function IntelPanelStackInner({
             )}
 
             {/* Bottom slack sash — last module can grow into empty rail space */}
-            {isOpen && !next && !reordering && (
+            {isOpen && !next && !reordering && !phone && (
               <PanelResizeHandle
                 label={`Resize ${panel.label}`}
                 active={draggingSash === `${panel.id}:slack`}
