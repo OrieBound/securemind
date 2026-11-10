@@ -1026,6 +1026,19 @@ function parseTierModelOverrides(raw: string | null): Record<string, string> {
   }
 }
 
+/** Set once a person closes the phone note that the app is laid out for a larger screen. */
+const DESKTOP_HINT_KEY = "sm_phone_desktop_hint_dismissed";
+
+/** Phone menu item: the open section gets the violet highlight, the rest stay muted. */
+function phoneTabClass(active: boolean) {
+  return cn(
+    "shrink-0 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-medium",
+    active
+      ? "border-[var(--primary-border)] bg-[var(--primary-soft)] text-[var(--primary-soft-foreground)]"
+      : "border-transparent text-foreground/60",
+  );
+}
+
 const SUB_NAV_ITEMS = [
   {
     id: "thread" as const,
@@ -3305,6 +3318,10 @@ function AppShellView({ analyticsView }: AppShellProps = {}) {
   const [floatingDate, setFloatingDate] = useState<string | null>(null);
   /** Shown once the reader has scrolled well above the newest message. */
   const [showJumpToNewest, setShowJumpToNewest] = useState(false);
+  const mobileNavRef = useRef<HTMLElement>(null);
+  const [navEdges, setNavEdges] = useState({ start: true, end: false });
+  /** Starts hidden so the note never flashes before storage is read. */
+  const [desktopHintDismissed, setDesktopHintDismissed] = useState(true);
   const abortRef     = useRef<AbortController | null>(null);
   const streamReaderRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
   const docsAbortRef = useRef<AbortController | null>(null);
@@ -6256,6 +6273,44 @@ _Preparing the file…_`);
         : analyticsView === "security" ? "Security"
           : null;
 
+  // Phone menu: one scrolling row. Show which way there is more, and keep the open section in view.
+  const hasPhoneMenu = Boolean(chatWorkspace);
+  useEffect(() => {
+    const nav = mobileNavRef.current;
+    if (!nav) return;
+    const update = () => setNavEdges({
+      start: nav.scrollLeft <= 2,
+      end: nav.scrollLeft + nav.clientWidth >= nav.scrollWidth - 2,
+    });
+    update();
+    nav.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      nav.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [hasPhoneMenu]);
+  useEffect(() => {
+    const nav = mobileNavRef.current;
+    const current = nav?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!nav || !current) return;
+    nav.scrollTo({ left: current.offsetLeft - (nav.clientWidth - current.offsetWidth) / 2, behavior: "smooth" });
+  }, [activeNav, onAnalytics, workNav]);
+  const navFade = `linear-gradient(to right, ${navEdges.start ? "black" : "transparent"}, black 1.5rem, black calc(100% - 2.5rem), ${navEdges.end ? "black" : "transparent"})`;
+
+  // A one-time note on phones that the app is laid out for a larger screen.
+  useEffect(() => {
+    try {
+      setDesktopHintDismissed(localStorage.getItem(DESKTOP_HINT_KEY) === "1");
+    } catch {
+      setDesktopHintDismissed(false);
+    }
+  }, []);
+  const dismissDesktopHint = () => {
+    setDesktopHintDismissed(true);
+    try { localStorage.setItem(DESKTOP_HINT_KEY, "1"); } catch { /* the note still closes for this visit */ }
+  };
+
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
 
@@ -6959,8 +7014,11 @@ _Preparing the file…_`);
         {/* Phone navigation. The sidebar is hidden below md, so this row is the only way to
             switch workspace or page there. md:hidden keeps tablet and desktop unchanged. */}
         {chatWorkspace && (
+          <div className="relative shrink-0 border-b border-foreground/6 md:hidden">
           <nav
-            className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-foreground/6 px-3 py-1.5 md:hidden [mask-image:linear-gradient(to_right,black_calc(100%-2rem),transparent)]"
+            ref={mobileNavRef}
+            className="flex items-center gap-1.5 overflow-x-auto px-3 py-1.5"
+            style={{ maskImage: navFade, WebkitMaskImage: navFade, scrollbarWidth: "none" }}
             aria-label="Workspace sections"
           >
             <select
@@ -6984,10 +7042,7 @@ _Preparing the file…_`);
                   type="button"
                   aria-current={active ? "page" : undefined}
                   onClick={() => goToWorkspaceNav(item.id, chatWorkspace)}
-                  className={cn(
-                    "shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium",
-                    active ? "bg-foreground/10 text-foreground" : "text-foreground/60",
-                  )}
+                  className={phoneTabClass(active)}
                 >
                   {item.label}
                 </button>
@@ -6997,25 +7052,44 @@ _Preparing the file…_`);
               type="button"
               aria-current={activeNav === "workspace-settings" && !onAnalytics ? "page" : undefined}
               onClick={() => goToWorkspaceNav("workspace-settings", chatWorkspace)}
-              className={cn(
-                "shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium",
-                activeNav === "workspace-settings" && !onAnalytics ? "bg-foreground/10 text-foreground" : "text-foreground/60",
-              )}
+              className={phoneTabClass(activeNav === "workspace-settings" && !onAnalytics)}
             >
               Workspace
             </button>
+            <span aria-hidden className="mx-0.5 h-5 w-px shrink-0 bg-foreground/10" />
             <button
               type="button"
               aria-current={activeNav === "settings" || onAnalytics ? "page" : undefined}
               onClick={() => openSettings()}
-              className={cn(
-                "shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-xs font-medium",
-                activeNav === "settings" || onAnalytics ? "bg-foreground/10 text-foreground" : "text-foreground/60",
-              )}
+              className={phoneTabClass(activeNav === "settings" || onAnalytics)}
             >
               Settings
             </button>
           </nav>
+          {!navEdges.end && (
+            <button
+              type="button"
+              aria-label="More sections"
+              onClick={() => mobileNavRef.current?.scrollBy({ left: mobileNavRef.current.clientWidth * 0.6, behavior: "smooth" })}
+              className="absolute inset-y-0 right-0 flex w-8 items-center justify-center text-foreground/60"
+            >
+              <ChevronRight className="size-4" aria-hidden />
+            </button>
+          )}
+          </div>
+        )}
+        {chatWorkspace && !desktopHintDismissed && (
+          <div className="flex shrink-0 items-center gap-2 border-b border-foreground/6 px-3 py-1.5 text-[0.7rem] text-foreground/60 md:hidden" role="note">
+            <span className="flex-1">SecureMind is built mainly for desktop. It works here, with less room.</span>
+            <button
+              type="button"
+              onClick={dismissDesktopHint}
+              aria-label="Dismiss"
+              className="rounded p-1 text-foreground/50 hover:text-foreground"
+            >
+              <X className="size-3.5" aria-hidden />
+            </button>
+          </div>
         )}
 
         {/* Content */}
