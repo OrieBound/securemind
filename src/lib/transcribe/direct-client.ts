@@ -10,14 +10,15 @@
 
 import { captionsFromMessage, decodeMessage, encodeAudioEvent } from "./event-stream";
 import { downsample, floatToInt16, TARGET_RATE, type CloudLiveSttHandle } from "./live-client";
+import { MAX_LIVE_SESSION_MINUTES } from "./live-limits";
 
 /** After Done, how long to wait for Amazon to send the last words and close the connection. */
 const FINISH_TIMEOUT_MS = 8_000;
 /**
- * Longest one session may run. Each session is counted toward the cost cap as a flat estimate
+ * Longest one session may run. Each session is counted toward the cost cap at this full length
  * when it starts (voice-usage.ts), so the browser stops sending audio after this.
  */
-export const MAX_SESSION_MS = 10 * 60_000;
+export const MAX_SESSION_MS = MAX_LIVE_SESSION_MINUTES * 60_000;
 
 type Session = { url: string; sampleRate: number };
 

@@ -7,7 +7,14 @@ import { hitRateLimit } from "@/lib/rate-limit";
 import { runtimeEdition } from "@/lib/runtime-env";
 import { pickTranscribeBackend, transcribeUnavailableMessage } from "@/lib/transcribe/backend";
 import { createTranscribeStreamUrl, transcribeStreamConfig } from "@/lib/transcribe/stream-session";
-import { LIVE_SESSION_ESTIMATE_MINUTES, recordTranscribeUsage, voiceCostCapResponse } from "@/lib/transcribe/voice-usage";
+import {
+  countLiveSessionsToday,
+  LIVE_SESSION_ESTIMATE_MINUTES,
+  LIVE_SESSIONS_PER_DAY,
+  LIVE_TRANSCRIBE_MODEL,
+  recordTranscribeUsage,
+  voiceCostCapResponse,
+} from "@/lib/transcribe/voice-usage";
 
 /**
  * Hosted only. Returns a short-lived signed WebSocket address so the browser can stream the
@@ -68,9 +75,21 @@ export async function POST(req: NextRequest) {
   const overCap = await voiceCostCapResponse(userId);
   if (overCap) return overCap;
 
+  // A daily count that holds across server instances. The browser treats a refusal like any failed
+  // live session and transcribes the whole recording after Done, billed by the exact second.
+  if ((await countLiveSessionsToday(userId)) >= LIVE_SESSIONS_PER_DAY) {
+    return Response.json(
+      {
+        error: `Live captions are limited to ${LIVE_SESSIONS_PER_DAY} sessions a day. Voice still works: your words appear after you tap Done.`,
+        code: "LIVE_SESSION_DAILY_LIMIT",
+      },
+      { status: 429 },
+    );
+  }
+
   try {
     const session = await createTranscribeStreamUrl(config, userId);
-    await recordTranscribeUsage(userId, LIVE_SESSION_ESTIMATE_MINUTES, "amazon-transcribe-live");
+    await recordTranscribeUsage(userId, LIVE_SESSION_ESTIMATE_MINUTES, LIVE_TRANSCRIBE_MODEL);
     return Response.json(session, { headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     console.error("[transcribe/live-session] could not sign:", err instanceof Error ? `${err.name}: ${err.message.slice(0, 300)}` : "unknown error");

@@ -56,6 +56,19 @@ vi.mock("@/lib/cost-cap", () => ({
     warningLevel: null,
   }),
 }));
+// Today's live sessions, as the hosted usage records would list them.
+const sessionsToday = { events: [] as Array<{ provider: string; model: string }>, fail: false };
+vi.mock("@/lib/workspaces/store", () => ({ usesHostedAppStore: () => true }));
+vi.mock("@/lib/workspaces/hosted-dynamo", () => ({
+  hostedAppStore: () => ({
+    listInferenceEvents: async () => {
+      if (sessionsToday.fail) throw new Error("store down");
+      return sessionsToday.events;
+    },
+  }),
+}));
+vi.mock("@/lib/db", () => ({ db: {} }));
+
 vi.mock("@/lib/analytics/write", () => ({
   recordInferenceEvent: (...a: unknown[]) => recordInferenceEvent(...(a as [])),
 }));
@@ -74,6 +87,8 @@ beforeEach(async () => {
   state.choice = "transcribe";
   state.acked = true;
   capState.capped = false;
+  sessionsToday.events = [];
+  sessionsToday.fail = false;
   process.env.TRANSCRIBE_STREAM_ROLE_ARN = ROLE;
   process.env.TRANSCRIBE_STREAM_REGION = "us-east-1";
   assumeRole.mockResolvedValue({
@@ -165,13 +180,46 @@ describe("POST /api/transcribe/live-session", () => {
     expect(recordInferenceEvent).not.toHaveBeenCalled();
   });
 
-  it("records each session toward the cost cap as a flat estimate", async () => {
+  it("records each session toward the cost cap at its full ten-minute length", async () => {
     const { POST } = await import("@/app/api/transcribe/live-session/route");
     await POST(post());
     expect(recordInferenceEvent).toHaveBeenCalledTimes(1);
     const ev = (recordInferenceEvent.mock.calls[0] as unknown as [Record<string, unknown>])[0];
     expect(ev).toMatchObject({ userId: "user-a", provider: "transcribe", tier: "Voice", status: "ok" });
-    expect(ev.extraCostUsd).toBeCloseTo(0.024);
+    expect(ev.extraCostUsd).toBeCloseTo(10 * 0.024);
+    expect(ev.model).toBe("amazon-transcribe-live");
+  });
+
+  it("refuses a new live session once today's limit is used, without signing an address", async () => {
+    const live = { provider: "transcribe", model: "amazon-transcribe-live" };
+    sessionsToday.events = [
+      ...Array.from({ length: 30 }, () => live),
+      { provider: "transcribe", model: "amazon-transcribe" },
+      { provider: "groq", model: "amazon-transcribe-live" },
+    ];
+    const { POST } = await import("@/app/api/transcribe/live-session/route");
+    const res = await POST(post());
+    expect(res.status).toBe(429);
+    expect(await res.json()).toMatchObject({ code: "LIVE_SESSION_DAILY_LIMIT" });
+    expect(assumeRole).not.toHaveBeenCalled();
+    expect(recordInferenceEvent).not.toHaveBeenCalled();
+  });
+
+  it("counts only live sessions toward the daily limit", async () => {
+    sessionsToday.events = [
+      ...Array.from({ length: 29 }, () => ({ provider: "transcribe", model: "amazon-transcribe-live" })),
+      ...Array.from({ length: 10 }, () => ({ provider: "transcribe", model: "amazon-transcribe" })),
+    ];
+    const { POST } = await import("@/app/api/transcribe/live-session/route");
+    expect((await POST(post())).status).toBe(200);
+  });
+
+  it("keeps voice working when the usage records cannot be read", async () => {
+    sessionsToday.fail = true;
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { POST } = await import("@/app/api/transcribe/live-session/route");
+    expect((await POST(post())).status).toBe(200);
+    spy.mockRestore();
   });
 
   it("reports a signing failure without echoing the error to the browser", async () => {

@@ -8,7 +8,7 @@ import { runtimeEdition } from "@/lib/runtime-env";
 import { transcribePcmStream } from "@/lib/transcribe/amazon";
 import { pickTranscribeBackend, transcribeUnavailableMessage } from "@/lib/transcribe/backend";
 import { wavSampleRate } from "@/lib/transcribe/pcm-wav";
-import { recordTranscribeUsage, voiceCostCapResponse } from "@/lib/transcribe/voice-usage";
+import { LIVE_TRANSCRIBE_MODEL, recordTranscribeUsage, voiceCostCapResponse } from "@/lib/transcribe/voice-usage";
 
 /**
  * Cloud-only live STT: browser sends 16 kHz mono PCM; we emit NDJSON
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
           controller.enqueue(encoder.encode(`${JSON.stringify(ev)}\n`));
         }
         // 16-bit mono PCM: two bytes per sample.
-        await recordTranscribeUsage(userId, audioBytes / (wavSampleRate() * 2) / 60, "amazon-transcribe-live");
+        await recordTranscribeUsage(userId, audioBytes / (wavSampleRate() * 2) / 60, LIVE_TRANSCRIBE_MODEL);
         controller.close();
       } catch (err) {
         // Name and message only, never the audio. The message is the provider's or SDK's own error text.
