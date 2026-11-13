@@ -85,9 +85,10 @@ export async function storeMemoryFragment(opts: {
   const vector = await embedText(content);
   const vectorStr = `[${vector.join(",")}]`;
   await db.$executeRawUnsafe(
-    `UPDATE "MemoryFragment" SET embedding = $1::vector WHERE id = $2`,
+    `UPDATE "MemoryFragment" SET embedding = $1::vector WHERE id = $2 AND "userId" = $3`,
     vectorStr,
     fragment.id,
+    userId,
   );
 
   return fragment.id;

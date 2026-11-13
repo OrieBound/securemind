@@ -9,6 +9,8 @@
 import { builtinChatModels } from "./router";
 import { getModelCatalogCached } from "./catalog";
 import { BEDROCK_TEXT_MODELS, isBedrockRestrictedAccessId, isChatUsableModelId } from "./catalog-shared";
+import { getModelAvailability } from "./model-availability-store";
+import { modelKey } from "./model-availability";
 import type { ModelProvider } from "./types";
 
 export type AllowedModel = {
@@ -31,11 +33,13 @@ export async function resolveAllowedModel(
   const builtins = builtinChatModels();
   const builtinProvider = builtins.get(id);
   if (builtinProvider && !options?.forTest) {
+    if (await adminHid(builtinProvider, id)) return null;
     return { model: id, provider: builtinProvider };
   }
 
   const bedrockFallback = BEDROCK_TEXT_MODELS.find(m => m.id === id);
   if (bedrockFallback && !options?.forTest) {
+    if (await adminHid("bedrock", id)) return null;
     return { model: bedrockFallback.id, provider: "bedrock" };
   }
 
@@ -44,8 +48,10 @@ export async function resolveAllowedModel(
     const hit = [catalog.groq, catalog.bedrock, catalog.ollama, catalog.openai, catalog.anthropic, catalog.google, catalog.xai]
       .flatMap(bucket => bucket ?? [])
       .find(m => m.id === id && (!options?.provider || m.provider === options.provider));
+    // A model the Admin hid is out of the menus; a crafted request must not bring it back.
+    // Tests still run on hidden models so an Admin can check one before showing it again.
     if (hit && hit.modality !== "other" && isChatUsableModelId(hit.id) &&
-        (options?.forTest || (hit.access !== "needs_enablement" && hit.verification !== "failed"))) {
+        (options?.forTest || (hit.access !== "needs_enablement" && hit.verification !== "failed" && !hit.hidden))) {
       return { model: hit.id, provider: hit.provider };
     }
   } catch {
@@ -53,4 +59,14 @@ export async function resolveAllowedModel(
   }
 
   return null;
+}
+
+/** True when an Admin hid this model. A storage error keeps the old behaviour (allowed). */
+async function adminHid(provider: ModelProvider, id: string): Promise<boolean> {
+  try {
+    const records = await getModelAvailability();
+    return records[modelKey({ provider, id })]?.hidden === true;
+  } catch {
+    return false;
+  }
 }

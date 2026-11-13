@@ -392,9 +392,10 @@ export async function processDocument(
 
         // Attach the vector via raw SQL — pgvector columns are Unsupported in Prisma schema
         await db.$executeRawUnsafe(
-          `UPDATE "MemoryFragment" SET embedding = $1::vector WHERE id = $2`,
+          `UPDATE "MemoryFragment" SET embedding = $1::vector WHERE id = $2 AND "userId" = $3`,
           `[${vector.join(",")}]`,
           fragment.id,
+          doc.userId,
         );
 
         await mirrorDocumentChunkToDynamo({

@@ -5,13 +5,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getModelCatalogCached = vi.fn();
+const getModelAvailability = vi.fn();
 
 vi.mock("@/lib/models/catalog", () => ({
   getModelCatalogCached: (...args: unknown[]) => getModelCatalogCached(...args),
 }));
 
+vi.mock("@/lib/models/model-availability-store", () => ({
+  getModelAvailability: (...args: unknown[]) => getModelAvailability(...args),
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
+  getModelAvailability.mockResolvedValue({});
   getModelCatalogCached.mockResolvedValue({ groq: [], bedrock: [], ollama: [], errors: [] });
 });
 
@@ -32,6 +38,24 @@ describe("resolveAllowedModel", () => {
     const { resolveAllowedModel } = await import("@/lib/models/allowlist");
     const allowed = await resolveAllowedModel("openai/gpt-oss-120b");
     expect(allowed).toEqual({ model: "openai/gpt-oss-120b", provider: "groq" });
+  });
+
+  it("denies a model the Admin hid, from the catalog or the router's own list", async () => {
+    getModelCatalogCached.mockResolvedValue({
+      bedrock: [{ id: "hidden-chat", provider: "bedrock", modality: "text", verification: "verified", hidden: true }],
+    });
+    getModelAvailability.mockResolvedValue({ "groq:openai/gpt-oss-120b": { hidden: true } });
+    const { resolveAllowedModel } = await import("@/lib/models/allowlist");
+    expect(await resolveAllowedModel("hidden-chat")).toBeNull();
+    expect(await resolveAllowedModel("openai/gpt-oss-120b")).toBeNull();
+    // An Admin can still test a hidden model before showing it again.
+    expect(await resolveAllowedModel("hidden-chat", { forTest: true })).toEqual({ model: "hidden-chat", provider: "bedrock" });
+  });
+
+  it("keeps a router model when the availability store cannot be read", async () => {
+    getModelAvailability.mockRejectedValue(new Error("store down"));
+    const { resolveAllowedModel } = await import("@/lib/models/allowlist");
+    expect(await resolveAllowedModel("openai/gpt-oss-120b")).toEqual({ model: "openai/gpt-oss-120b", provider: "groq" });
   });
 
   it("denies an arbitrary model id supplied by the client", async () => {

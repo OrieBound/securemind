@@ -4,6 +4,7 @@
  */
 
 import { scrubChatRequestServerSide } from "@/lib/chat/server-scrub";
+import { checkChatRequestBody } from "@/lib/chat/validate-body";
 import { checkOllamaModel, isOllamaEmbedModel, probeOllama } from "@/lib/models/ollama";
 import { bedrockBlockReason } from "@/lib/models/bedrock";
 import {
@@ -119,9 +120,14 @@ export type ChatPrepareResult = ChatPrepareFailure | ChatPrepareSuccess;
 
 export async function prepareChatTurn(
   userId: string,
-  incoming: ChatRequestBody,
+  incoming: unknown,
 ): Promise<ChatPrepareResult> {
-  const { body, redactions } = scrubChatRequestServerSide(incoming);
+  // Shape and size first: a wrong type or an oversized field never reaches the scrub or a prompt.
+  const checked = checkChatRequestBody(incoming);
+  if (!checked.ok) {
+    return { ok: false, status: checked.status, body: { error: checked.error } };
+  }
+  const { body, redactions } = scrubChatRequestServerSide(checked.body);
   if (redactions > 0) {
     console.warn(`[chat] server-side gate replaced ${redactions} high-risk value(s) the browser did not`);
   }
